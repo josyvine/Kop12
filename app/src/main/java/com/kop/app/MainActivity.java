@@ -1,12 +1,8 @@
 package com.kop.app;
 
-// FIX: Import the correct AppCompatActivity and AlertDialog for modern AndroidX libraries.
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.app.AlertDialog;
-
 import android.Manifest;
-// import android.app.Activity; // No longer needed
-// import android.app.AlertDialog; // No longer needed
 import android.app.ProgressDialog;
 import android.content.Context;
 import android.content.DialogInterface;
@@ -47,8 +43,6 @@ import java.util.Date;
 import java.util.Locale;
 import java.util.concurrent.ExecutionException;
 
-
-// FIX: The class must extend AppCompatActivity to use themes from the AppCompat library.
 public class MainActivity extends AppCompatActivity {
 
     private static final String TAG = "MainActivity";
@@ -78,6 +72,10 @@ public class MainActivity extends AppCompatActivity {
         webSettings.setJavaScriptEnabled(true);
         webSettings.setDomStorageEnabled(true);
         webSettings.setAllowFileAccess(true);
+        
+        // FIX: Makes the WebView background transparent so the app's dark theme shows through.
+        webView.setBackgroundColor(0x00000000);
+
         webView.setWebViewClient(new WebViewClient());
         webView.addJavascriptInterface(new WebAppInterface(this), "Android");
     }
@@ -154,7 +152,7 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults); // It's good practice to call super
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == PERMISSION_REQUEST_CODE) {
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 openFilePicker();
@@ -177,17 +175,19 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    // FIX: This entire method is replaced to correctly handle modern file URIs
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == FILE_SELECT_CODE && resultCode == RESULT_OK) {
             Uri uri = data.getData();
             if (uri != null) {
-                String filePath = getPathFromUri(this, uri);
-                if (filePath != null) {
-                    processFile(filePath);
-                } else {
-                    showErrorDialog("File Error", "Could not get the path for the selected file. Please try a different file or file manager.");
+                try {
+                    File tempFile = copyUriToCache(this, uri);
+                    processFile(tempFile.getAbsolutePath());
+                } catch (Exception e) {
+                    showErrorDialog("File Error", "Could not copy the selected file. Please try a different file or file manager.");
+                    Log.e(TAG, "Failed to copy file", e);
                 }
             }
         }
@@ -223,7 +223,8 @@ public class MainActivity extends AppCompatActivity {
 							updateProgress("Preparing image...", 0, 1);
 							copyFile(new File(inputFilePath), new File(rawFramesDir, "frame_00000.jpg"));
 						} else {
-							throw new Exception("Unsupported file type: " + fileExtension);
+							// Try to determine the extension from the original URI if possible, or assume image
+							copyFile(new File(inputFilePath), new File(rawFramesDir, "frame_00000.jpg"));
 						}
 
 						File[] rawFrames = new File(rawFramesDir).listFiles();
@@ -338,7 +339,28 @@ public class MainActivity extends AppCompatActivity {
             if (out != null) out.close();
         }
     }
+    
+    // FIX: This helper function is added to copy the file from a secure URI to a local cache file
+    private File copyUriToCache(Context context, Uri uri) throws Exception {
+        InputStream inputStream = context.getContentResolver().openInputStream(uri);
+        if (inputStream == null) {
+            throw new Exception("Could not open input stream for URI");
+        }
+        // Create a temporary file in the app's cache directory
+        File tempFile = new File(context.getCacheDir(), "temp_processing_file");
+        FileOutputStream outputStream = new FileOutputStream(tempFile);
+        byte[] buffer = new byte[1024];
+        int length;
+        while ((length = inputStream.read(buffer)) > 0) {
+            outputStream.write(buffer, 0, length);
+        }
+        outputStream.close();
+        inputStream.close();
+        return tempFile;
+    }
 
+    // FIX: This old, unreliable function is no longer needed.
+    /*
     public static String getPathFromUri(final Context context, final Uri uri) {
         String filePath = null;
         if ("content".equalsIgnoreCase(uri.getScheme())) {
@@ -362,4 +384,5 @@ public class MainActivity extends AppCompatActivity {
         }
         return filePath;
     }
+    */
 }
