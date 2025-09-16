@@ -5,7 +5,7 @@ import android.graphics.Bitmap;
 import android.graphics.Color;
 import com.google.mlkit.vision.segmentation.SegmentationMask;
 import java.nio.ByteBuffer;
-import android.graphics.Canvas; // Import the Canvas class
+import android.graphics.Canvas;
 
 public class ImageProcessor {
 
@@ -24,7 +24,6 @@ public class ImageProcessor {
 
         ByteBuffer maskBuffer = mask.getBuffer();
 
-        // This is your original, correct code to find the edge pixels.
         for (int y = 0; y < originalHeight; y++) {
             for (int x = 0; x < originalWidth; x++) {
                 float scaleX = (float) x / originalWidth;
@@ -38,13 +37,10 @@ public class ImageProcessor {
             }
         }
 
-        // --- THIS IS THE ONLY FIX ADDED ---
-        // Create a final bitmap to combine the original image and the outline
         Bitmap finalBitmap = originalBitmap.copy(Bitmap.Config.ARGB_8888, true);
         Canvas canvas = new Canvas(finalBitmap);
         canvas.drawBitmap(outlineBitmap, 0, 0, null);
         
-        // Return the final combined image instead of just the outline
         return finalBitmap;
     }
 
@@ -79,7 +75,6 @@ public class ImageProcessor {
 
         int position = (y * width + x);
         
-        // Rewind is needed here because each call to getFloat advances the buffer's position
         buffer.rewind(); 
         return buffer.getFloat(position * 4);
     }
