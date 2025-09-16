@@ -34,13 +34,15 @@ dependencies {
     implementation fileTree(dir: 'libs', include: ['*.jar'])
 
     implementation 'androidx.appcompat:appcompat:1.0.2'
-    
-    // FIX: Corrected the typo from 'multides' to 'multidex'. My sincere apologies.
     implementation 'androidx.multidex:multidex:2.0.0'
 
-    implementation 'com.google.mlkit:segmentation-selfie:16.0.0-beta1'
-    implementation 'com.google.android.gms:play-services-tasks:16.0.1'
+    // FIX: Removed the Google ML Kit dependencies as they are no longer used in the Java code.
+    // implementation 'com.google.mlkit:segmentation-selfie:16.0.0-beta1'
+    // implementation 'com.google.android.gms:play-services-tasks:16.0.1'
 
-    // Add the OpenCV library for advanced edge detection.
+    // The OpenCV library is still required for the advanced edge detection.
     implementation 'com.quickbirdstudios:opencv:4.5.1'
+
+    // We need the AndroidX Exif library to read the image orientation correctly.
+    implementation 'androidx.exifinterface:exifinterface:1.3.3'
 }
