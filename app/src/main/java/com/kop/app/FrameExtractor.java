@@ -10,10 +10,10 @@ import java.io.FileOutputStream;
 public class FrameExtractor {
 
     /**
-     * Extracts frames from a video file at a specified frames-per-second rate.
+     * Extracts frames from a video file at a specified frames-per-second rate with high accuracy.
      * @param videoPath Absolute path to the video file.
      * @param outDir    The directory where the extracted frames will be saved.
-     * @param fps       The desired number of frames to extract per second.
+     *  @param fps       The desired number of frames to extract per second.
      * @throws Exception if there is an error during extraction.
      */
     public static void extractFrames(String videoPath, String outDir, int fps) throws Exception {
@@ -28,40 +28,44 @@ public class FrameExtractor {
             String durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
             long videoDurationMs = Long.parseLong(durationStr);
 
+            // Calculate the interval between frames in microseconds.
             long intervalUs = 1000000 / fps;
 
             int frameIndex = 0;
+            // Loop through the video's duration, stepping by the calculated interval.
             for (long timeUs = 0; timeUs < videoDurationMs * 1000; timeUs += intervalUs) {
                 
-                Bitmap frame = null;
-                
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-                    frame = retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC);
-                } else {
-                    frame = retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC);
-                }
+                // Retrieve the frame at the specific time.
+                // FIX: Using OPTION_CLOSEST is more accurate than OPTION_CLOSEST_SYNC.
+                // It finds the frame closest to the requested time, not just the nearest keyframe.
+                // This is slower but essential for high-quality frame-by-frame processing.
+                Bitmap frame = retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST);
                 
                 if (frame != null) {
-                    String filename = String.format("%s/frame_%05d.jpg", outDir, frameIndex++);
+                    // FIX: Save frames as PNG to preserve sharpness and avoid JPEG compression artifacts.
+                    // This is critical for line art.
+                    String filename = String.format("%s/frame_%05d.png", outDir, frameIndex++);
                     FileOutputStream out = null;
                     try {
                         out = new FileOutputStream(filename);
-                        frame.compress(Bitmap.CompressFormat.JPEG, 90, out);
+                        // Using PNG format with maximum quality (100).
+                        frame.compress(Bitmap.CompressFormat.PNG, 100, out);
                     } finally {
                         if (out != null) {
                             out.close();
                         }
+                        // It is crucial to recycle the bitmap to free up memory immediately.
                         frame.recycle();
                     }
                 }
             }
         } finally {
-            if (retriever != null) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    retriever.close();
-                } else {
-                    retriever.release();
-                }
+            // Correctly release or close the retriever based on Android version.
+            // No need to check for null here as the try-finally structure handles it.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                retriever.close();
+            } else {
+                retriever.release();
             }
         }
     }
