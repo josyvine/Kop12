@@ -33,6 +33,9 @@ import com.google.mlkit.vision.segmentation.SegmentationMask;
 import com.google.mlkit.vision.segmentation.Segmenter;
 import com.google.mlkit.vision.segmentation.selfie.SelfieSegmenterOptions;
 
+// FIX: Import the OpenCV library loader
+import org.opencv.android.OpenCVLoader;
+
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -58,6 +61,10 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        
+        // FIX: Initialize the OpenCV library. This must be done before any OpenCV functions are called.
+        OpenCVLoader.initDebug();
+        
         setContentView(R.layout.activity_main);
 
         webView = findViewById(R.id.webview);
@@ -339,7 +346,7 @@ public class MainActivity extends AppCompatActivity {
     }
     
     private File copyUriToCache(Context context, Uri uri) throws Exception {
-        InputStream inputStream = context.getContentResolver().openInputStream(uri);
+        InputStream inputStream = context.getContentResolver.openInputStream(uri);
         if (inputStream == null) {
             throw new Exception("Could not open input stream for URI");
         }
