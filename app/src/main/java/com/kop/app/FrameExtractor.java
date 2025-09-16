@@ -17,7 +17,6 @@ public class FrameExtractor {
      * @throws Exception if there is an error during extraction.
      */
     public static void extractFrames(String videoPath, String outDir, int fps) throws Exception {
-        // Ensure the output directory exists
         File outputDir = new File(outDir);
         if (!outputDir.exists()) {
             outputDir.mkdirs();
@@ -27,18 +26,16 @@ public class FrameExtractor {
         try {
             retriever.setDataSource(videoPath);
             String durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
-            long videoDurationMs = Long.parseLong(durationStr); // Duration in milliseconds
+            long videoDurationMs = Long.parseLong(durationStr);
 
-            long intervalUs = 1000000 / fps; // Interval in microseconds
+            long intervalUs = 1000000 / fps;
 
             int frameIndex = 0;
             for (long timeUs = 0; timeUs < videoDurationMs * 1000; timeUs += intervalUs) {
                 
                 Bitmap frame = null;
                 
-                // FIX: Use a more memory-efficient way to get frames on newer Android versions.
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-                    // This requests a mutable bitmap in a standard format, which is better for processing.
                     frame = retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC);
                 } else {
                     frame = retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC);
@@ -54,17 +51,15 @@ public class FrameExtractor {
                         if (out != null) {
                             out.close();
                         }
-                        frame.recycle(); // Important to free up memory
+                        frame.recycle();
                     }
                 }
             }
         } finally {
-            // FIX: Use the newer, safer 'close()' method on Android Q and above.
             if (retriever != null) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     retriever.close();
                 } else {
-                    // Deprecated but necessary for older versions
                     retriever.release();
                 }
             }
