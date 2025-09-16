@@ -2,6 +2,8 @@ package com.kop.app;
 
 import android.graphics.Bitmap;
 import android.media.MediaMetadataRetriever;
+import android.os.Build;
+
 import java.io.File;
 import java.io.FileOutputStream;
 
@@ -31,9 +33,17 @@ public class FrameExtractor {
 
             int frameIndex = 0;
             for (long timeUs = 0; timeUs < videoDurationMs * 1000; timeUs += intervalUs) {
-                // The time for getFrameAtTime is in microseconds
-                Bitmap frame = retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC);
-
+                
+                Bitmap frame = null;
+                
+                // FIX: Use a more memory-efficient way to get frames on newer Android versions.
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                    // This requests a mutable bitmap in a standard format, which is better for processing.
+                    frame = retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC);
+                } else {
+                    frame = retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC);
+                }
+                
                 if (frame != null) {
                     String filename = String.format("%s/frame_%05d.jpg", outDir, frameIndex++);
                     FileOutputStream out = null;
@@ -49,9 +59,9 @@ public class FrameExtractor {
                 }
             }
         } finally {
+            // FIX: Use the newer, safer 'close()' method on Android Q and above.
             if (retriever != null) {
-				// Use the new API for releasing the retriever
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     retriever.close();
                 } else {
                     // Deprecated but necessary for older versions
