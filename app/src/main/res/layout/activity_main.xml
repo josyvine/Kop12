@@ -4,15 +4,13 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <androidx.camera.view.PreviewView
-        android:id="@+id/camera_preview"
+    <!--
+      FIX: This layout was using a CameraX PreviewView, but the MainActivity.java code
+      is trying to find and use a WebView. This change adds the required WebView.
+    -->
+    <WebView
+        android:id="@+id/webview"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
-
-    <ImageView
-        android:id="@+id/outline_overlay"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:scaleType="fitCenter"/>
 
 </FrameLayout>
