@@ -73,7 +73,6 @@ public class MainActivity extends AppCompatActivity {
         webSettings.setDomStorageEnabled(true);
         webSettings.setAllowFileAccess(true);
         
-        // FIX: Makes the WebView background transparent so the app's dark theme shows through.
         webView.setBackgroundColor(0x00000000);
 
         webView.setWebViewClient(new WebViewClient());
@@ -83,7 +82,8 @@ public class MainActivity extends AppCompatActivity {
     private void initializeSegmenter() {
         SelfieSegmenterOptions options =
 			new SelfieSegmenterOptions.Builder()
-			.setDetectorMode(SelfieSegmenterOptions.STREAM_MODE)
+			.setDetectorMode(SelfieSegmenterOptions.SINGLE_IMAGE_MODE) // More accurate for single images
+			.enableRawSizeMask() // Improves mask quality
 			.build();
 
         segmenter = Segmentation.getClient(options);
@@ -175,7 +175,6 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    // FIX: This entire method is replaced to correctly handle modern file URIs
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
@@ -223,7 +222,6 @@ public class MainActivity extends AppCompatActivity {
 							updateProgress("Preparing image...", 0, 1);
 							copyFile(new File(inputFilePath), new File(rawFramesDir, "frame_00000.jpg"));
 						} else {
-							// Try to determine the extension from the original URI if possible, or assume image
 							copyFile(new File(inputFilePath), new File(rawFramesDir, "frame_00000.jpg"));
 						}
 
@@ -340,13 +338,11 @@ public class MainActivity extends AppCompatActivity {
         }
     }
     
-    // FIX: This helper function is added to copy the file from a secure URI to a local cache file
     private File copyUriToCache(Context context, Uri uri) throws Exception {
         InputStream inputStream = context.getContentResolver().openInputStream(uri);
         if (inputStream == null) {
             throw new Exception("Could not open input stream for URI");
         }
-        // Create a temporary file in the app's cache directory
         File tempFile = new File(context.getCacheDir(), "temp_processing_file");
         FileOutputStream outputStream = new FileOutputStream(tempFile);
         byte[] buffer = new byte[1024];
@@ -359,30 +355,4 @@ public class MainActivity extends AppCompatActivity {
         return tempFile;
     }
 
-    // FIX: This old, unreliable function is no longer needed.
-    /*
-    public static String getPathFromUri(final Context context, final Uri uri) {
-        String filePath = null;
-        if ("content".equalsIgnoreCase(uri.getScheme())) {
-            String[] projection = { "_data" };
-            Cursor cursor = null;
-            try {
-                cursor = context.getContentResolver().query(uri, projection, null, null, null);
-                if (cursor != null && cursor.moveToFirst()) {
-                    int columnIndex = cursor.getColumnIndexOrThrow("_data");
-                    filePath = cursor.getString(columnIndex);
-                }
-            } catch (Exception e) {
-                Log.e(TAG, "Error getting path from content URI", e);
-            } finally {
-                if (cursor != null) {
-                    cursor.close();
-                }
-            }
-        } else if ("file".equalsIgnoreCase(uri.getScheme())) {
-            filePath = uri.getPath();
-        }
-        return filePath;
-    }
-    */
 }
