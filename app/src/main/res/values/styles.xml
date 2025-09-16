@@ -1,11 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- 
-	FIX: The parent theme has been changed from Theme.Holo.Light 
-	to a modern AppCompat theme. This is required by the new libraries
-	and matches the theme used in your AndroidManifest.xml.
+      FIX: The parent theme is now the base AppCompat theme (which is dark by default)
+      instead of the specific Light theme. This will match the HTML UI.
     -->
-    <style name="AppTheme" parent="Theme.AppCompat.Light.NoActionBar">
+    <style name="AppTheme" parent="Theme.AppCompat.NoActionBar">
         <!-- You can customize your theme attributes here in the future if needed. -->
     </style>
 </resources>
