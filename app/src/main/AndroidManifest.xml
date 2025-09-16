@@ -2,17 +2,19 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.kop.app">
 
-    <uses-permission android:name="android.permission.CAMERA"/>
-    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    <!--
+      FIX: Removed Camera and Record Audio permissions as they are not used in the app.
+      Requesting unnecessary permissions can be a privacy concern for users.
+    -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
 
     <application
         android:allowBackup="true"
-        android:icon="@drawable/kop" 
+        android:icon="@drawable/kop"
         android:label="@string/app_name"
         android:supportsRtl="true"
-        android:requestLegacyExternalStorage="true" 
+        android:requestLegacyExternalStorage="true"
         android:theme="@style/AppTheme">
 
         <activity android:name=".MainActivity">
@@ -21,6 +23,22 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        
+        <!--
+          FIX: Added a FileProvider. This is the modern, secure way to grant other
+          apps or system components (like MediaMetadataRetriever) temporary access to your
+          app's private files (e.g., the file copied to the cache). This is crucial for
+          compatibility and security on newer Android versions.
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.provider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/provider_paths"/>
+        </provider>
 
     </application>
 </manifest>
