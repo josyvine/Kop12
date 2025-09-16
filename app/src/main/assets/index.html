@@ -1,0 +1,421 @@
+<!doctype html>
+<html lang="en">
+  <head>
+	<meta charset="utf-t" />
+	<meta name="viewport" content="width=device-width,initial-scale=1, user-scalable=no" />
+	<title>Hybrid File Manager — Deleter & Editor</title>
+<style>
+  :root{
+    --bg:#0f1724; --card:#0b1220; --muted:#9aa7bd; --accent:#4f46e5; --danger:#ef4444;
+    --glass: rgba(255,255,255,0.03);
+    font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  }
+  *, *::before, *::after {
+    box-sizing: border-box;
+  }
+  html,body{height:100%; margin:0; background:transparent; color:#e6eef8; overflow-x: hidden;}
+  .app{
+    max-width:1200px; width:100%; margin:22px auto; padding:18px; border-radius:12px; 
+    /* MODIFICATION: Made transparent to see the native view behind it */
+    background: transparent; 
+    box-shadow:0 8px 30px rgba(2,6,23,0.7);
+    height: calc(100% - 44px); display: flex; flex-direction: column;
+    position: relative;
+  }
+  header{
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 0;
+    margin-bottom: 18px;
+    flex-shrink: 0;
+  }
+  .app-title {
+      flex-grow: 1;
+      text-align: center;
+  }
+  .app-navigation {
+    display: flex;
+    justify-content: flex-start;
+    align-items: center;
+    margin-bottom: 22px;
+    gap: 16px;
+    flex-wrap: wrap;
+    flex-shrink: 0;
+  }
+  .tabs{display:flex; gap:6px;}
+  .tab{padding:8px 14px; border-radius:10px; background:var(--glass); cursor:pointer; color:var(--muted); font-weight:600; user-select:none;}
+  .tab.active{background:linear-gradient(90deg,var(--accent),#7c3aed); color:white; box-shadow:0 6px 20px rgba(79,70,229,0.18)}
+  button.btn{background:var(--accent); color:white; border:none; padding:8px 12px; border-radius:10px; cursor:pointer; font-weight:700}
+  button.btn:disabled { background: var(--muted); cursor: not-allowed; opacity: 0.6; }
+  button.ghost{background:transparent; border:1px solid rgba(255,255,255,0.06); color:var(--muted)}
+  .small{padding:6px 8px; font-size:13px}
+  
+  /* CRITICAL FIX #1: Make left column zero width, right column takes all space. This fixes the overlay issue. */
+  .panel{display:grid; grid-template-columns:0fr 1fr; gap:14px; flex-grow: 1; overflow: hidden;}
+  .card{background:transparent; border-radius:10px; padding:12px}
+
+  .left{
+    /* MODIFICATION: Made transparent to see the native view behind it */
+    background: transparent;
+    border-radius:10px;
+    padding:0;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  #deleterView {
+    display: flex; flex-direction: column; height: 100%; overflow: hidden;
+    position: relative;
+    /* This view will now be an empty container, so it needs no background */
+    background: transparent;
+  }
+  .deleter-controls {
+    position: absolute;
+    top: 14px;
+    left: 14px;
+    right: 14px;
+    z-index: 10;
+    background: rgba(30, 41, 59, 0.5);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    padding: 14px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    color: #e6eef8;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.4);
+    transition: transform 0.35s ease-in-out, opacity 0.3s ease-in-out;
+    transform: translateX(0);
+    opacity: 1;
+    /* The controls should not intercept clicks meant for the native grid below */
+    pointer-events: none;
+  }
+  /* Allow clicking on elements inside the controls panel */
+  .deleter-controls > * {
+      pointer-events: auto;
+  }
+
+  .deleter-controls.hidden-left {
+      transform: translateX(-110%);
+  }
+  
+  .deleter-controls .muted, .deleter-controls label {
+    color: #d1d9e6;
+    font-weight: 500;
+  }
+
+  .right{
+    background:rgba(255,255,255,0.01); 
+    border-radius:10px; 
+    padding:14px; 
+    color:var(--muted); 
+    display: flex;
+    flex-direction: column;
+  }
+  .right-content {
+      flex-grow: 1;
+      overflow-y: auto;
+  }
+  .footer {
+    padding-top: 10px;
+    margin-top: auto; /* Pushes to the bottom */
+    flex-shrink: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-top: 1px solid var(--glass);
+  }
+  .footer-info {
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .footer-actions {
+      display: flex;
+      gap: 8px;
+  }
+
+  .meta{font-size:12px; color:var(--muted)}
+  .inputs{display:flex; gap:8px; align-items:center; margin-top:8px}
+  input[type="number"], input[type]="text", select{background:transparent; border:1px solid rgba(255,255,255,0.1); padding:8px; border-radius:8px; color: #e6eef8; max-width: 100%;}
+  .danger{background:linear-gradient(90deg,var(--danger),#f97316); color:white}
+  .progresswrap{margin-top:10px}
+
+  .modal{position:fixed; left:0; right:0; top:0; bottom:0; display:flex; align-items:center; justify-content:center; backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); z-index: 2010;}
+  .modal .box{width:520px; max-width:92%; padding:18px; background:linear-gradient(180deg,#041026, #06162a); border-radius:12px; box-shadow:0 12px 40px rgba(2,6,23,0.8)}
+  .modal .box h3 { color: #fff; margin-top: 0; }
+  .modal .theme-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }
+  .modal .theme-buttons .btn { width: 100%; padding: 12px; }
+  
+  .hidden{display:none !important;}
+  .muted{color:var(--muted)}
+  .note{font-size:12px; color:var(--muted); margin-top:8px}
+
+  .deleter-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .deleter-header-group { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .deleter-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
+  .deleter-actions-group { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+
+  .icon-btn { background: var(--glass); border: 1px solid rgba(255, 255, 255, 0.06); color: var(--muted); padding: 6px; border-radius: 10px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+  .icon-btn svg { width: 20px; height: 20px; }
+  .icon-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* --- SLIDER MENU REVAMP --- */
+  .slider-menu {
+    position: fixed; top: 0; right: -100%; 
+    width: 80px; /* Adopted size from slider.html */
+    height: 100%; 
+    /* Transparent background style from left panel */
+    background: rgba(11, 18, 32, 0.7);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-left: 1px solid var(--glass);
+    z-index: 2000; 
+    transition: right 0.3s ease; 
+    display: flex;
+    flex-direction: column; 
+    align-items: center;
+    padding: 12px 0;
+    overflow-y: auto; /* Enable vertical scrolling */
+    gap: 16px;
+  }
+  .slider-menu.active { right: 0; }
+  
+  /* Icon button styling */
+  .slider-icon-btn {
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 8px;
+    border-radius: 8px;
+    width: 68px;
+    transition: background 0.2s, color 0.2s;
+    user-select: none;
+  }
+  .slider-icon-btn svg { width: 28px; height: 28px; }
+  .slider-icon-btn span { font-size: 10px; font-weight: 600; }
+  .slider-icon-btn:hover { background: var(--glass); color: #fff; }
+  
+  .slider-divider { 
+    border: none; 
+    border-top: 1px solid var(--glass);
+    margin: 0;
+    width: 80%;
+  }
+  
+  .overlay {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.5); z-index: 1999; display: none;
+  }
+  .overlay.active { display: block; }
+  .swipe-area { position: fixed; top: 0; right: 0; width: 50px; height: 100%; z-index: 998; }
+
+  .help-content h3 { color: #fff; margin-top: 24px; margin-bottom: 8px; border-bottom: 1px solid var(--glass); padding-bottom: 6px; }
+  .help-content p { line-height: 1.6; margin-bottom: 12px; }
+  .help-content code { background: var(--glass); padding: 2px 6px; border-radius: 4px; font-family: monospace; color: #e6eef8; }
+  
+  @media (max-width: 960px) {
+    /* CRITICAL FIX #2: Hide the (now empty) left panel entirely on smaller screens. */
+    .left { display: none; }
+    .panel { grid-template-columns: 1fr; }
+    .right { margin-top: 14px; }
+    .app { height: auto; }
+  }
+
+  @media (max-width: 768px) {
+    .app { margin: 0; padding: 12px; border-radius: 0; box-shadow: none; height: 100%; }
+    .app-navigation { justify-content: center; }
+    .app-title { margin-left: 0; }
+  }
+</style>
+  </head>
+  <body>
+	<div class="app" id="app">
+	  <header>
+		<div class="header-left-controls" style="display: flex; gap: 8px; width: 88px; justify-content: flex-start;">
+		</div>
+		<div class="app-title">KOP Rotoscope</div>
+		<div class="header-right-placeholder" style="width: 88px;"></div>
+	  </header>
+
+	  <div class="slider-menu" id="sliderMenu">
+
+        <!-- ### MODIFIED ICON AS YOU COMMANDED ### -->
+		<button class="slider-icon-btn" id="processFileBtn" title="Process File">
+		  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16h6v-6h4l-8-8-8 8h4v6zm-4 2h14v2H5v-2z"/></svg>
+		  <span>Process</span>
+		</button>
+
+        <hr class="slider-divider">
+
+		<button class="slider-icon-btn" id="cleanCacheBtn" title="Clean Cache">
+		  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M15 16h4v2h-4v-2zm0-8h7v2h-7V8zm0 4h6v2h-6v-2zM3 18c0 1.1.9 2 2 2h6c1.1 0 2-.9 2-2V8H3v10zM14 5h-3l-1-1H6L5 5H2v2h12V5z"/></svg>
+		  <span>Clean</span>
+		</button>
+
+		<button class="slider-icon-btn" id="contactBtn" title="Contact Us">
+		  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/></svg>
+		  <span>Contact</span>
+		</button>
+        <hr class="slider-divider">
+        <button class="slider-icon-btn" id="themeBtn" title="Change Theme">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1.01-.23-.26-.38-.61-.38-.99 0-.83.67-1.5 1.5-1.5H16c2.76 0 5-2.24 5-5 0-4.42-4.03-8-9-8zm-5.5 9c-.83 0-1.5-.67-1.5-1.5S5.67 9 6.5 9 8 9.67 8 10.5 7.33 12 6.5 12zm3-4C8.67 8 8 7.33 8 6.5S8.67 5 9.5 5s1.5.67 1.5 1.5S10.33 8 9.5 8zm5 0c-.83 0-1.5-.67-1.5-1.5S13.67 5 14.5 5s1.5.67 1.5 1.5S15.33 8 14.5 8zm3 4c-.83 0-1.5-.67-1.5-1.5S16.67 9 17.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg>
+          <span>Theme</span>
+        </button>
+		<button class="slider-icon-btn" id="helpBtn" title="Help">
+		  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg>
+		  <span>Help</span>
+		</button>
+	  </div>
+	  <div class="overlay" id="overlay"></div>
+	  <div class="swipe-area" id="swipeArea"></div>
+
+	  <nav class="app-navigation" style="display: none;"></nav>
+
+	  <div class="panel">
+		<div class="left card" style="display:none;"></div>
+
+		<div class="right card">
+		  <div class="right-content" id="mainContent">
+            <h3>Welcome to KOP Rotoscope</h3>
+            <p>1. Swipe from the right edge to open the menu.</p>
+            <p>2. Tap 'Process' to choose a video or image file.</p>
+            <p>3. A native pop-up will show the processing progress.</p>
+            <p>4. When finished, another native pop-up will confirm completion.</p>
+		  </div>
+		  <div class="footer">
+			<div id="inspector" class="footer-info">Ready</div>
+			<div class="footer-actions"></div>
+		  </div>
+        </div>
+	  </div>
+
+	  <div id="helpView" class="hidden" style="display: flex; flex-direction: column; height: 100%; color: var(--muted);">
+		<div class="help-header" style="text-align: center; padding: 10px 0; flex-shrink: 0;"><h2 style="margin:0; color: #fff;">How to Use the App</h2></div>
+		<div class="help-content" style="flex-grow: 1; overflow-y: auto; padding: 0 24px;">
+          <h3>Core Function</h3>
+          <p>This app automates the process of rotoscoping by extracting outlines from subjects in videos or images. It uses a machine learning model (TensorFlow Lite) to identify a person and then uses image processing (OpenCV) to draw their outline.</p>
+          <h3>Instructions</h3>
+          <ol>
+			<li>Swipe from the far right edge of the screen to open the slider menu.</li>
+			<li>Tap the <b>Process</b> icon to open the native Android file picker.</li>
+			<li>Choose a video file (e.g., MP4) or a single image file (e.g., JPG, PNG).</li>
+			<li>A native Android dialog will appear to show the processing progress.</li>
+			<li>When complete, another native pop-up will appear telling you where the output files have been saved. They are typically located in your main `Pictures` folder inside a `kop` directory.</li>
+          </ol>
+          <h3>The Process</h3>
+          <p><b>1. Frame Extraction:</b> If you select a video, the app first breaks it down into individual image frames.</p>
+          <p><b>2. Segmentation:</b> For each frame, a TFLite model creates a "mask" that separates the person from the background.</p>
+          <p><b>3. Edge Detection:</b> The app then uses OpenCV to detect and draw the outlines of the subject.</p>
+          <p><b>4. Saving:</b> Each processed frame is saved as a PNG file in a new project folder.</p>
+		</div>
+		<div class="help-footer" style="text-align: center; padding: 20px;"><button class="btn" id="helpBackBtn" style="padding: 12px 24px;">Back to App</button></div>
+	  </div>
+    </div>
+
+    <!-- The theme modal is still here, but the call to change the theme will be native -->
+    <div id="themeModal" class="modal hidden">
+	  <div class="box">
+		<h3>Choose a Theme</h3>
+		<p class="muted">A restart is required for the new theme to take full effect across the entire app.</p>
+		<div class="theme-buttons">
+		  <button class="btn" id="setThemeLightBtn">Light</button>
+		  <button class="btn" id="setThemeDarkBtn">Dark</button>
+		  <button class="btn" id="setThemeAmoledBtn">AMOLED</button>
+		  <button class="btn" id="setThemeNordicBtn">Nordic</button>
+		  <button class="btn" id="setThemeSolarizedBtn">Solarized</button>
+		  <button class="btn ghost" id="closeThemeModalBtn">Cancel</button>
+		</div>
+	  </div>
+    </div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+
+    const AndroidInterface = window.Android;
+
+    function callAndroid(functionName, ...args) {
+        if (AndroidInterface && typeof AndroidInterface[functionName] === 'function') {
+            console.log('Calling Android.' + functionName + '()');
+            AndroidInterface[functionName](...args);
+        } else {
+            console.error('Android.' + functionName + '() is not available.');
+            // Only show alert if NOT in the native app. In the app, the interface will exist.
+            if (!navigator.userAgent.includes("wv")) {
+                alert('This feature is only available in the native app.');
+            }
+        }
+    }
+
+    // --- Elements ---
+    const processFileBtn = document.getElementById('processFileBtn');
+    const panel = document.querySelector('.panel');
+    const helpBtn = document.getElementById('helpBtn');
+    const helpView = document.getElementById('helpView');
+    const helpBackBtn = document.getElementById('helpBackBtn');
+    const contactBtn = document.getElementById('contactBtn');
+    const cleanCacheBtn = document.getElementById('cleanCacheBtn');
+    const themeBtn = document.getElementById('themeBtn');
+    const themeModal = document.getElementById('themeModal');
+    
+    // --- INITIALIZATION ---
+    function initialize() {
+        processFileBtn.onclick = function() { callAndroid('startFileProcessing'); closeSliderMenu(); };
+        contactBtn.onclick = function() { callAndroid('openContactForm'); };
+        cleanCacheBtn.onclick = function() { callAndroid('clearCache'); };
+        
+        helpBtn.onclick = function() { panel.classList.add('hidden'); helpView.classList.remove('hidden'); closeSliderMenu(); };
+        helpBackBtn.onclick = function() { helpView.classList.add('hidden'); panel.classList.remove('hidden'); };
+        
+        // Theme button listeners
+        themeBtn.onclick = openThemeModal;
+        document.getElementById('closeThemeModalBtn').onclick = closeThemeModal;
+        document.getElementById('setThemeLightBtn').onclick = function() { applyTheme('light'); };
+        document.getElementById('setThemeDarkBtn').onclick = function() { applyTheme('dark'); };
+        document.getElementById('setThemeAmoledBtn').onclick = function() { applyTheme('amoled'); };
+        document.getElementById('setThemeNordicBtn').onclick = function() { applyTheme('nordic'); };
+        document.getElementById('setThemeSolarizedBtn').onclick = function() { applyTheme('solarized'); };
+    }
+
+    const sliderMenu = document.getElementById("sliderMenu");
+    const overlay = document.getElementById("overlay");
+    const swipeArea = document.getElementById("swipeArea");
+    function addSwipeListener(element, callback) {
+        let touchstartX = 0;
+        element.addEventListener('touchstart', (e) => { touchstartX = e.changedTouches[0].screenX; }, { passive: true });
+        element.addEventListener('touchend', (e) => { if (e.changedTouches[0].screenX < touchstartX - 50) callback('left'); });
+    }
+    function closeSliderMenu() {
+        sliderMenu.classList.remove("active"); 
+        overlay.classList.remove("active");
+    }
+    function openSliderMenu() {
+        sliderMenu.classList.add("active"); 
+        overlay.classList.add("active");
+    }
+    addSwipeListener(swipeArea, openSliderMenu);
+    addSwipeListener(sliderMenu, () => closeSliderMenu());
+    overlay.addEventListener("click", () => closeSliderMenu());
+
+    function openThemeModal() {
+        themeModal.classList.remove('hidden');
+        closeSliderMenu();
+    }
+    
+    function closeThemeModal() {
+        themeModal.classList.add('hidden');
+    }
+    
+    function applyTheme(themeName) {
+        callAndroid('setTheme', themeName);
+        closeThemeModal();
+    }
+    
+    initialize();
+});
+</script>
+  </body>
+</html>
