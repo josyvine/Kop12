@@ -42,7 +42,7 @@ public class MainActivity extends AppCompatActivity {
     private static final String TAG = "MainActivity";
     private static final int PERMISSION_REQUEST_CODE = 100;
     private static final int FILE_SELECT_CODE = 101;
-    private static final int FPS = 12;
+    private static final int FPS = 12; // Frames per second to extract from video
 
     private WebView webView;
     private ProgressDialog progressDialog;
@@ -51,6 +51,7 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         
+        // Initialize the OpenCV library
         OpenCVLoader.initDebug();
         
         setContentView(R.layout.activity_main);
@@ -58,6 +59,7 @@ public class MainActivity extends AppCompatActivity {
         webView = findViewById(R.id.webview);
         setupWebView();
         
+        // Load the local HTML file for the UI
         webView.loadUrl("file:///android_asset/index.html");
     }
 
@@ -67,12 +69,15 @@ public class MainActivity extends AppCompatActivity {
         webSettings.setDomStorageEnabled(true);
         webSettings.setAllowFileAccess(true);
         
+        // Make the WebView background transparent to see the native app theme behind it
         webView.setBackgroundColor(0x00000000);
 
         webView.setWebViewClient(new WebViewClient());
+        // Add the JavascriptInterface so the HTML can call Java methods
         webView.addJavascriptInterface(new WebAppInterface(this), "Android");
     }
 
+    // This class contains methods that can be called from JavaScript in the WebView
     public class WebAppInterface {
         Context mContext;
 
@@ -82,6 +87,8 @@ public class MainActivity extends AppCompatActivity {
 
         @JavascriptInterface
         public void startFileProcessing() {
+            // All UI interactions must be run on the main thread.
+            // This Handler ensures the permission check and file picker are launched correctly.
             new Handler(Looper.getMainLooper()).post(new Runnable() {
 					@Override
 					public void run() {
@@ -106,6 +113,7 @@ public class MainActivity extends AppCompatActivity {
 
         @JavascriptInterface
         public void setTheme(String themeName) {
+            // In a real app, you would save this preference and restart the activity.
             showToast("Theme switching requires an app restart.");
         }
     }
@@ -125,7 +133,7 @@ public class MainActivity extends AppCompatActivity {
             int writePermission = checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE);
             return readPermission == PackageManager.PERMISSION_GRANTED && writePermission == PackageManager.PERMISSION_GRANTED;
         }
-        return true;
+        return true; // Permissions are granted at install time on older versions
     }
 
     private void requestPermissions() {
@@ -139,8 +147,10 @@ public class MainActivity extends AppCompatActivity {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == PERMISSION_REQUEST_CODE) {
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                // Permission granted, proceed to open file picker
                 openFilePicker();
             } else {
+                // Permission denied, inform the user
                 Toast.makeText(this, "Storage permission is required to select files.", Toast.LENGTH_SHORT).show();
             }
         }
@@ -148,8 +158,9 @@ public class MainActivity extends AppCompatActivity {
 
     private void openFilePicker() {
         Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
-        intent.setType("*/*");
+        intent.setType("*/*"); // Allow any file type
         intent.addCategory(Intent.CATEGORY_OPENABLE);
+        // Specify the mimetypes we are interested in (videos and images)
         String[] mimetypes = {"video/*", "image/*"};
         intent.putExtra(Intent.EXTRA_MIME_TYPES, mimetypes);
         try {
@@ -166,6 +177,8 @@ public class MainActivity extends AppCompatActivity {
             Uri uri = data.getData();
             if (uri != null) {
                 try {
+                    // Copy the selected file to a temporary location in the app's cache
+                    // to ensure we have direct file path access.
                     File tempFile = copyUriToCache(this, uri);
                     processFile(tempFile.getAbsolutePath());
                 } catch (Exception e) {
@@ -179,15 +192,17 @@ public class MainActivity extends AppCompatActivity {
     private void processFile(final String inputFilePath) {
         progressDialog = new ProgressDialog(MainActivity.this);
         progressDialog.setTitle("Processing File");
-        progressDialog.setMessage("Starting...");
+        progressDialog.setMessage("Preparing files...");
         progressDialog.setProgressStyle(ProgressDialog.STYLE_HORIZONTAL);
         progressDialog.setCancelable(false);
         progressDialog.show();
 
+        // Start a new background thread for the heavy processing to avoid freezing the UI.
         new Thread(new Runnable() {
 				@Override
 				public void run() {
 					try {
+						// STEP 1: Create project directories for output files.
 						String timestamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date());
 						File projectDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "kop/Project_" + timestamp);
 						if (!projectDir.exists()) projectDir.mkdirs();
@@ -197,57 +212,70 @@ public class MainActivity extends AppCompatActivity {
 						new File(rawFramesDir).mkdirs();
 						new File(processedFramesDir).mkdirs();
 
+						// STEP 2: Determine if the file is a video or image and extract frames.
 						String fileExtension = inputFilePath.substring(inputFilePath.lastIndexOf(".")).toLowerCase();
 
+						// Check for common video file extensions.
 						if (fileExtension.matches(".(mp4|mov|3gp|mkv|webm)$")) {
-							updateProgress("Extracting frames...", 0, 1);
+							updateProgress("Extracting video frames...", 0, 1);
 							FrameExtractor.extractFrames(inputFilePath, rawFramesDir, FPS);
 						} else {
-							updateProgress("Preparing image...", 0, 1);
-							copyFile(new File(inputFilePath), new File(rawFramesDir, "frame_00000.jpg"));
+							// Assume it's an image.
+							updateProgress("Preparing image for processing...", 0, 1);
+							// FIX: Copy as a PNG to maintain consistency with video frames.
+							copyFile(new File(inputFilePath), new File(rawFramesDir, "frame_00000.png"));
 						}
 
+						// STEP 3: Get the list of raw frames to process.
 						File[] rawFrames = new File(rawFramesDir).listFiles();
+						// Important check to ensure frames were actually extracted.
 						if (rawFrames == null || rawFrames.length == 0) {
-							throw new Exception("No frames were extracted or found.");
+							throw new Exception("No frames were extracted or found. The file may be corrupt or an unsupported format.");
 						}
 
 						final int totalFrames = rawFrames.length;
 						progressDialog.setMax(totalFrames);
 
+						// STEP 4: Loop through each frame, process it, and save the result.
 						for (int i = 0; i < rawFrames.length; i++) {
 							final int frameNum = i + 1;
 							updateProgress("Processing frame " + frameNum + " of " + totalFrames, frameNum, totalFrames);
 
 							File frameFile = rawFrames[i];
 							
+							// Decode the bitmap and correct its orientation based on Exif data.
 							Bitmap orientedBitmap = decodeAndRotateBitmap(frameFile.getAbsolutePath());
-							if (orientedBitmap == null) continue;
+							if (orientedBitmap == null) continue; // Skip if bitmap could not be decoded.
 
+							// This is where the new, high-quality outline extraction happens.
 							Bitmap processedBitmap = ImageProcessor.extractOutline(orientedBitmap);
 
+							// Save the final outlined image.
 							String outPath = new File(processedFramesDir, String.format("processed_%05d.png", i)).getAbsolutePath();
 							ImageProcessor.saveBitmap(processedBitmap, outPath);
 
+							// IMPORTANT: Recycle bitmaps immediately to free up memory.
 							orientedBitmap.recycle();
 							if (processedBitmap != null) {
 								processedBitmap.recycle();
 							}
 						}
 
+						// STEP 5: Clean up and notify the user of success.
 						dismissProgress();
 						showSuccessDialog("Processing Complete", "Your rotoscoped frames have been saved to:\n\n" + processedFramesDir);
 
 					} catch (final Exception e) {
 						Log.e(TAG, "Processing failed", e);
 						dismissProgress();
-						String message = (e.getCause() != null) ? e.getCause().getMessage() : e.getMessage();
+						String message = (e.getMessage() != null) ? e.getMessage() : "An unknown error occurred.";
 						showErrorDialog("Processing Error", message);
 					}
 				}
 			}).start();
     }
     
+    // Decodes a bitmap from a file and rotates it according to its EXIF orientation tag.
     private Bitmap decodeAndRotateBitmap(String filePath) throws IOException {
         Bitmap bitmap = BitmapFactory.decodeFile(filePath);
         if (bitmap == null) return null;
@@ -267,11 +295,12 @@ public class MainActivity extends AppCompatActivity {
                 matrix.postRotate(270);
                 break;
             default:
+                // No rotation needed, return the original bitmap.
                 return bitmap;
         }
 
         Bitmap rotatedBitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, true);
-        bitmap.recycle();
+        bitmap.recycle(); // Free the original bitmap's memory.
         return rotatedBitmap;
     }
 
@@ -281,9 +310,12 @@ public class MainActivity extends AppCompatActivity {
             public void run() {
                 if (progressDialog != null && progressDialog.isShowing()) {
                     progressDialog.setMessage(message);
-                    if (!progressDialog.isIndeterminate()) {
-                        progressDialog.setMax(max);
-                        progressDialog.setProgress(progress);
+                    if (max > 1) {
+                         progressDialog.setIndeterminate(false);
+                         progressDialog.setMax(max);
+                         progressDialog.setProgress(progress);
+                    } else {
+                         progressDialog.setIndeterminate(true);
                     }
                 }
             }
@@ -329,13 +361,14 @@ public class MainActivity extends AppCompatActivity {
         });
     }
     
+    // Utility function to copy a file from a source to a destination.
     private void copyFile(File source, File dest) throws Exception {
         InputStream in = null;
         OutputStream out = null;
         try {
             in = new FileInputStream(source);
             out = new FileOutputStream(dest);
-            byte[] buf = new byte[1024];
+            byte[] buf = new byte[4096]; // Use a larger buffer for faster copy
             int len;
             while ((len = in.read(buf)) > 0) {
                 out.write(buf, 0, len);
@@ -346,14 +379,16 @@ public class MainActivity extends AppCompatActivity {
         }
     }
     
+    // Copies content from a URI (from the file picker) to a temporary file in the app's cache.
     private File copyUriToCache(Context context, Uri uri) throws Exception {
         InputStream inputStream = context.getContentResolver().openInputStream(uri);
         if (inputStream == null) {
             throw new Exception("Could not open input stream for URI");
         }
-        File tempFile = new File(context.getCacheDir(), "temp_processing_file");
+        // Use a more descriptive temporary file name
+        File tempFile = new File(context.getCacheDir(), "processing_input_file.tmp");
         FileOutputStream outputStream = new FileOutputStream(tempFile);
-        byte[] buffer = new byte[1024];
+        byte[] buffer = new byte[4096];
         int length;
         while ((length = inputStream.read(buffer)) > 0) {
             outputStream.write(buffer, 0, length);
