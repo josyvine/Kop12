@@ -1,19 +1,19 @@
 // Top-level build file where you can add configuration options common to all sub-projects/modules.
 buildscript {
     repositories {
-        // FIX: Use the modern, required repositories. jcenter is shut down.
+        // Use the modern, required repositories. jcenter is shut down.
         google()
         mavenCentral()
     }
     dependencies {
-        // FIX: Update the Android Gradle Plugin to a version compatible with modern tools.
-        classpath 'com.android.tools.build:gradle:4.2.2'
+        // FIX: Update the Android Gradle Plugin to a modern, stable version.
+        classpath 'com.android.tools.build:gradle:7.0.4'
     }
 }
 
 allprojects {
     repositories {
-        // FIX: Ensure all parts of the project use the modern repositories.
+        // Ensure all parts of the project use the modern repositories.
         google()
         mavenCentral()
         // Jitpack is sometimes needed for other libraries.
