@@ -4,9 +4,7 @@
 
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
-    <!-- Added Internet permission, as the ML model may need to be downloaded on first run -->
     <uses-permission android:name="android.permission.INTERNET" />
-
 
     <application
         android:allowBackup="true"
@@ -17,15 +15,22 @@
         android:theme="@style/AppTheme">
 
         <!-- This is the main UI activity -->
-        <activity android:name=".MainActivity">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <!--
+              FIX: Added android:exported="true". Because this activity has an intent-filter
+              and we target SDK 31+, we must explicitly declare that it can be launched
+              by an external component (in this case, the Android launcher).
+            -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
         
-        <!-- FIX: Declared the new ProcessingActivity -->
-        <!-- Using a NoActionBar theme makes it feel more like a dedicated processing screen -->
+        <!-- The ProcessingActivity does not have an intent filter, so it does not need
+             the 'exported' flag. It defaults to 'false'. -->
         <activity
             android:name=".ProcessingActivity"
             android:theme="@style/Theme.AppCompat.NoActionBar" />
@@ -40,11 +45,6 @@
                 android:resource="@xml/provider_paths"/>
         </provider>
 
-        <!--
-          FIX: Added required meta-data for Google ML Kit.
-          This tells the Google Play services to download the segmentation model
-          when the app is installed.
-        -->
         <meta-data
             android:name="com.google.mlkit.vision.DEPENDENCIES"
             android:value="segmentation_selfie" />
