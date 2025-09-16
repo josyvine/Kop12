@@ -87,8 +87,8 @@ public class MainActivity extends AppCompatActivity {
     private void initializeSegmenter() {
         SelfieSegmenterOptions options =
 			new SelfieSegmenterOptions.Builder()
-			.setDetectorMode(SelfieSegmenterOptions.SINGLE_IMAGE_MODE) // More accurate for single images
-			.enableRawSizeMask() // Improves mask quality
+			.setDetectorMode(SelfieSegmenterOptions.SINGLE_IMAGE_MODE)
+			.enableRawSizeMask()
 			.build();
 
         segmenter = Segmentation.getClient(options);
@@ -246,15 +246,19 @@ public class MainActivity extends AppCompatActivity {
 							Bitmap originalBitmap = BitmapFactory.decodeFile(frameFile.getAbsolutePath());
 							if (originalBitmap == null) continue;
 
-							InputImage image = InputImage.fromBitmap(originalBitmap, 0);
+                            // FIX #3: Convert every frame to a standard ARGB_8888 format.
+                            // This ensures stability for both image and video frames.
+                            Bitmap mutableBitmap = originalBitmap.copy(Bitmap.Config.ARGB_8888, true);
+
+							InputImage image = InputImage.fromBitmap(mutableBitmap, 0);
 							SegmentationMask mask = Tasks.await(segmenter.process(image));
-							Bitmap processedBitmap = ImageProcessor.extractOutlineFromMask(originalBitmap, mask);
+							Bitmap processedBitmap = ImageProcessor.extractOutlineFromMask(mutableBitmap, mask);
 
 							String outPath = new File(processedFramesDir, String.format("processed_%05d.png", i)).getAbsolutePath();
 							ImageProcessor.saveBitmap(processedBitmap, outPath);
 
-							// FIX: Removed the extra period. My sincere apology for this careless mistake.
 							originalBitmap.recycle();
+                            mutableBitmap.recycle(); // Also recycle the mutable copy
 							if (processedBitmap != null) {
 								processedBitmap.recycle();
 							}
