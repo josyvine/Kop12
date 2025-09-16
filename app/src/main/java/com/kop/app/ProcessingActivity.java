@@ -92,7 +92,6 @@ public class ProcessingActivity extends AppCompatActivity {
                         throw new Exception("No frames were extracted or found.");
                     }
                     
-                    // IMPORTANT: Sort the frames by name to ensure they are processed in order.
                     Arrays.sort(rawFrames, new Comparator<File>() {
                         @Override
                         public int compare(File f1, File f2) {
@@ -115,7 +114,6 @@ public class ProcessingActivity extends AppCompatActivity {
     
     private void processNextFrame() {
         if (currentFrameIndex >= rawFrames.length) {
-            // All frames have been processed.
             showSuccessDialog("Processing Complete", "Your rotoscoped frames have been saved to:\n\n" + processedFramesDir);
             return;
         }
@@ -126,21 +124,20 @@ public class ProcessingActivity extends AppCompatActivity {
         updateProgress(frameNum, rawFrames.length);
 
         try {
-            Bitmap orientedBitmap = decodeAndRotateBitmap(frameFile.getAbsolutePath());
+            final Bitmap orientedBitmap = decodeAndRotateBitmap(frameFile.getAbsolutePath());
             if (orientedBitmap == null) {
-                // Skip this frame and move to the next one
                 currentFrameIndex++;
                 processNextFrame();
                 return;
             }
 
-            // Call the new asynchronous ImageProcessor
+            // FIX: Call the new asynchronous ImageProcessor with a listener callback.
             ImageProcessor.extractOutline(orientedBitmap, new ImageProcessor.OutlineExtractionListener() {
                 @Override
                 public void onOutlineExtracted(Bitmap resultBitmap) {
                     updateMainDisplay(resultBitmap);
 
-                    // Save the result in a background thread to avoid blocking.
+                    // Save the result.
                     final String outPath = new File(processedFramesDir, String.format("processed_%05d.png", currentFrameIndex)).getAbsolutePath();
                     try {
                         ImageProcessor.saveBitmap(resultBitmap, outPath);
@@ -148,7 +145,6 @@ public class ProcessingActivity extends AppCompatActivity {
                         Log.e(TAG, "Failed to save frame: " + outPath, e);
                     }
 
-                    // Clean up memory
                     orientedBitmap.recycle();
                     
                     // Move to the next frame
@@ -159,8 +155,6 @@ public class ProcessingActivity extends AppCompatActivity {
                 @Override
                 public void onExtractionFailed(Exception e) {
                     Log.e(TAG, "Failed to process frame " + currentFrameIndex, e);
-                    // For simplicity, we'll skip the failed frame and continue.
-                    // A more robust implementation could offer to retry.
                     orientedBitmap.recycle();
                     currentFrameIndex++;
                     processNextFrame();
@@ -169,12 +163,10 @@ public class ProcessingActivity extends AppCompatActivity {
 
         } catch (IOException e) {
             Log.e(TAG, "Failed to read frame file", e);
-            // Skip this frame and move to the next one
             currentFrameIndex++;
             processNextFrame();
         }
     }
-
 
     private void updateStatus(final String text, final boolean isIndeterminate) {
         uiHandler.post(new Runnable() {
@@ -218,7 +210,7 @@ public class ProcessingActivity extends AppCompatActivity {
                     .setPositiveButton("OK", new android.content.DialogInterface.OnClickListener() {
                         @Override
                         public void onClick(android.content.DialogInterface dialog, int which) {
-                            finish(); // Close the processing screen
+                            finish();
                         }
                     })
                     .setIcon(android.R.drawable.ic_dialog_info)
@@ -239,7 +231,7 @@ public class ProcessingActivity extends AppCompatActivity {
                         @Override
                         public void onClick(android.content.DialogInterface dialog, int which) {
                             if (finishActivity) {
-                                finish(); // Close the processing screen
+                                finish();
                             }
                         }
                     })
