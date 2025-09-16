@@ -6,6 +6,7 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import androidx.annotation.NonNull;
 
+// FIX: Added all necessary import statements for ML Kit and Tasks API.
 import com.google.android.gms.tasks.OnFailureListener;
 import com.google.android.gms.tasks.OnSuccessListener;
 import com.google.android.gms.tasks.Task;
