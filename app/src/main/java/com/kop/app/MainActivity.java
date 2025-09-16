@@ -2,22 +2,22 @@ package com.kop.app;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.app.AlertDialog;
+import androidx.exifinterface.media.ExifInterface;
+
 import android.Manifest;
 import android.app.ProgressDialog;
 import android.content.Context;
-import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.pm.PackageManager;
-import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Matrix;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
-import android.provider.MediaStore;
 import android.util.Log;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebSettings;
@@ -25,25 +25,17 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Toast;
 
-import com.google.android.gms.tasks.Task;
-import com.google.android.gms.tasks.Tasks;
-import com.google.mlkit.vision.common.InputImage;
-import com.google.mlkit.vision.segmentation.Segmentation;
-import com.google.mlkit.vision.segmentation.SegmentationMask;
-import com.google.mlkit.vision.segmentation.Segmenter;
-import com.google.mlkit.vision.segmentation.selfie.SelfieSegmenterOptions;
-
 import org.opencv.android.OpenCVLoader;
 
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
-import java.util.concurrent.ExecutionException;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -55,8 +47,6 @@ public class MainActivity extends AppCompatActivity {
     private WebView webView;
     private ProgressDialog progressDialog;
 
-    private Segmenter segmenter;
-
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -67,8 +57,7 @@ public class MainActivity extends AppCompatActivity {
 
         webView = findViewById(R.id.webview);
         setupWebView();
-        initializeSegmenter();
-
+        
         webView.loadUrl("file:///android_asset/index.html");
     }
 
@@ -82,16 +71,6 @@ public class MainActivity extends AppCompatActivity {
 
         webView.setWebViewClient(new WebViewClient());
         webView.addJavascriptInterface(new WebAppInterface(this), "Android");
-    }
-
-    private void initializeSegmenter() {
-        SelfieSegmenterOptions options =
-			new SelfieSegmenterOptions.Builder()
-			.setDetectorMode(SelfieSegmenterOptions.SINGLE_IMAGE_MODE)
-			.enableRawSizeMask()
-			.build();
-
-        segmenter = Segmentation.getClient(options);
     }
 
     public class WebAppInterface {
@@ -223,10 +202,8 @@ public class MainActivity extends AppCompatActivity {
 						if (fileExtension.matches(".(mp4|mov|3gp|mkv|webm)$")) {
 							updateProgress("Extracting frames...", 0, 1);
 							FrameExtractor.extractFrames(inputFilePath, rawFramesDir, FPS);
-						} else if (fileExtension.matches(".(jpg|jpeg|png|webp)$")) {
-							updateProgress("Preparing image...", 0, 1);
-							copyFile(new File(inputFilePath), new File(rawFramesDir, "frame_00000.jpg"));
 						} else {
+							updateProgress("Preparing image...", 0, 1);
 							copyFile(new File(inputFilePath), new File(rawFramesDir, "frame_00000.jpg"));
 						}
 
@@ -243,22 +220,16 @@ public class MainActivity extends AppCompatActivity {
 							updateProgress("Processing frame " + frameNum + " of " + totalFrames, frameNum, totalFrames);
 
 							File frameFile = rawFrames[i];
-							Bitmap originalBitmap = BitmapFactory.decodeFile(frameFile.getAbsolutePath());
-							if (originalBitmap == null) continue;
+							
+							Bitmap orientedBitmap = decodeAndRotateBitmap(frameFile.getAbsolutePath());
+							if (orientedBitmap == null) continue;
 
-                            // FIX #3: Convert every frame to a standard ARGB_8888 format.
-                            // This ensures stability for both image and video frames.
-                            Bitmap mutableBitmap = originalBitmap.copy(Bitmap.Config.ARGB_8888, true);
-
-							InputImage image = InputImage.fromBitmap(mutableBitmap, 0);
-							SegmentationMask mask = Tasks.await(segmenter.process(image));
-							Bitmap processedBitmap = ImageProcessor.extractOutlineFromMask(mutableBitmap, mask);
+							Bitmap processedBitmap = ImageProcessor.extractOutline(orientedBitmap);
 
 							String outPath = new File(processedFramesDir, String.format("processed_%05d.png", i)).getAbsolutePath();
 							ImageProcessor.saveBitmap(processedBitmap, outPath);
 
-							originalBitmap.recycle();
-                            mutableBitmap.recycle(); // Also recycle the mutable copy
+							orientedBitmap.recycle();
 							if (processedBitmap != null) {
 								processedBitmap.recycle();
 							}
@@ -276,61 +247,88 @@ public class MainActivity extends AppCompatActivity {
 				}
 			}).start();
     }
+    
+    private Bitmap decodeAndRotateBitmap(String filePath) throws IOException {
+        Bitmap bitmap = BitmapFactory.decodeFile(filePath);
+        if (bitmap == null) return null;
+
+        ExifInterface exif = new ExifInterface(filePath);
+        int orientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_UNDEFINED);
+
+        Matrix matrix = new Matrix();
+        switch (orientation) {
+            case ExifInterface.ORIENTATION_ROTATE_90:
+                matrix.postRotate(90);
+                break;
+            case ExifInterface.ORIENTATION_ROTATE_180:
+                matrix.postRotate(180);
+                break;
+            case ExifInterface.ORIENTATION_ROTATE_270:
+                matrix.postRotate(270);
+                break;
+            default:
+                return bitmap;
+        }
+
+        Bitmap rotatedBitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, true);
+        bitmap.recycle();
+        return rotatedBitmap;
+    }
 
     private void updateProgress(final String message, final int progress, final int max) {
         runOnUiThread(new Runnable() {
-				@Override
-				public void run() {
-					if (progressDialog != null && progressDialog.isShowing()) {
-						progressDialog.setMessage(message);
-						if (progressDialog.isIndeterminate() == false) {
-							progressDialog.setMax(max);
-							progressDialog.setProgress(progress);
-						}
-					}
-				}
-			});
+            @Override
+            public void run() {
+                if (progressDialog != null && progressDialog.isShowing()) {
+                    progressDialog.setMessage(message);
+                    if (!progressDialog.isIndeterminate()) {
+                        progressDialog.setMax(max);
+                        progressDialog.setProgress(progress);
+                    }
+                }
+            }
+        });
     }
 
     private void dismissProgress() {
         runOnUiThread(new Runnable() {
-				@Override
-				public void run() {
-					if (progressDialog != null && progressDialog.isShowing()) {
-						progressDialog.dismiss();
-					}
-				}
-			});
+            @Override
+            public void run() {
+                if (progressDialog != null && progressDialog.isShowing()) {
+                    progressDialog.dismiss();
+                }
+            }
+        });
     }
 
     private void showSuccessDialog(final String title, final String message) {
         runOnUiThread(new Runnable() {
-				@Override
-				public void run() {
-					new AlertDialog.Builder(MainActivity.this)
-						.setTitle(title)
-						.setMessage(message)
-						.setPositiveButton("OK", null)
-						.setIcon(android.R.drawable.ic_dialog_info)
-						.show();
-				}
-			});
+            @Override
+            public void run() {
+                new AlertDialog.Builder(MainActivity.this)
+                    .setTitle(title)
+                    .setMessage(message)
+                    .setPositiveButton("OK", null)
+                    .setIcon(android.R.drawable.ic_dialog_info)
+                    .show();
+            }
+        });
     }
 
     private void showErrorDialog(final String title, final String message) {
         runOnUiThread(new Runnable() {
-				@Override
-				public void run() {
-					new AlertDialog.Builder(MainActivity.this)
-						.setTitle(title)
-						.setMessage(message)
-						.setPositiveButton("OK", null)
-						.setIcon(android.R.drawable.ic_dialog_alert)
-						.show();
-				}
-			});
+            @Override
+            public void run() {
+                new AlertDialog.Builder(MainActivity.this)
+                    .setTitle(title)
+                    .setMessage(message)
+                    .setPositiveButton("OK", null)
+                    .setIcon(android.R.drawable.ic_dialog_alert)
+                    .show();
+            }
+        });
     }
-
+    
     private void copyFile(File source, File dest) throws Exception {
         InputStream in = null;
         OutputStream out = null;
@@ -364,5 +362,4 @@ public class MainActivity extends AppCompatActivity {
         inputStream.close();
         return tempFile;
     }
-
 }
