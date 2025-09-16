@@ -1,101 +1,66 @@
 package com.kop.app;
 
 import android.graphics.Bitmap;
-import android.graphics.Color;
-
-import com.google.mlkit.vision.segmentation.SegmentationMask;
-
 import org.opencv.android.Utils;
 import org.opencv.core.Mat;
 import org.opencv.core.Scalar;
 import org.opencv.core.Size;
 import org.opencv.imgproc.Imgproc;
-
 import java.io.FileOutputStream;
-import java.nio.ByteBuffer;
 
 public class ImageProcessor {
 
-    public static Bitmap extractOutlineFromMask(Bitmap originalBitmap, SegmentationMask mask) {
-        if (mask == null || originalBitmap == null) {
+    /**
+     * FINAL VERSION: Processes the ENTIRE bitmap to extract a detailed line drawing.
+     * This version no longer uses ML Kit segmentation.
+     * 1. Converts the bitmap to grayscale.
+     * 2. Uses OpenCV Canny Edge Detector to find all lines in the entire image.
+     * 3. Returns a new bitmap containing black lines on a solid white background.
+     */
+    public static Bitmap extractOutline(Bitmap originalBitmap) {
+        if (originalBitmap == null) {
             return null;
         }
 
-        Bitmap personBitmap = createPersonOnlyBitmap(originalBitmap, mask);
-        if (personBitmap == null) {
-            return null;
-        }
-
+        // --- Step 1: Convert the correctly-rotated bitmap to an OpenCV Mat data structure ---
         Mat originalMat = new Mat();
-        Utils.bitmapToMat(personBitmap, originalMat);
+        Utils.bitmapToMat(originalBitmap, originalMat);
 
+        // --- Step 2: Convert the image to grayscale, which is required for edge detection ---
         Mat grayMat = new Mat();
         Imgproc.cvtColor(originalMat, grayMat, Imgproc.COLOR_RGBA2GRAY);
 
+        // --- Step 3: Apply a blur to reduce noise and improve the quality of edge detection ---
         Mat blurredMat = new Mat();
         Imgproc.GaussianBlur(grayMat, blurredMat, new Size(5, 5), 0);
 
+        // --- Step 4: Use the powerful Canny Edge Detector to find all the detailed outlines ---
         Mat cannyEdges = new Mat();
-        // FIX #2: Lowered the thresholds to make the edge detection more sensitive.
-        // This will create stronger, more connected lines instead of faint dots.
-        double threshold1 = 30;
-        double threshold2 = 100;
+        // These thresholds are tuned for better detail.
+        double threshold1 = 50;
+        double threshold2 = 150;
         Imgproc.Canny(blurredMat, cannyEdges, threshold1, threshold2);
 
-        // FIX #1: Create the final output image with a solid WHITE background.
-        Mat finalMat = new Mat(cannyEdges.size(), originalMat.type(), new Scalar(255, 255, 255, 255)); // White background
+        // --- Step 5: Create the final output image with a solid WHITE background for visibility ---
+        Mat finalMat = new Mat(cannyEdges.size(), originalMat.type(), new Scalar(255, 255, 255, 255));
         
         // Define the color black for the lines.
         Scalar blackColor = new Scalar(0, 0, 0, 255);
         
-        // Use the outlines from the Canny detector as a stencil to draw black lines onto our white image.
+        // Use the outlines from the Canny detector as a "stencil" to draw black lines onto our white image.
         finalMat.setTo(blackColor, cannyEdges);
 
+        // --- Step 6: Convert the final OpenCV Mat back to an Android Bitmap ---
         Bitmap resultBitmap = Bitmap.createBitmap(originalBitmap.getWidth(), originalBitmap.getHeight(), Bitmap.Config.ARGB_8888);
         Utils.matToBitmap(finalMat, resultBitmap);
 
+        // --- Step 7: Clean up memory by releasing all the intermediate image objects ---
         originalMat.release();
         grayMat.release();
         blurredMat.release();
         cannyEdges.release();
         finalMat.release();
-        personBitmap.recycle();
 
-        return resultBitmap;
-    }
-
-    private static Bitmap createPersonOnlyBitmap(Bitmap originalBitmap, SegmentationMask mask) {
-        int width = originalBitmap.getWidth();
-        int height = originalBitmap.getHeight();
-        Bitmap resultBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
-
-        ByteBuffer maskBuffer = mask.getBuffer();
-        int maskWidth = mask.getWidth();
-        int maskHeight = mask.getHeight();
-        float confidenceThreshold = 0.8f;
-
-        for (int y = 0; y < height; y++) {
-            for (int x = 0; x < width; x++) {
-                float scaleX = (float) x / width;
-                float scaleY = (float) y / height;
-                int maskX = (int) (scaleX * maskWidth);
-                int maskY = (int) (scaleY * maskHeight);
-
-                int position = (maskY * maskWidth + maskX) * 4;
-                maskBuffer.rewind();
-
-                if (position < maskBuffer.limit()) {
-                    float confidence = maskBuffer.getFloat(position);
-                    if (confidence >= confidenceThreshold) {
-                        resultBitmap.setPixel(x, y, originalBitmap.getPixel(x, y));
-                    } else {
-                        resultBitmap.setPixel(x, y, Color.TRANSPARENT);
-                    }
-                } else {
-                     resultBitmap.setPixel(x, y, Color.TRANSPARENT);
-                }
-            }
-        }
         return resultBitmap;
     }
 
