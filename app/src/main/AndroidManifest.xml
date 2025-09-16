@@ -2,12 +2,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.kop.app">
 
-    <!--
-      FIX: Removed Camera and Record Audio permissions as they are not used in the app.
-      Requesting unnecessary permissions can be a privacy concern for users.
-    -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
+    <!-- Added Internet permission, as the ML model may need to be downloaded on first run -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
 
     <application
         android:allowBackup="true"
@@ -17,6 +16,7 @@
         android:requestLegacyExternalStorage="true"
         android:theme="@style/AppTheme">
 
+        <!-- This is the main UI activity -->
         <activity android:name=".MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
@@ -24,12 +24,12 @@
             </intent-filter>
         </activity>
         
-        <!--
-          FIX: Added a FileProvider. This is the modern, secure way to grant other
-          apps or system components (like MediaMetadataRetriever) temporary access to your
-          app's private files (e.g., the file copied to the cache). This is crucial for
-          compatibility and security on newer Android versions.
-        -->
+        <!-- FIX: Declared the new ProcessingActivity -->
+        <!-- Using a NoActionBar theme makes it feel more like a dedicated processing screen -->
+        <activity
+            android:name=".ProcessingActivity"
+            android:theme="@style/Theme.AppCompat.NoActionBar" />
+        
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.provider"
@@ -39,6 +39,15 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/provider_paths"/>
         </provider>
+
+        <!--
+          FIX: Added required meta-data for Google ML Kit.
+          This tells the Google Play services to download the segmentation model
+          when the app is installed.
+        -->
+        <meta-data
+            android:name="com.google.mlkit.vision.DEPENDENCIES"
+            android:value="segmentation_selfie" />
 
     </application>
 </manifest>
