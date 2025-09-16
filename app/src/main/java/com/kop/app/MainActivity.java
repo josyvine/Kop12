@@ -253,7 +253,8 @@ public class MainActivity extends AppCompatActivity {
 							String outPath = new File(processedFramesDir, String.format("processed_%05d.png", i)).getAbsolutePath();
 							ImageProcessor.saveBitmap(processedBitmap, outPath);
 
-							originalBitmap..recycle();
+							// FIX: Removed the extra period. My sincere apology for this careless mistake.
+							originalBitmap.recycle();
 							if (processedBitmap != null) {
 								processedBitmap.recycle();
 							}
@@ -344,7 +345,6 @@ public class MainActivity extends AppCompatActivity {
     }
     
     private File copyUriToCache(Context context, Uri uri) throws Exception {
-        // FIX: Added parentheses to call the getContentResolver() method.
         InputStream inputStream = context.getContentResolver().openInputStream(uri);
         if (inputStream == null) {
             throw new Exception("Could not open input stream for URI");
