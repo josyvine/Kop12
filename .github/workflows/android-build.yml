@@ -18,16 +18,19 @@ jobs:
           java-version: '11'
           distribution: 'temurin'
 
-      # FIX: Reverting to a single, more robust Gradle action.
-      # This action handles the setup and build process internally, which avoids
-      # the 'gradlew: No such file or directory' error.
-
       - name: Build with Gradle
         uses: gradle/gradle-build-action@v2
         with:
-          # This argument disables the cache, which was the original problem.
-          cache-disabled: true 
-          # This argument tells the action what to build.
+          # FIX 1: This is the critical line that the new error message told us to add.
+          # It tells the builder to use a specific version of Gradle instead of
+          # looking for the missing 'gradlew' file in your project.
+          gradle-version: 7.3.3
+
+          # FIX 2: This is to prevent the very first "Cache service unavailable" error.
+          # We need to keep this to be safe.
+          cache-disabled: true
+
+          # This is the command to build your app.
           arguments: app:assembleDebug
 
       - name: Upload APK
