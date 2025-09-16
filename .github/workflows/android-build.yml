@@ -18,21 +18,17 @@ jobs:
           java-version: '11'
           distribution: 'temurin'
 
-      # FIX: The original 'Build with Gradle' step has been replaced by two new steps
-      # to give us direct control over the caching feature that is causing the build to fail.
-
-      - name: Set up Gradle and Disable Cache
-        uses: gradle/actions/setup-gradle@v3
-        with:
-          # This is the most important line. It tells the workflow to skip trying
-          # to connect to the broken cache service, which will fix your error.
-          cache-disabled: true
-
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
+      # FIX: Reverting to a single, more robust Gradle action.
+      # This action handles the setup and build process internally, which avoids
+      # the 'gradlew: No such file or directory' error.
 
       - name: Build with Gradle
-        run: ./gradlew app:assembleDebug
+        uses: gradle/gradle-build-action@v2
+        with:
+          # This argument disables the cache, which was the original problem.
+          cache-disabled: true 
+          # This argument tells the action what to build.
+          arguments: app:assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
