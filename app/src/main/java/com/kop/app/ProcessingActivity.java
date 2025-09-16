@@ -8,7 +8,6 @@ import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
-import android.view.View;
 import android.widget.ImageView;
 import android.widget.ProgressBar;
 import android.widget.TextView;
@@ -25,6 +24,8 @@ import java.io.OutputStream;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
+import java.util.Arrays;
+import java.util.Comparator;
 
 public class ProcessingActivity extends AppCompatActivity {
 
@@ -36,6 +37,10 @@ public class ProcessingActivity extends AppCompatActivity {
     private TextView statusTextView;
     private ProgressBar progressBar;
     private Handler uiHandler;
+
+    private File[] rawFrames;
+    private int currentFrameIndex = 0;
+    private String processedFramesDir;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -50,14 +55,13 @@ public class ProcessingActivity extends AppCompatActivity {
         Intent intent = getIntent();
         if (intent != null && intent.hasExtra(EXTRA_FILE_PATH)) {
             String inputFilePath = intent.getStringExtra(EXTRA_FILE_PATH);
-            startProcessing(inputFilePath);
+            prepareAndStartProcessing(inputFilePath);
         } else {
             showErrorDialog("Error", "No input file path provided.", true);
         }
     }
 
-    private void startProcessing(final String inputFilePath) {
-        // Start a new background thread for the heavy processing
+    private void prepareAndStartProcessing(final String inputFilePath) {
         new Thread(new Runnable() {
             @Override
             public void run() {
@@ -68,7 +72,7 @@ public class ProcessingActivity extends AppCompatActivity {
                     if (!projectDir.exists()) projectDir.mkdirs();
 
                     String rawFramesDir = new File(projectDir, "raw_frames").getAbsolutePath();
-                    String processedFramesDir = new File(projectDir, "processed_frames").getAbsolutePath();
+                    processedFramesDir = new File(projectDir, "processed_frames").getAbsolutePath();
                     new File(rawFramesDir).mkdirs();
                     new File(processedFramesDir).mkdirs();
 
@@ -83,53 +87,94 @@ public class ProcessingActivity extends AppCompatActivity {
                         copyFile(new File(inputFilePath), new File(rawFramesDir, "frame_00000.png"));
                     }
 
-                    File[] rawFrames = new File(rawFramesDir).listFiles();
+                    rawFrames = new File(rawFramesDir).listFiles();
                     if (rawFrames == null || rawFrames.length == 0) {
                         throw new Exception("No frames were extracted or found.");
                     }
-
-                    final int totalFrames = rawFrames.length;
-
-                    // STEP 3: Loop through each frame, process it, and update UI
-                    for (int i = 0; i < rawFrames.length; i++) {
-                        final int frameNum = i + 1;
-                        updateStatus("Processing frame " + frameNum + " of " + totalFrames, false);
-                        updateProgress(frameNum, totalFrames);
-
-                        File frameFile = rawFrames[i];
-                        Bitmap orientedBitmap = decodeAndRotateBitmap(frameFile.getAbsolutePath());
-                        if (orientedBitmap == null) continue;
-
-                        // **THE CORE LOGIC**
-                        // This will be replaced with the advanced ML-based processor
-                        Bitmap processedBitmap = ImageProcessor.extractOutline(orientedBitmap);
-
-                        // Visually show the processed frame on the screen
-                        updateMainDisplay(processedBitmap);
-
-                        // Save the result
-                        String outPath = new File(processedFramesDir, String.format("processed_%05d.png", i)).getAbsolutePath();
-                        ImageProcessor.saveBitmap(processedBitmap, outPath);
-
-                        // Clean up memory
-                        orientedBitmap.recycle();
-                        if (processedBitmap != null) {
-                           // processedBitmap is displayed, so we don't recycle it here.
-                           // The ImageView will manage its lifecycle.
+                    
+                    // IMPORTANT: Sort the frames by name to ensure they are processed in order.
+                    Arrays.sort(rawFrames, new Comparator<File>() {
+                        @Override
+                        public int compare(File f1, File f2) {
+                            return f1.getName().compareTo(f2.getName());
                         }
-                    }
+                    });
 
-                    // STEP 4: Notify user of success
-                    showSuccessDialog("Processing Complete", "Your rotoscoped frames have been saved to:\n\n" + processedFramesDir);
+                    // STEP 3: Start the sequential, asynchronous processing chain.
+                    currentFrameIndex = 0;
+                    processNextFrame();
 
                 } catch (final Exception e) {
-                    Log.e(TAG, "Processing failed", e);
-                    String message = (e.getMessage() != null) ? e.getMessage() : "An unknown error occurred.";
-                    showErrorDialog("Processing Error", message, true);
+                    Log.e(TAG, "Preparation failed", e);
+                    String message = (e.getMessage() != null) ? e.getMessage() : "An unknown error occurred during preparation.";
+                    showErrorDialog("Preparation Error", message, true);
                 }
             }
         }).start();
     }
+    
+    private void processNextFrame() {
+        if (currentFrameIndex >= rawFrames.length) {
+            // All frames have been processed.
+            showSuccessDialog("Processing Complete", "Your rotoscoped frames have been saved to:\n\n" + processedFramesDir);
+            return;
+        }
+
+        File frameFile = rawFrames[currentFrameIndex];
+        final int frameNum = currentFrameIndex + 1;
+        updateStatus("Processing frame " + frameNum + " of " + rawFrames.length, false);
+        updateProgress(frameNum, rawFrames.length);
+
+        try {
+            Bitmap orientedBitmap = decodeAndRotateBitmap(frameFile.getAbsolutePath());
+            if (orientedBitmap == null) {
+                // Skip this frame and move to the next one
+                currentFrameIndex++;
+                processNextFrame();
+                return;
+            }
+
+            // Call the new asynchronous ImageProcessor
+            ImageProcessor.extractOutline(orientedBitmap, new ImageProcessor.OutlineExtractionListener() {
+                @Override
+                public void onOutlineExtracted(Bitmap resultBitmap) {
+                    updateMainDisplay(resultBitmap);
+
+                    // Save the result in a background thread to avoid blocking.
+                    final String outPath = new File(processedFramesDir, String.format("processed_%05d.png", currentFrameIndex)).getAbsolutePath();
+                    try {
+                        ImageProcessor.saveBitmap(resultBitmap, outPath);
+                    } catch (Exception e) {
+                        Log.e(TAG, "Failed to save frame: " + outPath, e);
+                    }
+
+                    // Clean up memory
+                    orientedBitmap.recycle();
+                    
+                    // Move to the next frame
+                    currentFrameIndex++;
+                    processNextFrame();
+                }
+
+                @Override
+                public void onExtractionFailed(Exception e) {
+                    Log.e(TAG, "Failed to process frame " + currentFrameIndex, e);
+                    // For simplicity, we'll skip the failed frame and continue.
+                    // A more robust implementation could offer to retry.
+                    orientedBitmap.recycle();
+                    currentFrameIndex++;
+                    processNextFrame();
+                }
+            });
+
+        } catch (IOException e) {
+            Log.e(TAG, "Failed to read frame file", e);
+            // Skip this frame and move to the next one
+            currentFrameIndex++;
+            processNextFrame();
+        }
+    }
+
 
     private void updateStatus(final String text, final boolean isIndeterminate) {
         uiHandler.post(new Runnable() {
