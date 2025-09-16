@@ -5,6 +5,7 @@ import android.graphics.Bitmap;
 import android.graphics.Color;
 import com.google.mlkit.vision.segmentation.SegmentationMask;
 import java.nio.ByteBuffer;
+import android.graphics.Canvas; // Import the Canvas class
 
 public class ImageProcessor {
 
@@ -23,6 +24,7 @@ public class ImageProcessor {
 
         ByteBuffer maskBuffer = mask.getBuffer();
 
+        // This is your original, correct code to find the edge pixels.
         for (int y = 0; y < originalHeight; y++) {
             for (int x = 0; x < originalWidth; x++) {
                 float scaleX = (float) x / originalWidth;
@@ -30,28 +32,31 @@ public class ImageProcessor {
                 int maskX = (int) (scaleX * maskWidth);
                 int maskY = (int) (scaleY * maskHeight);
 
-                // FIX: Pass the maskHeight to the checking function
                 if (isEdgePixel(maskBuffer, maskWidth, maskHeight, maskX, maskY)) {
                     outlineBitmap.setPixel(x, y, Color.BLACK);
                 }
             }
         }
 
-        return outlineBitmap;
+        // --- THIS IS THE ONLY FIX ADDED ---
+        // Create a final bitmap to combine the original image and the outline
+        Bitmap finalBitmap = originalBitmap.copy(Bitmap.Config.ARGB_8888, true);
+        Canvas canvas = new Canvas(finalBitmap);
+        canvas.drawBitmap(outlineBitmap, 0, 0, null);
+        
+        // Return the final combined image instead of just the outline
+        return finalBitmap;
     }
 
-    // FIX: Add the 'height' parameter to the function signature
     private static boolean isEdgePixel(ByteBuffer maskBuffer, int width, int height, int x, int y) {
         float confidenceThreshold = 0.8f;
 
-        // FIX: Pass the 'height' parameter down to the next function
         float centerConfidence = getConfidence(maskBuffer, width, height, x, y);
 
         if (centerConfidence < confidenceThreshold) {
             return false;
         }
 
-        // FIX: Pass the 'height' parameter down to the next function for all neighbor checks
         float topConfidence = getConfidence(maskBuffer, width, height, x, y - 1);
         float bottomConfidence = getConfidence(maskBuffer, width, height, x, y + 1);
         float leftConfidence = getConfidence(maskBuffer, width, height, x - 1, y);
@@ -67,17 +72,15 @@ public class ImageProcessor {
         return false;
     }
 
-    // FIX: Add the 'height' parameter and implement the correct safety check
     private static float getConfidence(ByteBuffer buffer, int width, int height, int x, int y) {
-        // This is the CRITICAL FIX. This 'if' statement now correctly checks
-        // if the pixel is inside the image before trying to read it.
         if (x < 0 || x >= width || y < 0 || y >= height) {
-            return 0.0f; // Return 0 if the pixel is outside the bounds
+            return 0.0f;
         }
 
         int position = (y * width + x);
-
-        // The 'getFloat' method uses an absolute position, so rewind() is not needed.
+        
+        // Rewind is needed here because each call to getFloat advances the buffer's position
+        buffer.rewind(); 
         return buffer.getFloat(position * 4);
     }
 
