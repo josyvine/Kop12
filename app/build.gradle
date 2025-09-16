@@ -39,10 +39,10 @@ dependencies {
     implementation 'com.google.mlkit:segmentation-selfie:16.0.0-beta1'
     implementation 'com.google.android.gms:play-services-tasks:16.0.1'
 
-    // FIX: Add the new CameraX libraries for live camera processing
-    def camerax_version = "1.0.2" // A stable version compatible with your setup
-    implementation "androidx.camera:camera-core:${camerax_version}"
-    implementation "androidx.camera:camera-camera2:${camerax_version}"
-    implementation "androidx.camera:camera-lifecycle:${camerax_version}"
-    implementation "androidx.camera:camera-view:1.0.0-alpha20"
+    // FIX: Add the OpenCV library for advanced edge detection.
+    // This is the key to getting detailed outlines.
+    implementation 'com.quickbirdstudios:opencv:4.5.1'
+
+    // The CameraX libraries are not needed since you are not using a live camera view.
+    // I have removed them to avoid confusion.
 }
