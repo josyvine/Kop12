@@ -34,12 +34,13 @@ dependencies {
     implementation fileTree(dir: 'libs', include: ['*.jar'])
 
     implementation 'androidx.appcompat:appcompat:1.0.2'
-    implementation 'androidx.multides:multidex:2.0.0'
+    
+    // FIX: Corrected the typo from 'multides' to 'multidex'. My sincere apologies.
+    implementation 'androidx.multidex:multidex:2.0.0'
 
     implementation 'com.google.mlkit:segmentation-selfie:16.0.0-beta1'
     implementation 'com.google.android.gms:play-services-tasks:16.0.1'
 
-    // FIX: Add the OpenCV library for advanced edge detection.
-    // This is the key to getting detailed outlines on the face and clothes.
+    // Add the OpenCV library for advanced edge detection.
     implementation 'com.quickbirdstudios:opencv:4.5.1'
 }
