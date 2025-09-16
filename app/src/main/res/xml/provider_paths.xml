@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  This file defines the shareable paths for the FileProvider.
+  It's a security measure to ensure that only specific directories within
+  the app's private storage can be accessed externally.
+-->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <!--
+      This entry specifies that we allow the FileProvider to share files
+      located in our app's dedicated cache directory. This is where we
+      copy the user's selected video or image before processing it.
+      The name "cache" is just a label and can be anything.
+    -->
+    <cache-path name="cache" path="." />
+</paths>
