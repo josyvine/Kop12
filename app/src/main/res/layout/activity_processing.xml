@@ -28,17 +28,38 @@
         android:layout_marginTop="8dp"
         android:indeterminate="true" />
 
-    <ImageView
-        android:id="@+id/iv_main_display"
+    <FrameLayout
+        android:id="@+id/display_container"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:layout_below="@id/progress_bar"
         android:layout_above="@+id/rv_film_strip"
-        android:layout_marginTop="16dp"
-        android:contentDescription="Main processing display"
-        android:scaleType="fitCenter" />
+        android:layout_marginTop="16dp">
 
-    <!-- This RecyclerView will act as the film strip for videos -->
+        <ImageView
+            android:id="@+id/iv_main_display"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:contentDescription="Main processing display"
+            android:scaleType="fitCenter" />
+
+        <!-- FIX: This new TextView will show the detailed "scanning" messages. -->
+        <TextView
+            android:id="@+id/tv_scan_status"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:background="#80000000"
+            android:padding="12dp"
+            android:textColor="#FFFFFF"
+            android:textSize="16sp"
+            android:textStyle="italic"
+            android:visibility="gone"
+            tools:text="Analyzing Contours..."
+            tools:visibility="visible"/>
+
+    </FrameLayout>
+
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/rv_film_strip"
         android:layout_width="match_parent"
@@ -46,6 +67,7 @@
         android:layout_alignParentBottom="true"
         android:layout_marginTop="16dp"
         android:visibility="gone"
-        android:orientation="horizontal" />
+        android:orientation="horizontal"
+        tools:visibility="visible"/>
 
 </RelativeLayout>
