@@ -6,7 +6,7 @@
         <item>8 FPS</item>
         <item>12 FPS</item>
         <item>24 FPS</item>
-    </string-array>
+    </string-array> 
 
     <!-- UPDATED: This array now contains all 11 method choices, with Method 0 at the top. -->
     <string-array name="method_options">
