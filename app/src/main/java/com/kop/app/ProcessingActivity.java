@@ -5,7 +5,7 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.os.Bundle;
 import android.os.Environment;
-import android.os.Handler; 
+import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 import android.view.View;
@@ -93,46 +93,43 @@ public class ProcessingActivity extends AppCompatActivity {
                     final int totalFrames = rawFrames.length;
                     for (int i = 0; i < totalFrames; i++) {
                         final int frameNum = i + 1;
+                        // FIX: Create a final copy of the loop variable 'i' to use inside the inner class.
+                        final int frameIndex = i;
+
                         updateStatus("Processing frame " + frameNum + " of " + totalFrames, false);
                         updateProgress(frameNum, totalFrames);
-                        updateCurrentFrameHighlight(i);
+                        updateCurrentFrameHighlight(frameIndex);
 
-                        File frameFile = rawFrames[i];
+                        File frameFile = rawFrames[frameIndex];
                         Bitmap orientedBitmap = decodeAndRotateBitmap(frameFile.getAbsolutePath());
                         if (orientedBitmap == null) continue;
 
-                        // This latch is used to make the background thread wait for the 10-second scan to finish.
                         final CountDownLatch latch = new CountDownLatch(1);
 
                         DeepScanProcessor.performDeepScan(orientedBitmap, new DeepScanProcessor.ScanListener() {
                             @Override
                             public void onScanProgress(final int pass, final int totalPasses, final String status, final Bitmap intermediateResult) {
-                                // Update the UI on the main thread to show real-time scan progress.
                                 updateScanStatus(status, pass, totalPasses);
                                 updateMainDisplay(intermediateResult);
                             }
 
                             @Override
                             public void onScanComplete(final DeepScanProcessor.ProcessingResult finalResult) {
-                                // The scan is finished. Save the final image and update the UI.
                                 updateMainDisplay(finalResult.resultBitmap);
-                                String outPath = new File(processedFramesDir, String.format("processed_%05d.png", i)).getAbsolutePath();
+                                // FIX: Use the 'frameIndex' final variable here instead of 'i'.
+                                String outPath = new File(processedFramesDir, String.format("processed_%05d.png", frameIndex)).getAbsolutePath();
                                 try {
                                     ImageProcessor.saveBitmap(finalResult.resultBitmap, outPath);
                                 } catch (Exception e) {
                                     Log.e(TAG, "Failed to save processed frame.", e);
                                 }
                                 updateScanStatus("Scan Complete. Found " + finalResult.objectsFound + " objects.", -1, -1);
-                                
-                                // Release the latch to allow the main loop to proceed to the next frame.
                                 latch.countDown();
                             }
                         });
 
-                        // Wait here until the onScanComplete method calls latch.countDown().
                         latch.await();
 
-                        // Add a final small delay so the user can read the "Scan Complete" message.
                         try {
                             Thread.sleep(2000);
                         } catch (InterruptedException e) { /* continue */ }
@@ -156,7 +153,7 @@ public class ProcessingActivity extends AppCompatActivity {
 
     private String prepareDirectories() {
         String timestamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date());
-        File projectDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "kop/Project_" + timestamp);
+        File projectDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PIPICTURES), "kop/Project_" + timestamp);
         if (!projectDir.exists()) projectDir.mkdirs();
         String rawFramesDir = new File(projectDir, "raw_frames").getAbsolutePath();
         String processedFramesDir = new File(projectDir, "processed_frames").getAbsolutePath();
