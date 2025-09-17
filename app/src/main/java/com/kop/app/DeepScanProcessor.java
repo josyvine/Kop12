@@ -3,7 +3,7 @@ package com.kop.app;
 import android.graphics.Bitmap;
 import org.opencv.android.Utils;
 import org.opencv.core.Core;
-import org.opencv.core.CvType;
+import org.opencv.core.CvType; 
 import org.opencv.core.Mat;
 import org.opencv.core.MatOfPoint;
 import org.opencv.core.Point;
