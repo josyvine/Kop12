@@ -6,6 +6,7 @@ import android.util.Log;
 
 import com.google.mediapipe.framework.image.BitmapImageBuilder;
 import com.google.mediapipe.framework.image.MPImage;
+import com.google.mediapipe.framework.image.internal.ImageContainer.CloseableBuffer;
 import com.google.mediapipe.tasks.core.BaseOptions;
 import com.google.mediapipe.tasks.vision.core.RunningMode;
 import com.google.mediapipe.tasks.vision.imagesegmenter.ImageSegmenter;
@@ -62,6 +63,7 @@ public class DeepScanProcessor {
 
     // --- NEW METHOD 0: AI Smart Outline (MediaPipe + OpenCV) ---
     public static void processMethod0(Context context, Bitmap originalBitmap, AiScanListener listener) {
+        ImageSegmenter imageSegmenter = null;
         try {
             // --- Part 1: MediaPipe's Job - Create the Perfect Stencil ---
 
@@ -70,72 +72,85 @@ public class DeepScanProcessor {
                 .setRunningMode(RunningMode.IMAGE)
                 .setOutputConfidenceMasks(true);
             ImageSegmenterOptions options = optionsBuilder.build();
-            ImageSegmenter imageSegmenter = ImageSegmenter.createFromOptions(context, options);
+            imageSegmenter = ImageSegmenter.createFromOptions(context, options);
 
             MPImage mpImage = new BitmapImageBuilder(originalBitmap).build();
             ImageSegmenterResult segmenterResult = imageSegmenter.segment(mpImage);
 
             if (segmenterResult != null && segmenterResult.confidenceMasks().isPresent()) {
-                // --- THIS IS THE DEFINITIVE FIX ---
-                // Step A: Get the raw data as a ByteBuffer.
-                ByteBuffer byteBuffer = segmenterResult.confidenceMasks().get().get(0).getByteBuffer();
-                // Step B: Interpret that raw data correctly as a FloatBuffer.
-                FloatBuffer confidenceMaskBuffer = byteBuffer.asFloatBuffer();
-                confidenceMaskBuffer.rewind();
-                // --- END OF FIX ---
+                MPImage mask = null;
+                CloseableBuffer buffer = null;
+                try {
+                    // --- THIS IS THE DEFINITIVE FIX ---
+                    // Get the mask object from the results.
+                    mask = segmenterResult.confidenceMasks().get().get(0);
+                    // Acquire a CloseableBuffer from the mask. This is the correct method.
+                    buffer = mask.acquireBuffer();
+                    ByteBuffer byteBuffer = buffer.getByteBuffer();
+                    FloatBuffer confidenceMaskBuffer = byteBuffer.asFloatBuffer();
+                    confidenceMaskBuffer.rewind();
+                    // --- END OF FIX ---
 
-                int maskWidth = segmenterResult.confidenceMasks().get().get(0).getWidth();
-                int maskHeight = segmenterResult.confidenceMasks().get().get(0).getHeight();
+                    int maskWidth = mask.getWidth();
+                    int maskHeight = mask.getHeight();
 
-                // --- Part 2: OpenCV's Job - Trace the Stencil and Draw the Line ---
+                    // --- Part 2: OpenCV's Job - Trace the Stencil and Draw the Line ---
+                    Mat maskMat = new Mat(maskHeight, maskWidth, CvType.CV_32F);
+                    
+                    float[] floatArray = new float[confidenceMaskBuffer.remaining()];
+                    confidenceMaskBuffer.get(floatArray);
+                    
+                    maskMat.put(0, 0, floatArray);
 
-                Mat maskMat = new Mat(maskHeight, maskWidth, CvType.CV_32F);
-                
-                float[] floatArray = new float[confidenceMaskBuffer.remaining()];
-                confidenceMaskBuffer.get(floatArray);
-                
-                maskMat.put(0, 0, floatArray);
+                    Mat mask8u = new Mat();
+                    maskMat.convertTo(mask8u, CvType.CV_8U, 255.0);
+                    
+                    Mat thresholdMat = new Mat();
+                    Imgproc.threshold(mask8u, thresholdMat, 128, 255, Imgproc.THRESH_BINARY);
+                    
+                    List<MatOfPoint> contours = new ArrayList<>();
+                    Mat hierarchy = new Mat();
+                    Imgproc.findContours(thresholdMat, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
 
-                Mat mask8u = new Mat();
-                maskMat.convertTo(mask8u, CvType.CV_8U, 255.0);
-                
-                Mat thresholdMat = new Mat();
-                Imgproc.threshold(mask8u, thresholdMat, 128, 255, Imgproc.THRESH_BINARY);
-                
-                List<MatOfPoint> contours = new ArrayList<>();
-                Mat hierarchy = new Mat();
-                Imgproc.findContours(thresholdMat, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
+                    Mat finalDrawing = new Mat(originalBitmap.getHeight(), originalBitmap.getWidth(), CvType.CV_8UC4, new Scalar(255, 255, 255, 255));
+                    Imgproc.drawContours(finalDrawing, contours, -1, new Scalar(0, 0, 0, 255), 2);
 
-                Mat finalDrawing = new Mat(originalBitmap.getHeight(), originalBitmap.getWidth(), CvType.CV_8UC4, new Scalar(255, 255, 255, 255));
-                Imgproc.drawContours(finalDrawing, contours, -1, new Scalar(0, 0, 0, 255), 2);
+                    Bitmap finalBitmap = Bitmap.createBitmap(finalDrawing.cols(), finalDrawing.rows(), Bitmap.Config.ARGB_8888);
+                    Utils.matToBitmap(finalDrawing, finalBitmap);
+                    
+                    ProcessingResult result = new ProcessingResult(finalBitmap, contours.size());
+                    listener.onAiScanComplete(result);
 
-                Bitmap finalBitmap = Bitmap.createBitmap(finalDrawing.cols(), finalDrawing.rows(), Bitmap.Config.ARGB_8888);
-                Utils.matToBitmap(finalDrawing, finalBitmap);
-                
-                ProcessingResult result = new ProcessingResult(finalBitmap, contours.size());
-                listener.onAiScanComplete(result);
-
-                // Clean up OpenCV Mats
-                maskMat.release();
-                mask8u.release();
-                thresholdMat.release();
-                hierarchy.release();
-                finalDrawing.release();
-                for (MatOfPoint contour : contours) {
-                    contour.release();
+                    // Clean up OpenCV Mats
+                    maskMat.release();
+                    mask8u.release();
+                    thresholdMat.release();
+                    hierarchy.release();
+                    finalDrawing.release();
+                    for (MatOfPoint contour : contours) {
+                        contour.release();
+                    }
+                } finally {
+                    // Ensure resources are always released
+                    if (buffer != null) {
+                        buffer.close();
+                    }
+                    if (mask != null) {
+                        mask.close();
+                    }
                 }
-
             } else {
                 throw new Exception("MediaPipe did not return a segmentation mask.");
             }
-            
-            imageSegmenter.close();
-
         } catch (Exception e) {
             Log.e(TAG, "Method 0 AI processing failed.", e);
             Bitmap blankBitmap = Bitmap.createBitmap(originalBitmap.getWidth(), originalBitmap.getHeight(), Bitmap.Config.ARGB_8888);
             ProcessingResult result = new ProcessingResult(blankBitmap, 0);
             listener.onAiScanComplete(result);
+        } finally {
+            if (imageSegmenter != null) {
+                imageSegmenter.close();
+            }
         }
     }
 
