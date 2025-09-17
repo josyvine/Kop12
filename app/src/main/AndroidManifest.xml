@@ -3,7 +3,7 @@
     package="com.kop.app">
 
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/> 
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
 
     <application
         android:allowBackup="true"
@@ -21,6 +21,11 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        
+        <!-- NEW: Declaration for our custom in-app media gallery -->
+        <activity
+            android:name=".MediaPickerActivity"
+            android:theme="@style/Theme.AppCompat.NoActionBar" />
         
         <activity
             android:name=".ProcessingActivity"
