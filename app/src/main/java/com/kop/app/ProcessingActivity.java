@@ -93,7 +93,6 @@ public class ProcessingActivity extends AppCompatActivity {
                     final int totalFrames = rawFrames.length;
                     for (int i = 0; i < totalFrames; i++) {
                         final int frameNum = i + 1;
-                        // FIX: Create a final copy of the loop variable 'i' to use inside the inner class.
                         final int frameIndex = i;
 
                         updateStatus("Processing frame " + frameNum + " of " + totalFrames, false);
@@ -116,7 +115,6 @@ public class ProcessingActivity extends AppCompatActivity {
                             @Override
                             public void onScanComplete(final DeepScanProcessor.ProcessingResult finalResult) {
                                 updateMainDisplay(finalResult.resultBitmap);
-                                // FIX: Use the 'frameIndex' final variable here instead of 'i'.
                                 String outPath = new File(processedFramesDir, String.format("processed_%05d.png", frameIndex)).getAbsolutePath();
                                 try {
                                     ImageProcessor.saveBitmap(finalResult.resultBitmap, outPath);
@@ -153,7 +151,8 @@ public class ProcessingActivity extends AppCompatActivity {
 
     private String prepareDirectories() {
         String timestamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date());
-        File projectDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PIPICTURES), "kop/Project_" + timestamp);
+        // FIX: Corrected a typo from DIRECTORY_PIPICTURES to DIRECTORY_PICTURES
+        File projectDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "kop/Project_" + timestamp);
         if (!projectDir.exists()) projectDir.mkdirs();
         String rawFramesDir = new File(projectDir, "raw_frames").getAbsolutePath();
         String processedFramesDir = new File(projectDir, "processed_frames").getAbsolutePath();
