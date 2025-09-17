@@ -10,6 +10,7 @@ import android.os.Looper;
 import android.util.Log;
 import android.view.View;
 import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 import androidx.appcompat.app.AlertDialog;
@@ -17,8 +18,8 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.exifinterface.media.ExifInterface;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
-
 import android.graphics.Matrix;
+
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -31,6 +32,7 @@ import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.CountDownLatch;
 
 public class ProcessingActivity extends AppCompatActivity {
 
@@ -42,6 +44,8 @@ public class ProcessingActivity extends AppCompatActivity {
     private TextView statusTextView;
     private TextView scanStatusTextView;
     private ProgressBar progressBar;
+    private ProgressBar scanProgressBar;
+    private LinearLayout scanStatusContainer;
     private RecyclerView filmStripRecyclerView;
     private FilmStripAdapter filmStripAdapter;
     private Handler uiHandler;
@@ -55,6 +59,8 @@ public class ProcessingActivity extends AppCompatActivity {
         statusTextView = findViewById(R.id.tv_status);
         scanStatusTextView = findViewById(R.id.tv_scan_status);
         progressBar = findViewById(R.id.progress_bar);
+        scanProgressBar = findViewById(R.id.scan_progress_bar);
+        scanStatusContainer = findViewById(R.id.scan_status_container);
         filmStripRecyclerView = findViewById(R.id.rv_film_strip);
         uiHandler = new Handler(Looper.getMainLooper());
 
@@ -72,43 +78,18 @@ public class ProcessingActivity extends AppCompatActivity {
             @Override
             public void run() {
                 try {
-                    // STEP 1: Create project directories
-                    String timestamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date());
-                    File projectDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "kop/Project_" + timestamp);
-                    if (!projectDir.exists()) projectDir.mkdirs();
-
-                    String rawFramesDir = new File(projectDir, "raw_frames").getAbsolutePath();
-                    final String processedFramesDir = new File(projectDir, "processed_frames").getAbsolutePath();
-                    new File(rawFramesDir).mkdirs();
-                    new File(processedFramesDir).mkdirs();
-
-                    // STEP 2: Extract frames from video or prepare single image
+                    // --- PREPARATION STAGE ---
                     updateStatus("Preparing files...", true);
-                    String fileExtension = inputFilePath.substring(inputFilePath.lastIndexOf(".")).toLowerCase();
-                    if (fileExtension.matches(".(mp4|mov|3gp|mkv|webm)$")) {
-                        updateStatus("Extracting video frames...", true);
-                        FrameExtractor.extractFrames(inputFilePath, rawFramesDir, FPS);
-                    } else {
-                        updateStatus("Preparing image...", true);
-                        copyFile(new File(inputFilePath), new File(rawFramesDir, "frame_00000.png"));
-                    }
+                    String rawFramesDir = prepareDirectories();
+                    final String processedFramesDir = new File(new File(rawFramesDir).getParentFile(), "processed_frames").getAbsolutePath();
 
-                    File[] rawFrames = new File(rawFramesDir).listFiles();
+                    File[] rawFrames = extractOrCopyFrames(inputFilePath, rawFramesDir);
                     if (rawFrames == null || rawFrames.length == 0) {
                         throw new Exception("No frames were extracted or found.");
                     }
-                    
-                    Arrays.sort(rawFrames, new Comparator<File>() {
-                        @Override
-                        public int compare(File f1, File f2) {
-                            return f1.getName().compareTo(f2.getName());
-                        }
-                    });
-
-                    // Setup the film strip UI if it's a video
                     setupFilmStrip(Arrays.asList(rawFrames));
 
-                    // STEP 3: Loop through each frame, process it, and update UI
+                    // --- PROCESSING STAGE ---
                     final int totalFrames = rawFrames.length;
                     for (int i = 0; i < totalFrames; i++) {
                         final int frameNum = i + 1;
@@ -120,31 +101,46 @@ public class ProcessingActivity extends AppCompatActivity {
                         Bitmap orientedBitmap = decodeAndRotateBitmap(frameFile.getAbsolutePath());
                         if (orientedBitmap == null) continue;
 
-                        // **THE NEW CORE LOGIC**
-                        // Create the listener to show the "scanning..." status on the screen
-                        ImageProcessor.StatusListener statusListener = new ImageProcessor.StatusListener() {
+                        // This latch is used to make the background thread wait for the 10-second scan to finish.
+                        final CountDownLatch latch = new CountDownLatch(1);
+
+                        DeepScanProcessor.performDeepScan(orientedBitmap, new DeepScanProcessor.ScanListener() {
                             @Override
-                            public void onStatusUpdate(final String status) {
-                                updateScanStatus(status);
+                            public void onScanProgress(final int pass, final int totalPasses, final String status, final Bitmap intermediateResult) {
+                                // Update the UI on the main thread to show real-time scan progress.
+                                updateScanStatus(status, pass, totalPasses);
+                                updateMainDisplay(intermediateResult);
                             }
-                        };
+
+                            @Override
+                            public void onScanComplete(final DeepScanProcessor.ProcessingResult finalResult) {
+                                // The scan is finished. Save the final image and update the UI.
+                                updateMainDisplay(finalResult.resultBitmap);
+                                String outPath = new File(processedFramesDir, String.format("processed_%05d.png", i)).getAbsolutePath();
+                                try {
+                                    ImageProcessor.saveBitmap(finalResult.resultBitmap, outPath);
+                                } catch (Exception e) {
+                                    Log.e(TAG, "Failed to save processed frame.", e);
+                                }
+                                updateScanStatus("Scan Complete. Found " + finalResult.objectsFound + " objects.", -1, -1);
+                                
+                                // Release the latch to allow the main loop to proceed to the next frame.
+                                latch.countDown();
+                            }
+                        });
+
+                        // Wait here until the onScanComplete method calls latch.countDown().
+                        latch.await();
+
+                        // Add a final small delay so the user can read the "Scan Complete" message.
+                        try {
+                            Thread.sleep(2000);
+                        } catch (InterruptedException e) { /* continue */ }
                         
-                        // This call is now synchronous and provides live status updates.
-                        Bitmap processedBitmap = ImageProcessor.extractOutline(orientedBitmap, statusListener);
-                        updateScanStatus(null); // Hide the status text after processing is done
-
-                        // Visually show the processed frame on the screen
-                        updateMainDisplay(processedBitmap);
-
-                        // Save the result
-                        String outPath = new File(processedFramesDir, String.format("processed_%05d.png", i)).getAbsolutePath();
-                        ImageProcessor.saveBitmap(processedBitmap, outPath);
-
-                        // Clean up memory
+                        hideScanStatus();
                         orientedBitmap.recycle();
                     }
 
-                    // STEP 4: Notify user of success
                     showSuccessDialog("Processing Complete", "Your rotoscoped frames have been saved to:\n\n" + processedFramesDir);
 
                 } catch (final Exception e) {
@@ -156,13 +152,45 @@ public class ProcessingActivity extends AppCompatActivity {
         }).start();
     }
     
-    // --- UI Update Methods (Always run on UI Thread) ---
+    // --- Setup and UI Update Methods ---
+
+    private String prepareDirectories() {
+        String timestamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date());
+        File projectDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "kop/Project_" + timestamp);
+        if (!projectDir.exists()) projectDir.mkdirs();
+        String rawFramesDir = new File(projectDir, "raw_frames").getAbsolutePath();
+        String processedFramesDir = new File(projectDir, "processed_frames").getAbsolutePath();
+        new File(rawFramesDir).mkdirs();
+        new File(processedFramesDir).mkdirs();
+        return rawFramesDir;
+    }
+
+    private File[] extractOrCopyFrames(String inputFilePath, String rawFramesDir) throws Exception {
+        String fileExtension = inputFilePath.substring(inputFilePath.lastIndexOf(".")).toLowerCase();
+        if (fileExtension.matches(".(mp4|mov|3gp|mkv|webm)$")) {
+            updateStatus("Extracting video frames...", true);
+            FrameExtractor.extractFrames(inputFilePath, rawFramesDir, FPS);
+        } else {
+            updateStatus("Preparing image...", true);
+            copyFile(new File(inputFilePath), new File(rawFramesDir, "frame_00000.png"));
+        }
+        File[] rawFrames = new File(rawFramesDir).listFiles();
+        if (rawFrames != null) {
+            Arrays.sort(rawFrames, new Comparator<File>() {
+                @Override
+                public int compare(File f1, File f2) {
+                    return f1.getName().compareTo(f2.getName());
+                }
+            });
+        }
+        return rawFrames;
+    }
 
     private void setupFilmStrip(final List<File> frames) {
         uiHandler.post(new Runnable() {
             @Override
             public void run() {
-                if (frames.size() > 1) { // Only show for videos
+                if (frames.size() > 1) {
                     filmStripAdapter = new FilmStripAdapter(ProcessingActivity.this, frames);
                     LinearLayoutManager layoutManager = new LinearLayoutManager(ProcessingActivity.this, LinearLayoutManager.HORIZONTAL, false);
                     filmStripRecyclerView.setLayoutManager(layoutManager);
@@ -172,7 +200,7 @@ public class ProcessingActivity extends AppCompatActivity {
             }
         });
     }
-    
+
     private void updateCurrentFrameHighlight(final int position) {
         uiHandler.post(new Runnable() {
             @Override
@@ -184,17 +212,29 @@ public class ProcessingActivity extends AppCompatActivity {
             }
         });
     }
-    
-    private void updateScanStatus(final String text) {
+
+    private void updateScanStatus(final String text, final int progress, final int max) {
         uiHandler.post(new Runnable() {
             @Override
             public void run() {
-                if (text != null && !text.isEmpty()) {
-                    scanStatusTextView.setText(text);
-                    scanStatusTextView.setVisibility(View.VISIBLE);
+                scanStatusContainer.setVisibility(View.VISIBLE);
+                scanStatusTextView.setText(text);
+                if (progress > 0 && max > 0) {
+                    scanProgressBar.setVisibility(View.VISIBLE);
+                    scanProgressBar.setMax(max);
+                    scanProgressBar.setProgress(progress);
                 } else {
-                    scanStatusTextView.setVisibility(View.GONE);
+                    scanProgressBar.setVisibility(View.GONE);
                 }
+            }
+        });
+    }
+    
+    private void hideScanStatus() {
+        uiHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                scanStatusContainer.setVisibility(View.GONE);
             }
         });
     }
