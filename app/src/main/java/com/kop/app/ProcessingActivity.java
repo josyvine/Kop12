@@ -7,17 +7,19 @@ import android.graphics.drawable.BitmapDrawable;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
-import android.os.Looper; 
+import android.os.Looper;
 import android.util.Log;
 import android.view.View;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.CompoundButton;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.SeekBar;
 import android.widget.Spinner;
+import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 import androidx.appcompat.app.AlertDialog;
@@ -48,7 +50,7 @@ public class ProcessingActivity extends AppCompatActivity {
 
     private ImageView mainDisplay;
     private ImageView overlayDisplay; // For Method 1
-    private TextView statusTextView, scanStatusTextView;
+    private TextView statusTextView;
     private ProgressBar progressBar;
     private LinearLayout analysisControlsContainer, fpsControlsContainer;
     private RecyclerView filmStripRecyclerView;
@@ -61,15 +63,17 @@ public class ProcessingActivity extends AppCompatActivity {
     private String rawFramesDir, processedFramesDir;
     private int selectedMethod = 1;
 
-    // --- NEW UI ELEMENTS AND STATE FOR FINE-TUNING ---
+    // --- NEW UI ELEMENTS AND STATE ---
     private LinearLayout fineTuningControls;
     private SeekBar sliderDepth, sliderSharpness;
     private Button btnSave;
+    private Switch switchAutomaticScan;
     private Bitmap sourceBitmapForTuning; // Holds the original image for re-analysis
     private boolean isFirstFineTuneAnalysis = true;
     
-    // --- ELEMENTS STILL NEEDED FOR METHOD 1 ---
+    // --- UI ELEMENTS FOR AUTOMATIC & METHOD 1 SCANNING ---
     private LinearLayout scanStatusContainer;
+    private TextView scanStatusTextView;
     private ProgressBar scanProgressBar;
 
 
@@ -102,7 +106,7 @@ public class ProcessingActivity extends AppCompatActivity {
         closeButton = findViewById(R.id.btn_close);
         uiHandler = new Handler(Looper.getMainLooper());
         
-        // --- Find views needed for Method 1 ---
+        // --- Find views for automatic scanning ---
         scanStatusTextView = findViewById(R.id.tv_scan_status);
         scanProgressBar = findViewById(R.id.scan_progress_bar);
         scanStatusContainer = findViewById(R.id.scan_status_container);
@@ -112,6 +116,7 @@ public class ProcessingActivity extends AppCompatActivity {
         sliderDepth = findViewById(R.id.slider_depth);
         sliderSharpness = findViewById(R.id.slider_sharpness);
         btnSave = findViewById(R.id.btn_save);
+        switchAutomaticScan = findViewById(R.id.switch_automatic_scan);
 
         closeButton.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -196,11 +201,24 @@ public class ProcessingActivity extends AppCompatActivity {
                 public void onNothingSelected(AdapterView<?> parent) {}
             });
         }
+        
+        switchAutomaticScan.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                if (isChecked) {
+                    fineTuningControls.setVisibility(View.GONE);
+                } else {
+                    // Only show fine-tuning controls if an analysis has already been done
+                    if (!isFirstFineTuneAnalysis) {
+                        fineTuningControls.setVisibility(View.VISIBLE);
+                    }
+                }
+            }
+        });
 
         analyzeButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                // The core logic is now handled here.
                 beginAnalysis();
             }
         });
@@ -214,9 +232,7 @@ public class ProcessingActivity extends AppCompatActivity {
     }
 
     private void beginAnalysis() {
-        analyzeButton.setEnabled(false); // Prevent multiple clicks
-        
-        // Hide initial controls to show processing has started
+        analyzeButton.setEnabled(false);
         analysisControlsContainer.setVisibility(View.GONE);
 
         new Thread(new Runnable() {
@@ -227,13 +243,12 @@ public class ProcessingActivity extends AppCompatActivity {
                         throw new Exception("No frames available to process.");
                     }
 
-                    if (selectedMethod == 1) {
-                        // Method 1 uses the original automated video processing loop.
-                        processAllFramesWithMethod1();
+                    if (switchAutomaticScan.isChecked() || selectedMethod == 1) {
+                        // Use the original automated processing loop for all frames.
+                        processAllFramesAutomatically();
                     } else {
-                        // Methods 2-10 use the new single-image fine-tuning system.
+                        // Use the new single-image fine-tuning system.
                         if (isFirstFineTuneAnalysis) {
-                            // If it's the first run, load the source bitmap
                             sourceBitmapForTuning = decodeAndRotateBitmap(rawFrames[0].getAbsolutePath());
                         }
                         performFineTuningAnalysis();
@@ -247,6 +262,71 @@ public class ProcessingActivity extends AppCompatActivity {
         }).start();
     }
     
+    // --- AUTOMATIC SCAN WORKFLOW ---
+    private void processAllFramesAutomatically() throws Exception {
+        final int totalFrames = rawFrames.length;
+        for (int i = 0; i < totalFrames; i++) {
+            final int frameNum = i + 1;
+            final int frameIndex = i;
+
+            updateStatus("Processing frame " + frameNum + " of " + totalFrames, false);
+            updateProgress(frameNum, totalFrames);
+            updateCurrentFrameHighlight(frameIndex);
+
+            Bitmap orientedBitmap = decodeAndRotateBitmap(rawFrames[frameIndex].getAbsolutePath());
+            if (orientedBitmap == null) continue;
+
+            if (selectedMethod == 1) {
+                beginMethod1LiveScan(orientedBitmap, frameIndex);
+            } else {
+                beginStandardScan(orientedBitmap, frameIndex);
+            }
+
+            orientedBitmap.recycle();
+        }
+        showSuccessDialog("Processing Complete", "Your rotoscoped frames have been saved to:\n\n" + processedFramesDir);
+    }
+    
+    private void beginStandardScan(Bitmap bitmap, final int frameIndex) throws InterruptedException {
+        final CountDownLatch latch = new CountDownLatch(1);
+        DeepScanProcessor.ScanListener listener = new DeepScanProcessor.ScanListener() {
+            @Override
+            public void onScanProgress(final int pass, final int totalPasses, final String status, final Bitmap intermediateResult) {
+                updateScanStatus(status, pass, totalPasses);
+                updateMainDisplay(intermediateResult);
+            }
+            @Override
+            public void onScanComplete(final DeepScanProcessor.ProcessingResult finalResult) {
+                updateMainDisplay(finalResult.resultBitmap);
+                String outPath = new File(processedFramesDir, String.format("processed_%05d.png", frameIndex)).getAbsolutePath();
+                try {
+                    ImageProcessor.saveBitmap(finalResult.resultBitmap, outPath);
+                } catch (Exception e) {
+                    Log.e(TAG, "Failed to save processed frame.", e);
+                }
+                updateScanStatus("Scan Complete. Found " + finalResult.objectsFound + " objects.", -1, -1);
+                latch.countDown();
+            }
+        };
+
+        switch (selectedMethod) {
+            case 2: DeepScanProcessor.processMethod2(bitmap, listener); break;
+            case 3: DeepScanProcessor.processMethod3(bitmap, listener); break;
+            case 4: DeepScanProcessor.processMethod4(bitmap, listener); break;
+            case 5: DeepScanProcessor.processMethod5(bitmap, listener); break;
+            case 6: DeepScanProcessor.processMethod6(bitmap, listener); break;
+            case 7: DeepScanProcessor.processMethod7(bitmap, listener); break;
+            case 8: DeepScanProcessor.processMethod8(bitmap, listener); break;
+            case 9: DeepScanProcessor.processMethod9(bitmap, listener); break;
+            case 10: default: DeepScanProcessor.processMethod10(bitmap, listener); break;
+        }
+
+        latch.await();
+        try { Thread.sleep(2000); } catch (InterruptedException e) {}
+        hideScanStatus();
+    }
+    
+    // --- MANUAL FINE-TUNING WORKFLOW ---
     private void performFineTuningAnalysis() {
         if (sourceBitmapForTuning == null) {
             showErrorDialog("Error", "No source image is loaded for tuning.", true);
@@ -255,12 +335,11 @@ public class ProcessingActivity extends AppCompatActivity {
 
         updateStatus("Analyzing...", true);
         
-        // For the very first analysis, use default slider values. Otherwise, use current values.
         final int depth;
         final int sharpness;
         if (isFirstFineTuneAnalysis) {
-            depth = 4; // Default to "Finalized"
-            sharpness = 50; // Default to midpoint
+            depth = 4;
+            sharpness = 50;
             uiHandler.post(new Runnable() {
                 @Override
                 public void run() {
@@ -276,9 +355,8 @@ public class ProcessingActivity extends AppCompatActivity {
         DeepScanProcessor.ScanListener listener = new DeepScanProcessor.ScanListener() {
             @Override
             public void onScanProgress(int pass, int totalPasses, String status, Bitmap intermediateResult) {
-                // This is no longer used for methods 2-10, but interface requires it.
+                // Not used in manual mode.
             }
-
             @Override
             public void onScanComplete(final DeepScanProcessor.ProcessingResult finalResult) {
                 updateMainDisplay(finalResult.resultBitmap);
@@ -287,10 +365,11 @@ public class ProcessingActivity extends AppCompatActivity {
                     @Override
                     public void run() {
                         if (isFirstFineTuneAnalysis) {
-                            fineTuningControls.setVisibility(View.VISIBLE);
+                            if (!switchAutomaticScan.isChecked()) {
+                                fineTuningControls.setVisibility(View.VISIBLE);
+                            }
                             isFirstFineTuneAnalysis = false;
                         }
-                        // Restore controls for next interaction
                         analysisControlsContainer.setVisibility(View.VISIBLE);
                         updateStatus("Ready for fine-tuning. Adjust sliders and Analyze.", false);
                         updateProgress(0, 1);
@@ -340,27 +419,6 @@ public class ProcessingActivity extends AppCompatActivity {
                 }
             }).start();
         }
-    }
-
-    private void processAllFramesWithMethod1() throws Exception {
-        final int totalFrames = rawFrames.length;
-        for (int i = 0; i < totalFrames; i++) {
-            final int frameNum = i + 1;
-            final int frameIndex = i;
-
-            updateStatus("Processing frame " + frameNum + " of " + totalFrames, false);
-            updateProgress(frameNum, totalFrames);
-            updateCurrentFrameHighlight(frameIndex);
-
-            Bitmap orientedBitmap = decodeAndRotateBitmap(rawFrames[frameIndex].getAbsolutePath());
-            if (orientedBitmap == null) continue;
-            
-            // This is a blocking call to ensure frames process one by one
-            beginMethod1LiveScan(orientedBitmap, frameIndex);
-
-            orientedBitmap.recycle();
-        }
-        showSuccessDialog("Processing Complete", "Your rotoscoped frames have been saved to:\n\n" + processedFramesDir);
     }
 
     private void beginMethod1LiveScan(Bitmap bitmap, final int frameIndex) throws InterruptedException {
@@ -427,6 +485,8 @@ public class ProcessingActivity extends AppCompatActivity {
         }
     }
     
+    // --- HELPER METHODS (UNCHANGED) ---
+
     private void prepareDirectories() {
         String timestamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date());
         File projectDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "kop/Project_" + timestamp);
