@@ -100,15 +100,38 @@
                 android:spinnerMode="dropdown"/>
         </LinearLayout>
 
+        <!-- NEW TOGGLE SWITCH -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:layout_marginTop="12dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Automatic Scan:"
+                android:textColor="@android:color/white"
+                android:layout_marginEnd="8dp"/>
+
+            <Switch
+                android:id="@+id/switch_automatic_scan"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:checked="true"/>
+        </LinearLayout>
+
+
         <Button
             android:id="@+id/btn_analyze"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Analyze"
-            android:layout_marginTop="8dp"/>
+            android:layout_marginTop="12dp"/>
     </LinearLayout>
 
-    <!-- NEW FINE-TUNING CONTROLS -->
+    <!-- FINE-TUNING CONTROLS FOR MANUAL MODE -->
     <LinearLayout
         android:id="@+id/fine_tuning_controls"
         android:layout_width="match_parent"
@@ -180,7 +203,6 @@
             android:contentDescription="Live analysis overlay"
             android:scaleType="fitCenter" />
             
-        <!-- THIS IS THE FIX: Re-adding the container needed for Method 1's progress -->
         <LinearLayout
             android:id="@+id/scan_status_container"
             android:layout_width="wrap_content"
@@ -200,7 +222,7 @@
                 android:textColor="#FFFFFF"
                 android:textSize="16sp"
                 android:textStyle="italic"
-                tools:text="Scanning Pass 1 of 3..." />
+                tools:text="Scanning Pass 1 of 5..." />
 
             <ProgressBar
                 android:id="@+id/scan_progress_bar"
