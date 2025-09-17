@@ -46,7 +46,8 @@ public class FilmStripAdapter extends RecyclerView.Adapter<FilmStripAdapter.Fram
         // Highlight the currently processing frame
         if (position == currentPosition) {
             holder.highlight.setVisibility(View.VISIBLE);
-            holder.highlight.setBackgroundColor(Color.parseColor("#80FFFFFF")); // Semi-transparent white
+            // Using a more visible border color this time
+            holder.highlight.setBackgroundResource(android.R.drawable.dialog_frame);
         } else {
             holder.highlight.setVisibility(View.GONE);
         }
