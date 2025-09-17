@@ -1,42 +1,62 @@
 package com.kop.app;
 
+import androidx.activity.result.ActivityResult;
+import androidx.activity.result.ActivityResultCallback;
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import android.Manifest;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.pm.PackageManager;
-import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.util.Log;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Toast;
 import org.opencv.android.OpenCVLoader;
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.InputStream;
 
 public class MainActivity extends AppCompatActivity {
 
     private static final String TAG = "MainActivity";
     private static final int PERMISSION_REQUEST_CODE = 100;
-    private static final int FILE_SELECT_CODE = 101;
-
     private WebView webView;
+
+    // The modern way to handle results from activities we launch.
+    private ActivityResultLauncher<Intent> mediaPickerLauncher;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         
-        // Initialize the OpenCV library
         OpenCVLoader.initDebug();
         
         setContentView(R.layout.activity_main);
+
+        // Register the launcher to handle the result from MediaPickerActivity.
+        mediaPickerLauncher = registerForActivityResult(
+            new ActivityResultContracts.StartActivityForResult(),
+            new ActivityResultCallback<ActivityResult>() {
+                @Override
+                public void onActivityResult(ActivityResult result) {
+                    if (result.getResultCode() == RESULT_OK && result.getData() != null) {
+                        // We got a file path back from our picker.
+                        String filePath = result.getData().getStringExtra(MediaPickerActivity.EXTRA_SELECTED_FILE_PATH);
+                        if (filePath != null && !filePath.isEmpty()) {
+                            // Launch the ProcessingActivity with the selected file path.
+                            Intent processIntent = new Intent(MainActivity.this, ProcessingActivity.class);
+                            processIntent.putExtra(ProcessingActivity.EXTRA_FILE_PATH, filePath);
+                            startActivity(processIntent);
+                        }
+                    }
+                }
+            });
 
         webView = findViewById(R.id.webview);
         setupWebView();
@@ -63,11 +83,12 @@ public class MainActivity extends AppCompatActivity {
 
         @JavascriptInterface
         public void startFileProcessing() {
+            // Run on the UI thread to show dialogs.
             new Handler(Looper.getMainLooper()).post(new Runnable() {
                 @Override
                 public void run() {
                     if (checkPermissions()) {
-                        openFilePicker();
+                        showMediaTypeChooserDialog();
                     } else {
                         requestPermissions();
                     }
@@ -76,19 +97,39 @@ public class MainActivity extends AppCompatActivity {
         }
         
         @JavascriptInterface
-        public void clearCache() {
-            showToast("Cache clearing not yet implemented.");
-        }
-
+        public void clearCache() { showToast("Cache clearing not yet implemented."); }
         @JavascriptInterface
-        public void openContactForm() {
-            showToast("Contact form not yet implemented.");
-        }
-
+        public void openContactForm() { showToast("Contact form not yet implemented."); }
         @JavascriptInterface
-        public void setTheme(String themeName) {
-            showToast("Theme switching requires an app restart.");
-        }
+        public void setTheme(String themeName) { showToast("Theme switching requires an app restart."); }
+    }
+    
+    // This method shows the "Image or Video?" dialog you requested.
+    private void showMediaTypeChooserDialog() {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Select Media Type");
+
+        // Set up the buttons
+        builder.setPositiveButton("Image", new DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(DialogInterface dialog, int which) {
+                Intent intent = new Intent(MainActivity.this, MediaPickerActivity.class);
+                intent.putExtra(MediaPickerActivity.EXTRA_MEDIA_TYPE, MediaPickerActivity.MEDIA_TYPE_IMAGE);
+                mediaPickerLauncher.launch(intent);
+            }
+        });
+        builder.setNegativeButton("Video", new DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(DialogInterface dialog, int which) {
+                Intent intent = new Intent(MainActivity.this, MediaPickerActivity.class);
+                intent.putExtra(MediaPickerActivity.EXTRA_MEDIA_TYPE, MediaPickerActivity.MEDIA_TYPE_VIDEO);
+                mediaPickerLauncher.launch(intent);
+            }
+        });
+        builder.setNeutralButton("Cancel", null);
+
+        AlertDialog dialog = builder.create();
+        dialog.show();
     }
 
     private void showToast(final String message) {
@@ -120,61 +161,10 @@ public class MainActivity extends AppCompatActivity {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == PERMISSION_REQUEST_CODE) {
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                openFilePicker();
+                showMediaTypeChooserDialog();
             } else {
                 Toast.makeText(this, "Storage permission is required to select files.", Toast.LENGTH_SHORT).show();
             }
         }
-    }
-
-    private void openFilePicker() {
-        Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
-        intent.setType("*/*");
-        intent.addCategory(Intent.CATEGORY_OPENABLE);
-        String[] mimetypes = {"video/*", "image/*"};
-        intent.putExtra(Intent.EXTRA_MIME_TYPES, mimetypes);
-        try {
-            startActivityForResult(Intent.createChooser(intent, "Select a File to Process"), FILE_SELECT_CODE);
-        } catch (android.content.ActivityNotFoundException ex) {
-            Toast.makeText(this, "Please install a File Manager.", Toast.LENGTH_SHORT).show();
-        }
-    }
-
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == FILE_SELECT_CODE && resultCode == RESULT_OK) {
-            Uri uri = data.getData();
-            if (uri != null) {
-                try {
-                    // Copy the selected file to a temporary location
-                    File tempFile = copyUriToCache(this, uri);
-                    // Launch the new ProcessingActivity and pass the file path to it
-                    Intent processIntent = new Intent(this, ProcessingActivity.class);
-                    processIntent.putExtra(ProcessingActivity.EXTRA_FILE_PATH, tempFile.getAbsolutePath());
-                    startActivity(processIntent);
-                } catch (Exception e) {
-                    Toast.makeText(this, "Error preparing file for processing.", Toast.LENGTH_LONG).show();
-                    Log.e(TAG, "Failed to copy file to cache", e);
-                }
-            }
-        }
-    }
-    
-    private File copyUriToCache(Context context, Uri uri) throws Exception {
-        InputStream inputStream = context.getContentResolver().openInputStream(uri);
-        if (inputStream == null) {
-            throw new Exception("Could not open input stream for URI");
-        }
-        File tempFile = new File(context.getCacheDir(), "processing_input_file.tmp");
-        FileOutputStream outputStream = new FileOutputStream(tempFile);
-        byte[] buffer = new byte[4096];
-        int length;
-        while ((length = inputStream.read(buffer)) > 0) {
-            outputStream.write(buffer, 0, length);
-        }
-        outputStream.close();
-        inputStream.close();
-        return tempFile;
     }
 }
