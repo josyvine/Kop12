@@ -13,7 +13,7 @@ import org.opencv.imgproc.Imgproc;
 import java.util.ArrayList;
 import java.util.List;
 
-public class DeepScanProcessor {
+public class DeepScanProcessor { 
 
     private static final int TOTAL_PASSES = 5;
     private static final long DELAY_PER_PASS_MS = 2000; // 2 seconds per pass
