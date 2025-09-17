@@ -114,5 +114,5 @@ public class ImageProcessor {
     public interface StatusListener {
         void onStatusUpdate(String status);
     }
-}
+} 
  
