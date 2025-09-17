@@ -8,12 +8,16 @@ import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
+import android.view.View;
 import android.widget.ImageView;
 import android.widget.ProgressBar;
-import android.widget.TextView; 
+import android.widget.TextView;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.exifinterface.media.ExifInterface;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
+
 import android.graphics.Matrix;
 import java.io.File;
 import java.io.FileInputStream;
@@ -22,10 +26,11 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.text.SimpleDateFormat;
-import java.util.Date;
-import java.util.Locale;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.Date;
+import java.util.List;
+import java.util.Locale;
 
 public class ProcessingActivity extends AppCompatActivity {
 
@@ -35,12 +40,11 @@ public class ProcessingActivity extends AppCompatActivity {
 
     private ImageView mainDisplay;
     private TextView statusTextView;
+    private TextView scanStatusTextView;
     private ProgressBar progressBar;
+    private RecyclerView filmStripRecyclerView;
+    private FilmStripAdapter filmStripAdapter;
     private Handler uiHandler;
-
-    private File[] rawFrames;
-    private int currentFrameIndex = 0;
-    private String processedFramesDir;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -49,19 +53,21 @@ public class ProcessingActivity extends AppCompatActivity {
 
         mainDisplay = findViewById(R.id.iv_main_display);
         statusTextView = findViewById(R.id.tv_status);
+        scanStatusTextView = findViewById(R.id.tv_scan_status);
         progressBar = findViewById(R.id.progress_bar);
+        filmStripRecyclerView = findViewById(R.id.rv_film_strip);
         uiHandler = new Handler(Looper.getMainLooper());
 
         Intent intent = getIntent();
         if (intent != null && intent.hasExtra(EXTRA_FILE_PATH)) {
             String inputFilePath = intent.getStringExtra(EXTRA_FILE_PATH);
-            prepareAndStartProcessing(inputFilePath);
+            startProcessing(inputFilePath);
         } else {
             showErrorDialog("Error", "No input file path provided.", true);
         }
     }
 
-    private void prepareAndStartProcessing(final String inputFilePath) {
+    private void startProcessing(final String inputFilePath) {
         new Thread(new Runnable() {
             @Override
             public void run() {
@@ -72,7 +78,7 @@ public class ProcessingActivity extends AppCompatActivity {
                     if (!projectDir.exists()) projectDir.mkdirs();
 
                     String rawFramesDir = new File(projectDir, "raw_frames").getAbsolutePath();
-                    processedFramesDir = new File(projectDir, "processed_frames").getAbsolutePath();
+                    final String processedFramesDir = new File(projectDir, "processed_frames").getAbsolutePath();
                     new File(rawFramesDir).mkdirs();
                     new File(processedFramesDir).mkdirs();
 
@@ -87,7 +93,7 @@ public class ProcessingActivity extends AppCompatActivity {
                         copyFile(new File(inputFilePath), new File(rawFramesDir, "frame_00000.png"));
                     }
 
-                    rawFrames = new File(rawFramesDir).listFiles();
+                    File[] rawFrames = new File(rawFramesDir).listFiles();
                     if (rawFrames == null || rawFrames.length == 0) {
                         throw new Exception("No frames were extracted or found.");
                     }
@@ -99,73 +105,98 @@ public class ProcessingActivity extends AppCompatActivity {
                         }
                     });
 
-                    // STEP 3: Start the sequential, asynchronous processing chain.
-                    currentFrameIndex = 0;
-                    processNextFrame();
+                    // Setup the film strip UI if it's a video
+                    setupFilmStrip(Arrays.asList(rawFrames));
+
+                    // STEP 3: Loop through each frame, process it, and update UI
+                    final int totalFrames = rawFrames.length;
+                    for (int i = 0; i < totalFrames; i++) {
+                        final int frameNum = i + 1;
+                        updateStatus("Processing frame " + frameNum + " of " + totalFrames, false);
+                        updateProgress(frameNum, totalFrames);
+                        updateCurrentFrameHighlight(i);
+
+                        File frameFile = rawFrames[i];
+                        Bitmap orientedBitmap = decodeAndRotateBitmap(frameFile.getAbsolutePath());
+                        if (orientedBitmap == null) continue;
+
+                        // **THE NEW CORE LOGIC**
+                        // Create the listener to show the "scanning..." status on the screen
+                        ImageProcessor.StatusListener statusListener = new ImageProcessor.StatusListener() {
+                            @Override
+                            public void onStatusUpdate(final String status) {
+                                updateScanStatus(status);
+                            }
+                        };
+                        
+                        // This call is now synchronous and provides live status updates.
+                        Bitmap processedBitmap = ImageProcessor.extractOutline(orientedBitmap, statusListener);
+                        updateScanStatus(null); // Hide the status text after processing is done
+
+                        // Visually show the processed frame on the screen
+                        updateMainDisplay(processedBitmap);
+
+                        // Save the result
+                        String outPath = new File(processedFramesDir, String.format("processed_%05d.png", i)).getAbsolutePath();
+                        ImageProcessor.saveBitmap(processedBitmap, outPath);
+
+                        // Clean up memory
+                        orientedBitmap.recycle();
+                    }
+
+                    // STEP 4: Notify user of success
+                    showSuccessDialog("Processing Complete", "Your rotoscoped frames have been saved to:\n\n" + processedFramesDir);
 
                 } catch (final Exception e) {
-                    Log.e(TAG, "Preparation failed", e);
-                    String message = (e.getMessage() != null) ? e.getMessage() : "An unknown error occurred during preparation.";
-                    showErrorDialog("Preparation Error", message, true);
+                    Log.e(TAG, "Processing failed", e);
+                    String message = (e.getMessage() != null) ? e.getMessage() : "An unknown error occurred.";
+                    showErrorDialog("Processing Error", message, true);
                 }
             }
         }).start();
     }
     
-    private void processNextFrame() {
-        if (currentFrameIndex >= rawFrames.length) {
-            showSuccessDialog("Processing Complete", "Your rotoscoped frames have been saved to:\n\n" + processedFramesDir);
-            return;
-        }
+    // --- UI Update Methods (Always run on UI Thread) ---
 
-        File frameFile = rawFrames[currentFrameIndex];
-        final int frameNum = currentFrameIndex + 1;
-        updateStatus("Processing frame " + frameNum + " of " + rawFrames.length, false);
-        updateProgress(frameNum, rawFrames.length);
-
-        try {
-            final Bitmap orientedBitmap = decodeAndRotateBitmap(frameFile.getAbsolutePath());
-            if (orientedBitmap == null) {
-                currentFrameIndex++;
-                processNextFrame();
-                return;
+    private void setupFilmStrip(final List<File> frames) {
+        uiHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                if (frames.size() > 1) { // Only show for videos
+                    filmStripAdapter = new FilmStripAdapter(ProcessingActivity.this, frames);
+                    LinearLayoutManager layoutManager = new LinearLayoutManager(ProcessingActivity.this, LinearLayoutManager.HORIZONTAL, false);
+                    filmStripRecyclerView.setLayoutManager(layoutManager);
+                    filmStripRecyclerView.setAdapter(filmStripAdapter);
+                    filmStripRecyclerView.setVisibility(View.VISIBLE);
+                }
             }
-
-            // FIX: Call the new asynchronous ImageProcessor with a listener callback.
-            ImageProcessor.extractOutline(orientedBitmap, new ImageProcessor.OutlineExtractionListener() {
-                @Override
-                public void onOutlineExtracted(Bitmap resultBitmap) {
-                    updateMainDisplay(resultBitmap);
-
-                    // Save the result.
-                    final String outPath = new File(processedFramesDir, String.format("processed_%05d.png", currentFrameIndex)).getAbsolutePath();
-                    try {
-                        ImageProcessor.saveBitmap(resultBitmap, outPath);
-                    } catch (Exception e) {
-                        Log.e(TAG, "Failed to save frame: " + outPath, e);
-                    }
-
-                    orientedBitmap.recycle();
-                    
-                    // Move to the next frame
-                    currentFrameIndex++;
-                    processNextFrame();
+        });
+    }
+    
+    private void updateCurrentFrameHighlight(final int position) {
+        uiHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                if (filmStripAdapter != null) {
+                    filmStripAdapter.setCurrentFrame(position);
+                    filmStripRecyclerView.scrollToPosition(position);
                 }
-
-                @Override
-                public void onExtractionFailed(Exception e) {
-                    Log.e(TAG, "Failed to process frame " + currentFrameIndex, e);
-                    orientedBitmap.recycle();
-                    currentFrameIndex++;
-                    processNextFrame();
+            }
+        });
+    }
+    
+    private void updateScanStatus(final String text) {
+        uiHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                if (text != null && !text.isEmpty()) {
+                    scanStatusTextView.setText(text);
+                    scanStatusTextView.setVisibility(View.VISIBLE);
+                } else {
+                    scanStatusTextView.setVisibility(View.GONE);
                 }
-            });
-
-        } catch (IOException e) {
-            Log.e(TAG, "Failed to read frame file", e);
-            currentFrameIndex++;
-            processNextFrame();
-        }
+            }
+        });
     }
 
     private void updateStatus(final String text, final boolean isIndeterminate) {
@@ -240,6 +271,8 @@ public class ProcessingActivity extends AppCompatActivity {
             }
         });
     }
+
+    // --- Utility Methods ---
 
     private Bitmap decodeAndRotateBitmap(String filePath) throws IOException {
         Bitmap bitmap = BitmapFactory.decodeFile(filePath);
