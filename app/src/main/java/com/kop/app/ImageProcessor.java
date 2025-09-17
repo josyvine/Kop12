@@ -7,7 +7,7 @@ import java.io.FileOutputStream;
  * A utility class for handling bitmap operations, such as saving to a file.
  * The core processing logic has been moved to DeepScanProcessor.
  */
-public class ImageProcessor {
+public class ImageProcessor { 
 
     /**
      * Saves a bitmap to a specified file path as a PNG.
