@@ -1,6 +1,17 @@
 package com.kop.app;
 
+import android.content.Context;
 import android.graphics.Bitmap;
+import android.util.Log;
+
+import com.google.mediapipe.framework.image.BitmapImageBuilder;
+import com.google.mediapipe.framework.image.MPImage;
+import com.google.mediapipe.tasks.core.BaseOptions;
+import com.google.mediapipe.tasks.vision.core.RunningMode;
+import com.google.mediapipe.tasks.vision.imagesegmenter.ImageSegmenter;
+import com.google.mediapipe.tasks.vision.imagesegmenter.ImageSegmenter.ImageSegmenterOptions;
+import com.google.mediapipe.tasks.vision.imagesegmenter.ImageSegmenterResult;
+
 import org.opencv.android.Utils;
 import org.opencv.core.Core;
 import org.opencv.core.CvType;
@@ -10,11 +21,15 @@ import org.opencv.core.Point;
 import org.opencv.core.Scalar;
 import org.opencv.core.Size;
 import org.opencv.imgproc.Imgproc;
+
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 
 public class DeepScanProcessor {
+    
+    private static final String TAG = "DeepScanProcessor";
 
     // --- Common Inner Classes for All Methods ---
 
@@ -28,6 +43,10 @@ public class DeepScanProcessor {
         }
     }
 
+    public interface AiScanListener {
+        void onAiScanComplete(ProcessingResult finalResult);
+    }
+    
     public interface ScanListener {
         void onScanProgress(int pass, int totalPasses, String status, Bitmap intermediateResult);
         void onScanComplete(ProcessingResult finalResult);
@@ -38,6 +57,86 @@ public class DeepScanProcessor {
         void onFoundationReady(Bitmap foundationBitmap);
         void onLinesReady(Bitmap linesBitmap);
         void onScanComplete(ProcessingResult finalResult);
+    }
+
+    // --- NEW METHOD 0: AI Smart Outline (MediaPipe + OpenCV) ---
+    public static void processMethod0(Context context, Bitmap originalBitmap, AiScanListener listener) {
+        try {
+            // --- Part 1: MediaPipe's Job - Create the Perfect Stencil ---
+
+            // Step 1: Initialize the AI Model (ImageSegmenter)
+            ImageSegmenterOptions.Builder optionsBuilder = ImageSegmenterOptions.builder()
+                .setBaseOptions(BaseOptions.builder().setModelAssetPath("selfie_segmenter.tflite").build())
+                .setRunningMode(RunningMode.IMAGE)
+                .setOutputConfidenceMasks(true);
+            ImageSegmenterOptions options = optionsBuilder.build();
+            ImageSegmenter imageSegmenter = ImageSegmenter.createFromOptions(context, options);
+
+            // Step 2: Prepare the image for the AI
+            MPImage mpImage = new BitmapImageBuilder(originalBitmap).build();
+
+            // Step 3: Run the AI Segmentation
+            ImageSegmenterResult segmenterResult = imageSegmenter.segment(mpImage);
+
+            if (segmenterResult != null && segmenterResult.confidenceMasks().isPresent()) {
+                // Step 4: Receive the AI's "Blueprint" (The Confidence Mask)
+                ByteBuffer confidenceMaskBuffer = segmenterResult.confidenceMasks().get().get(0).getBuffer();
+                int maskWidth = segmenterResult.confidenceMasks().get().get(0).getWidth();
+                int maskHeight = segmenterResult.confidenceMasks().get().get(0).getHeight();
+
+                // --- Part 2: OpenCV's Job - Trace the Stencil and Draw the Line ---
+
+                // Step 5: Hand the Blueprint to OpenCV
+                Mat maskMat = new Mat(maskHeight, maskWidth, CvType.CV_32F);
+                maskMat.put(0, 0, confidenceMaskBuffer.array());
+
+                Mat mask8u = new Mat();
+                maskMat.convertTo(mask8u, CvType.CV_8U, 255.0);
+                
+                // Step 6: Make the Stencil Perfect (Thresholding)
+                Mat thresholdMat = new Mat();
+                Imgproc.threshold(mask8u, thresholdMat, 128, 255, Imgproc.THRESH_BINARY);
+                
+                // Step 7: Find the Edge of the Stencil
+                List<MatOfPoint> contours = new ArrayList<>();
+                Mat hierarchy = new Mat();
+                Imgproc.findContours(thresholdMat, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
+
+                // Step 8: Draw the Final Line
+                Mat finalDrawing = new Mat(originalBitmap.getHeight(), originalBitmap.getWidth(), CvType.CV_8UC4, new Scalar(255, 255, 255, 255));
+                Imgproc.drawContours(finalDrawing, contours, -1, new Scalar(0, 0, 0, 255), 2);
+
+                // Step 9: Finalize and Return
+                Bitmap finalBitmap = Bitmap.createBitmap(finalDrawing.cols(), finalDrawing.rows(), Bitmap.Config.ARGB_8888);
+                Utils.matToBitmap(finalDrawing, finalBitmap);
+                
+                ProcessingResult result = new ProcessingResult(finalBitmap, contours.size());
+                listener.onAiScanComplete(result);
+
+                // Clean up OpenCV Mats
+                maskMat.release();
+                mask8u.release();
+                thresholdMat.release();
+                hierarchy.release();
+                finalDrawing.release();
+                for (MatOfPoint contour : contours) {
+                    contour.release();
+                }
+
+            } else {
+                throw new Exception("MediaPipe did not return a segmentation mask.");
+            }
+            
+            // Clean up MediaPipe Segmenter
+            imageSegmenter.close();
+
+        } catch (Exception e) {
+            Log.e(TAG, "Method 0 AI processing failed.", e);
+            // Return a blank image on failure
+            Bitmap blankBitmap = Bitmap.createBitmap(originalBitmap.getWidth(), originalBitmap.getHeight(), Bitmap.Config.ARGB_8888);
+            ProcessingResult result = new ProcessingResult(blankBitmap, 0);
+            listener.onAiScanComplete(result);
+        }
     }
 
     // --- Method 1: The "Utmost Best" - Live Foundational Analysis (UNCHANGED) ---
