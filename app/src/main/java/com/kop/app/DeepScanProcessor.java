@@ -51,13 +51,14 @@ public class DeepScanProcessor {
         try { Thread.sleep(4000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
         Mat bgrMat = new Mat();
         Imgproc.cvtColor(originalMat, bgrMat, Imgproc.COLOR_RGBA2BGR);
-        Mat markers = getWatershedMarkers(grayMat, bgrMat);
+        Mat cannyForSeeds = getCannyEdges(grayMat, 10, 80);
+        Mat markers = getWatershedMarkers(cannyForSeeds, bgrMat);
         Bitmap foundationBitmap = createColoredFoundation(markers, originalMat.size());
         listener.onFoundationReady(foundationBitmap);
         
         listener.onScanProgress(2, 3, "Pass 2/3: Tracing Final Lines...");
         try { Thread.sleep(4000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
-        Mat finalLines = getMethod7Lines(grayMat);
+        Mat finalLines = getMethod8Lines(grayMat);
         Bitmap linesBitmap = createBitmapFromMask(finalLines, originalMat.size());
         listener.onLinesReady(linesBitmap);
         
@@ -70,44 +71,142 @@ public class DeepScanProcessor {
         originalMat.release();
         grayMat.release();
         bgrMat.release();
+        cannyForSeeds.release();
         markers.release();
         finalLines.release();
     }
 
-    // --- Method 2-4: Placeholders for now ---
-    public static void processMethod2(Bitmap originalBitmap, ScanListener listener) { processMethod6(originalBitmap, listener); }
-    public static void processMethod3(Bitmap originalBitmap, ScanListener listener) { processMethod6(originalBitmap, listener); }
-    public static void processMethod4(Bitmap originalBitmap, ScanListener listener) { processMethod6(originalBitmap, listener); }
+    // --- Method 2: "Artistic Crosshatching" ---
+    public static void processMethod2(Bitmap originalBitmap, ScanListener listener) {
+        Mat originalMat = new Mat();
+        Utils.bitmapToMat(originalBitmap, originalMat);
+        Mat grayMat = new Mat();
+        Imgproc.cvtColor(originalMat, grayMat, Imgproc.COLOR_RGBA2GRAY);
+        
+        listener.onScanProgress(1, 5, "Pass 1/5: Segmenting Regions...", createBitmapFromMask(new Mat(), originalMat.size()));
+        try { Thread.sleep(2000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        Mat bgrMat = new Mat();
+        Imgproc.cvtColor(originalMat, bgrMat, Imgproc.COLOR_RGBA2BGR);
+        Mat cannyForSeeds = getCannyEdges(grayMat, 10, 80);
+        Mat markers = getWatershedMarkers(cannyForSeeds, bgrMat);
+        
+        listener.onScanProgress(2, 5, "Pass 2/5: Calculating Shading...", createBitmapFromMask(new Mat(), originalMat.size()));
+        try { Thread.sleep(2000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        Mat shaded = createShadedRegions(markers, grayMat);
+        
+        listener.onScanProgress(3, 5, "Pass 3/5: Applying Crosshatch...", createBitmapFromMask(new Mat(), originalMat.size()));
+        try { Thread.sleep(2000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        Mat crosshatched = applyCrosshatching(shaded);
+        
+        listener.onScanProgress(4, 5, "Pass 4/5: Finding Outlines...", createBitmapFromMask(crosshatched, originalMat.size()));
+        try { Thread.sleep(2000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        Mat outlines = getCannyEdges(grayMat, 20, 80);
+        
+        listener.onScanProgress(5, 5, "Pass 5/5: Combining Artwork...", createBitmapFromMask(crosshatched, originalMat.size()));
+        try { Thread.sleep(2000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        Core.bitwise_or(crosshatched, outlines, crosshatched);
+        Mat finalLines = finalizeLines(crosshatched);
+        
+        finalizeAndComplete(finalLines, listener);
+        originalMat.release(); grayMat.release(); bgrMat.release(); cannyForSeeds.release(); markers.release(); shaded.release(); crosshatched.release(); outlines.release();
+    }
 
-    // --- NEW Method 5: The "Pencil Sketch" Method ---
+    // --- Method 3: "Shaded Segmentation" ---
+    public static void processMethod3(Bitmap originalBitmap, ScanListener listener) {
+        Mat originalMat = new Mat();
+        Utils.bitmapToMat(originalBitmap, originalMat);
+        Mat grayMat = new Mat();
+        Imgproc.cvtColor(originalMat, grayMat, Imgproc.COLOR_RGBA2GRAY);
+        
+        listener.onScanProgress(1, 4, "Pass 1/4: Segmenting Regions...", createBitmapFromMask(new Mat(), originalMat.size()));
+        try { Thread.sleep(2500); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        Mat bgrMat = new Mat();
+        Imgproc.cvtColor(originalMat, bgrMat, Imgproc.COLOR_RGBA2BGR);
+        Mat cannyForSeeds = getCannyEdges(grayMat, 10, 80);
+        Mat markers = getWatershedMarkers(cannyForSeeds, bgrMat);
+        
+        listener.onScanProgress(2, 4, "Pass 2/4: Applying Shading...", createBitmapFromMask(new Mat(), originalMat.size()));
+        try { Thread.sleep(2500); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        Mat shaded = createShadedRegions(markers, grayMat);
+        
+        listener.onScanProgress(3, 4, "Pass 3/4: Finding Outlines...", createBitmapFromMask(shaded, originalMat.size()));
+        try { Thread.sleep(2500); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        Mat outlines = getCannyEdges(grayMat, 20, 80);
+        
+        listener.onScanProgress(4, 4, "Pass 4/4: Combining Artwork...", createBitmapFromMask(shaded, originalMat.size()));
+        try { Thread.sleep(2500); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        Mat invertedOutlines = new Mat();
+        Core.bitwise_not(outlines, invertedOutlines);
+        Core.bitwise_and(shaded, shaded, shaded, invertedOutlines); // Apply inverted outlines as a mask
+        Mat finalLines = finalizeLines(shaded);
+
+        finalizeAndComplete(finalLines, listener);
+        originalMat.release(); grayMat.release(); bgrMat.release(); cannyForSeeds.release(); markers.release(); shaded.release(); outlines.release(); invertedOutlines.release();
+    }
+    
+    // --- Method 4: "Segmented Detail" ---
+    public static void processMethod4(Bitmap originalBitmap, ScanListener listener) {
+        Mat originalMat = new Mat();
+        Utils.bitmapToMat(originalBitmap, originalMat);
+        Mat grayMat = new Mat();
+        Imgproc.cvtColor(originalMat, grayMat, Imgproc.COLOR_RGBA2GRAY);
+        
+        listener.onScanProgress(1, 4, "Pass 1/4: Segmenting Objects...", createBitmapFromMask(new Mat(), originalMat.size()));
+        try { Thread.sleep(2500); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        Mat bgrMat = new Mat();
+        Imgproc.cvtColor(originalMat, bgrMat, Imgproc.COLOR_RGBA2BGR);
+        Mat cannyForSeeds = getCannyEdges(grayMat, 10, 80);
+        Mat markers = getWatershedMarkers(cannyForSeeds, bgrMat);
+        
+        Mat boundaries = new Mat(markers.size(), CvType.CV_8U, new Scalar(0));
+        for (int r = 0; r < markers.rows(); r++) {
+            for (int c = 0; c < markers.cols(); c++) {
+                if (markers.get(r, c)[0] == -1) {
+                    boundaries.put(r, c, 255);
+                }
+            }
+        }
+        listener.onScanProgress(2, 4, "Pass 2/4: Extracting Boundaries...", createBitmapFromMask(boundaries, originalMat.size()));
+        try { Thread.sleep(2500); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        
+        Mat detailLines = getCannyEdges(grayMat, 30, 90);
+        listener.onScanProgress(3, 4, "Pass 3/4: Finding Internal Details...", createBitmapFromMask(boundaries, originalMat.size()));
+        try { Thread.sleep(2500); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        
+        Core.bitwise_or(boundaries, detailLines, boundaries);
+        listener.onScanProgress(4, 4, "Pass 4/4: Combining Lines...", createBitmapFromMask(boundaries, originalMat.size()));
+        try { Thread.sleep(2500); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        
+        Mat finalLines = finalizeLines(boundaries);
+        finalizeAndComplete(finalLines, listener);
+        originalMat.release(); grayMat.release(); bgrMat.release(); cannyForSeeds.release(); markers.release(); boundaries.release(); detailLines.release();
+    }
+
+    // --- Method 5: "Pencil Sketch" ---
     public static void processMethod5(Bitmap originalBitmap, ScanListener listener) {
         Mat originalMat = new Mat();
         Utils.bitmapToMat(originalBitmap, originalMat);
         Mat grayMat = new Mat();
         Imgproc.cvtColor(originalMat, grayMat, Imgproc.COLOR_RGBA2GRAY);
 
-        // --- PASS 1: CREATE NEGATIVE ---
-        // FIX: Corrected method name from createBitmapFromMat to createBitmapFromMask
-        listener.onScanProgress(1, 4, "Pass 1/4: Inverting Image...", createBitmapFromMask(new Mat(originalMat.size(), CvType.CV_8UC1, new Scalar(0)), originalMat.size()));
+        listener.onScanProgress(1, 4, "Pass 1/4: Creating Soft Shading...", createBitmapFromMask(new Mat(), originalMat.size()));
         try { Thread.sleep(2500); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
         Mat inverted = new Mat();
         Core.bitwise_not(grayMat, inverted);
-        
-        // --- PASS 2: BLUR THE NEGATIVE ---
-        // FIX: Corrected method name from createBitmapFromMat to createBitmapFromMask
-        listener.onScanProgress(2, 4, "Pass 2/4: Blurring for Shading...", createBitmapFromMask(inverted, originalMat.size()));
-        try { Thread.sleep(2500); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
         Mat blurred = new Mat();
         Imgproc.GaussianBlur(inverted, blurred, new Size(21, 21), 0);
-        
-        // --- PASS 3: COLOR DODGE BLEND (THE MAGIC STEP) ---
-        // FIX: Corrected method name from createBitmapFromMat to createBitmapFromMask
-        listener.onScanProgress(3, 4, "Pass 3/4: Creating Sketch...", createBitmapFromMask(blurred, originalMat.size()));
-        try { Thread.sleep(2500); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
         Mat sketch = colorDodge(grayMat, blurred);
         
-        // --- PASS 4: FINALIZE AND ENHANCE CONTRAST ---
-        // FIX: Corrected method name from createBitmapFromMat to createBitmapFromMask
+        listener.onScanProgress(2, 4, "Pass 2/4: Finding Sharp Edges...", createBitmapFromMask(sketch, originalMat.size()));
+        try { Thread.sleep(2500); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        Mat sharpLines = getMethod8Lines(grayMat);
+        
+        listener.onScanProgress(3, 4, "Pass 3/4: Combining Shading & Lines...", createBitmapFromMask(sketch, originalMat.size()));
+        try { Thread.sleep(2500); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        Mat invertedLines = new Mat();
+        Core.bitwise_not(sharpLines, invertedLines);
+        Core.bitwise_and(sketch, sketch, sketch, invertedLines);
+
         listener.onScanProgress(4, 4, "Pass 4/4: Finalizing Artwork...", createBitmapFromMask(sketch, originalMat.size()));
         try { Thread.sleep(2500); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
         Mat finalSketch = new Mat();
@@ -115,17 +214,12 @@ public class DeepScanProcessor {
         
         Bitmap finalBitmap = Bitmap.createBitmap(finalSketch.cols(), finalSketch.rows(), Bitmap.Config.ARGB_8888);
         Utils.matToBitmap(finalSketch, finalBitmap);
-        ProcessingResult finalResult = new ProcessingResult(finalBitmap, 0);
+        ProcessingResult finalResult = new ProcessingResult(finalBitmap, countContours(sharpLines));
         listener.onScanComplete(finalResult);
 
-        originalMat.release();
-        grayMat.release();
-        inverted.release();
-        blurred.release();
-        sketch.release();
-        finalSketch.release();
+        originalMat.release(); grayMat.release(); inverted.release(); blurred.release(); sketch.release(); sharpLines.release(); invertedLines.release(); finalSketch.release();
     }
-
+    
     // --- Method 6: "Selective Detail" ---
     public static void processMethod6(Bitmap originalBitmap, ScanListener listener) {
         Mat originalMat = new Mat();
@@ -248,17 +342,12 @@ public class DeepScanProcessor {
         top.convertTo(topFloat, CvType.CV_32F, 1.0/255.0);
         Mat bottomFloat = new Mat();
         bottom.convertTo(bottomFloat, CvType.CV_32F, 1.0/255.0);
-        
-        // FIX: The subtract operation needs a destination Mat.
         Mat one = new Mat(topFloat.size(), topFloat.type(), new Scalar(1.0));
         Mat topSub = new Mat();
         Core.subtract(one, topFloat, topSub);
-        
         Mat result = new Mat();
         Core.divide(bottomFloat, topSub, result, 255.0);
-        
         result.convertTo(result, CvType.CV_8U);
-
         topFloat.release();
         bottomFloat.release();
         one.release();
@@ -302,6 +391,18 @@ public class DeepScanProcessor {
         Core.bitwise_or(major, detail, major);
         Mat finalLines = finalizeLines(major);
         simplified.release();
+        detail.release();
+        return finalLines;
+    }
+
+    private static Mat getMethod8Lines(Mat grayMat) {
+        Mat blurred = new Mat();
+        Imgproc.GaussianBlur(grayMat, blurred, new Size(5, 5), 0);
+        Mat major = getCannyEdges(blurred, 5, 50);
+        Mat detail = getCannyEdges(blurred, 60, 120);
+        Core.bitwise_or(major, detail, major);
+        Mat finalLines = finalizeLines(major);
+        blurred.release();
         detail.release();
         return finalLines;
     }
@@ -393,5 +494,45 @@ public class DeepScanProcessor {
         Utils.matToBitmap(foundation, b);
         foundation.release();
         return b;
+    }
+
+    private static Mat createShadedRegions(Mat markers, Mat grayMat) {
+        Mat shaded = new Mat(markers.size(), CvType.CV_8UC1, new Scalar(255));
+        Mat markers8u = new Mat();
+        markers.convertTo(markers8u, CvType.CV_8U);
+        List<MatOfPoint> contours = new ArrayList<>();
+        Mat hierarchy = new Mat();
+        Imgproc.findContours(markers8u, contours, hierarchy, Imgproc.RETR_CCOMP, Imgproc.CHAIN_APPROX_SIMPLE);
+        for (int i = 0; i < contours.size(); i++) {
+            Mat mask = new Mat(markers.size(), CvType.CV_8UC1, new Scalar(0));
+            Imgproc.drawContours(mask, contours, i, new Scalar(255), -1);
+            Scalar averageColor = Core.mean(grayMat, mask);
+            Imgproc.drawContours(shaded, contours, i, averageColor, -1);
+            mask.release();
+        }
+        markers8u.release();
+        hierarchy.release();
+        for(MatOfPoint p : contours) p.release();
+        return shaded;
+    }
+
+    private static Mat applyCrosshatching(Mat shaded) {
+        Mat hatched = new Mat(shaded.size(), CvType.CV_8UC1, new Scalar(255));
+        for(int r = 0; r < shaded.rows(); r++) {
+            for (int c = 0; c < shaded.cols(); c++) {
+                double intensity = shaded.get(r,c)[0];
+                if (intensity < 85) {
+                    if ( (r + c) % 10 == 0 || (r - c) % 10 == 0) {
+                        hatched.put(r,c,0);
+                    }
+                } 
+                else if (intensity < 170) {
+                     if ( (r + c) % 10 == 0) {
+                        hatched.put(r,c,0);
+                    }
+                }
+            }
+        }
+        return hatched;
     }
 }
