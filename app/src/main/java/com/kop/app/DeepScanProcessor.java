@@ -22,7 +22,7 @@ import org.opencv.core.Scalar;
 import org.opencv.core.Size;
 import org.opencv.imgproc.Imgproc;
 
-import java.nio.ByteBuffer;
+import java.nio.FloatBuffer; // CORRECTED IMPORT
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
@@ -64,7 +64,6 @@ public class DeepScanProcessor {
         try {
             // --- Part 1: MediaPipe's Job - Create the Perfect Stencil ---
 
-            // Step 1: Initialize the AI Model (ImageSegmenter)
             ImageSegmenterOptions.Builder optionsBuilder = ImageSegmenterOptions.builder()
                 .setBaseOptions(BaseOptions.builder().setModelAssetPath("selfie_segmenter.tflite").build())
                 .setRunningMode(RunningMode.IMAGE)
@@ -72,41 +71,44 @@ public class DeepScanProcessor {
             ImageSegmenterOptions options = optionsBuilder.build();
             ImageSegmenter imageSegmenter = ImageSegmenter.createFromOptions(context, options);
 
-            // Step 2: Prepare the image for the AI
             MPImage mpImage = new BitmapImageBuilder(originalBitmap).build();
-
-            // Step 3: Run the AI Segmentation
             ImageSegmenterResult segmenterResult = imageSegmenter.segment(mpImage);
 
             if (segmenterResult != null && segmenterResult.confidenceMasks().isPresent()) {
-                // Step 4: Receive the AI's "Blueprint" (The Confidence Mask)
-                ByteBuffer confidenceMaskBuffer = segmenterResult.confidenceMasks().get().get(0).getBuffer();
+                // --- THIS IS THE FIX ---
+                // The old method was .getBuffer(), which does not exist.
+                // The new, correct method is .getFloatBuffer().
+                FloatBuffer confidenceMaskBuffer = segmenterResult.confidenceMasks().get().get(0).getFloatBuffer();
+                confidenceMaskBuffer.rewind(); // IMPORTANT: Reset buffer position to the beginning before reading.
+                // --- END OF FIX ---
+
                 int maskWidth = segmenterResult.confidenceMasks().get().get(0).getWidth();
                 int maskHeight = segmenterResult.confidenceMasks().get().get(0).getHeight();
 
                 // --- Part 2: OpenCV's Job - Trace the Stencil and Draw the Line ---
 
-                // Step 5: Hand the Blueprint to OpenCV
                 Mat maskMat = new Mat(maskHeight, maskWidth, CvType.CV_32F);
-                maskMat.put(0, 0, confidenceMaskBuffer.array());
+                
+                // Create a float array and copy the buffer data into it
+                float[] floatArray = new float[confidenceMaskBuffer.remaining()];
+                confidenceMaskBuffer.get(floatArray);
+                
+                // Put the float array data into the OpenCV Mat
+                maskMat.put(0, 0, floatArray);
 
                 Mat mask8u = new Mat();
                 maskMat.convertTo(mask8u, CvType.CV_8U, 255.0);
                 
-                // Step 6: Make the Stencil Perfect (Thresholding)
                 Mat thresholdMat = new Mat();
                 Imgproc.threshold(mask8u, thresholdMat, 128, 255, Imgproc.THRESH_BINARY);
                 
-                // Step 7: Find the Edge of the Stencil
                 List<MatOfPoint> contours = new ArrayList<>();
                 Mat hierarchy = new Mat();
                 Imgproc.findContours(thresholdMat, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
 
-                // Step 8: Draw the Final Line
                 Mat finalDrawing = new Mat(originalBitmap.getHeight(), originalBitmap.getWidth(), CvType.CV_8UC4, new Scalar(255, 255, 255, 255));
                 Imgproc.drawContours(finalDrawing, contours, -1, new Scalar(0, 0, 0, 255), 2);
 
-                // Step 9: Finalize and Return
                 Bitmap finalBitmap = Bitmap.createBitmap(finalDrawing.cols(), finalDrawing.rows(), Bitmap.Config.ARGB_8888);
                 Utils.matToBitmap(finalDrawing, finalBitmap);
                 
@@ -127,12 +129,10 @@ public class DeepScanProcessor {
                 throw new Exception("MediaPipe did not return a segmentation mask.");
             }
             
-            // Clean up MediaPipe Segmenter
             imageSegmenter.close();
 
         } catch (Exception e) {
             Log.e(TAG, "Method 0 AI processing failed.", e);
-            // Return a blank image on failure
             Bitmap blankBitmap = Bitmap.createBitmap(originalBitmap.getWidth(), originalBitmap.getHeight(), Bitmap.Config.ARGB_8888);
             ProcessingResult result = new ProcessingResult(blankBitmap, 0);
             listener.onAiScanComplete(result);
