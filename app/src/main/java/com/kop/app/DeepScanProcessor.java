@@ -3,7 +3,7 @@ package com.kop.app;
 import android.graphics.Bitmap;
 import org.opencv.android.Utils;
 import org.opencv.core.Core;
-import org.opencv.core.CvType; 
+import org.opencv.core.CvType;
 import org.opencv.core.Mat;
 import org.opencv.core.MatOfPoint;
 import org.opencv.core.Point;
@@ -49,7 +49,9 @@ public class DeepScanProcessor {
         
         listener.onScanProgress(1, 3, "Pass 1/3: Finding Object Foundations...");
         try { Thread.sleep(4000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
-        Mat markers = getWatershedMarkers(grayMat);
+        Mat bgrMat = new Mat();
+        Imgproc.cvtColor(originalMat, bgrMat, Imgproc.COLOR_RGBA2BGR);
+        Mat markers = getWatershedMarkers(grayMat, bgrMat);
         Bitmap foundationBitmap = createColoredFoundation(markers, originalMat.size());
         listener.onFoundationReady(foundationBitmap);
         
@@ -67,6 +69,7 @@ public class DeepScanProcessor {
         
         originalMat.release();
         grayMat.release();
+        bgrMat.release();
         markers.release();
         finalLines.release();
     }
@@ -231,7 +234,6 @@ public class DeepScanProcessor {
         Mat finalLines = finalizeLines(major);
         simplified.release();
         detail.release();
-        // major is returned as finalLines
         return finalLines;
     }
 
@@ -265,7 +267,7 @@ public class DeepScanProcessor {
         return bitmap;
     }
 
-    private static Mat getWatershedMarkers(Mat grayMat) {
+    private static Mat getWatershedMarkers(Mat grayMat, Mat bgrMat) {
         Mat thresh = new Mat();
         Imgproc.threshold(grayMat, thresh, 0, 255, Imgproc.THRESH_BINARY_INV + Imgproc.THRESH_OTSU);
         Mat kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, new Size(3,3));
@@ -291,10 +293,15 @@ public class DeepScanProcessor {
                 }
             }
         }
-        Mat temp = new Mat();
-        Imgproc.cvtColor(grayMat, temp, Imgproc.COLOR_GRAY2BGRA);
-        Imgproc.watershed(temp, markers);
-        temp.release(); thresh.release(); kernel.release(); opening.release(); sureBg.release(); distTransform.release(); sureFg.release(); sureFg8u.release(); unknown.release();
+        Imgproc.watershed(bgrMat, markers);
+        thresh.release();
+        kernel.release();
+        opening.release();
+        sureBg.release();
+        distTransform.release();
+        sureFg.release();
+        sureFg8u.release();
+        unknown.release();
         return markers;
     }
 
@@ -304,13 +311,11 @@ public class DeepScanProcessor {
         for(int r=0; r<markers.rows(); r++) {
             for(int c=0; c<markers.cols(); c++) {
                 int index = (int)markers.get(r,c)[0];
-                if (index > 0 && index != -1) { // Watershed boundaries are -1
-                    // Use index to generate a consistent color
+                if (index > 0 && index != -1) {
                     random.setSeed(index);
-                    int b = random.nextInt(200) + 55; // Brighter colors
+                    int b = random.nextInt(200) + 55;
                     int g = random.nextInt(200) + 55;
                     int r_ = random.nextInt(200) + 55;
-                    // Put semi-transparent color
                     foundation.put(r, c, new byte[]{(byte)b, (byte)g, (byte)r_, (byte)128});
                 }
             }
@@ -319,5 +324,53 @@ public class DeepScanProcessor {
         Utils.matToBitmap(foundation, b);
         foundation.release();
         return b;
+    }
+    
+    // --- HELPER FUNCTIONS FOR NEW METHODS 2 & 3 ---
+
+    private static Mat createShadedRegions(Mat markers, Mat grayMat) {
+        Mat shaded = new Mat(markers.size(), CvType.CV_8UC1, new Scalar(255));
+        // We need to find the contours of the marker regions to process them
+        Mat markers8u = new Mat();
+        markers.convertTo(markers8u, CvType.CV_8U);
+        List<MatOfPoint> contours = new ArrayList<>();
+        Mat hierarchy = new Mat();
+        Imgproc.findContours(markers8u, contours, hierarchy, Imgproc.RETR_CCOMP, Imgproc.CHAIN_APPROX_SIMPLE);
+
+        // For each contour (region), calculate the average gray color and fill it
+        for (int i = 0; i < contours.size(); i++) {
+            Mat mask = new Mat(markers.size(), CvType.CV_8UC1, new Scalar(0));
+            Imgproc.drawContours(mask, contours, i, new Scalar(255), -1); // -1 to fill
+            Scalar averageColor = Core.mean(grayMat, mask);
+            Imgproc.drawContours(shaded, contours, i, averageColor, -1);
+            mask.release();
+        }
+        markers8u.release();
+        hierarchy.release();
+        for(MatOfPoint p : contours) p.release();
+        return shaded;
+    }
+
+    private static Mat applyCrosshatching(Mat shaded) {
+        Mat hatched = new Mat(shaded.size(), CvType.CV_8UC1, new Scalar(255));
+        for(int r = 0; r < shaded.rows(); r++) {
+            for (int c = 0; c < shaded.cols(); c++) {
+                double intensity = shaded.get(r,c)[0];
+                // Darkest regions get two sets of lines (crosshatch)
+                if (intensity < 85) {
+                    if ( (r + c) % 10 == 0 || (r - c) % 10 == 0) {
+                        hatched.put(r,c,0);
+                    }
+                } 
+                // Mid-tones get one set of lines
+                else if (intensity < 170) {
+                     if ( (r + c) % 10 == 0) {
+                        hatched.put(r,c,0);
+                    }
+                }
+                // Lightest regions are left white
+            }
+        }
+        return hatched;
     }
 }
