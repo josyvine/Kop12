@@ -4,7 +4,6 @@
 
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
-    <!-- FIX: Removed Internet permission as it's no longer needed by ML Kit -->
 
     <application
         android:allowBackup="true"
@@ -36,11 +35,6 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/provider_paths"/>
         </provider>
-
-        <!--
-          FIX: Removed the unnecessary meta-data for Google ML Kit as the library
-          is no longer part of the project.
-        -->
 
     </application>
 </manifest>
