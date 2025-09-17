@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- This array is for the video frame rate selector and is being KEPT. -->
+    <!-- This array is for the video frame rate selector. -->
     <string-array name="fps_options">
         <item>1 FPS</item>
         <item>8 FPS</item>
@@ -8,12 +8,17 @@
         <item>24 FPS</item>
     </string-array>
 
-    <!-- NEW: This array is for the new processing method selector. -->
+    <!-- UPDATED: This array now contains all 10 method choices. -->
     <string-array name="method_options">
-        <item>Method 1 (Best)</item>
-        <item>Method 2 (Selective Detail)</item>
-        <item>Method 3 (Artistic)</item>
-        <item>Method 4 (Clean Structure)</item>
-        <item>Method 5 (Detailed Texture)</item>
+        <item>Method 1 (Live Analysis)</item>
+        <item>Method 2 (Crosshatch)</item>
+        <item>Method 3 (Shaded)</item>
+        <item>Method 4 (Segmented Detail)</item>
+        <item>Method 5 (Segmented Structure)</item>
+        <item>Method 6 (Selective Detail)</item>
+        <item>Method 7 (Artistic)</item>
+        <item>Method 8 (Clean Structure)</item>
+        <item>Method 9 (Detailed Texture)</item>
+        <item>Method 10 (Legacy Detailed)</item>
     </string-array>
 </resources>
