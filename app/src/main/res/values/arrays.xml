@@ -8,13 +8,14 @@
         <item>24 FPS</item>
     </string-array>
 
-    <!-- UPDATED: This array now contains all 10 method choices. -->
+    <!-- UPDATED: This array now contains all 11 method choices, with Method 0 at the top. -->
     <string-array name="method_options">
+        <item>Method 0 (AI Smart Outline)</item>
         <item>Method 1 (Live Analysis)</item>
         <item>Method 2 (Crosshatch)</item>
         <item>Method 3 (Shaded)</item>
         <item>Method 4 (Segmented Detail)</item>
-        <item>Method 5 (Segmented Structure)</item>
+        <item>Method 5 (Pencil Sketch)</item>
         <item>Method 6 (Selective Detail)</item>
         <item>Method 7 (Artistic)</item>
         <item>Method 8 (Clean Structure)</item>
