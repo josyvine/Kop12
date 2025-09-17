@@ -25,7 +25,11 @@ import androidx.recyclerview.widget.RecyclerView;
 import android.graphics.Matrix;
 
 import java.io.File;
+import java.io.FileInputStream;  // FIX: Added missing import
+import java.io.FileOutputStream; // FIX: Added missing import
 import java.io.IOException;
+import java.io.InputStream;      // FIX: Added missing import
+import java.io.OutputStream;     // FIX: Added missing import
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -46,7 +50,7 @@ public class ProcessingActivity extends AppCompatActivity {
     private LinearLayout scanStatusContainer, videoControlsContainer;
     private RecyclerView filmStripRecyclerView;
     private FilmStripAdapter filmStripAdapter;
-    private Button analyzeButton;
+    private Button analyzeButton, closeButton;
     private Spinner fpsSpinner;
     private Handler uiHandler;
     private String inputFilePath;
@@ -79,7 +83,15 @@ public class ProcessingActivity extends AppCompatActivity {
         filmStripRecyclerView = findViewById(R.id.rv_film_strip);
         analyzeButton = findViewById(R.id.btn_analyze);
         fpsSpinner = findViewById(R.id.spinner_fps);
+        closeButton = findViewById(R.id.btn_close);
         uiHandler = new Handler(Looper.getMainLooper());
+
+        closeButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                finish();
+            }
+        });
     }
 
     private void startInitialSetup() {
@@ -97,10 +109,8 @@ public class ProcessingActivity extends AppCompatActivity {
                                 setupVideoControls();
                             }
                         });
-                        // For video, extract with default FPS first, then wait for user.
                         extractFramesForVideo(12); // Default FPS
                     } else {
-                        // For image, extract and immediately start the deep scan.
                         rawFrames = extractOrCopyFrames(inputFilePath);
                         beginDeepScanLoop();
                     }
@@ -153,10 +163,14 @@ public class ProcessingActivity extends AppCompatActivity {
     private void extractFramesForVideo(int fps) {
         try {
             updateStatus("Extracting " + fps + " FPS...", true);
-            // Clear previous frames before extracting new ones
             File dir = new File(rawFramesDir);
             if(dir.exists()) {
-                for (File file : dir.listFiles()) file.delete();
+                File[] files = dir.listFiles();
+                if (files != null) {
+                    for (File file : files) {
+                        file.delete();
+                    }
+                }
             }
             FrameExtractor.extractFrames(inputFilePath, rawFramesDir, fps);
             rawFrames = new File(rawFramesDir).listFiles();
@@ -165,6 +179,8 @@ public class ProcessingActivity extends AppCompatActivity {
                 setupFilmStrip(Arrays.asList(rawFrames));
                 updateStatus("Ready to analyze " + rawFrames.length + " frames.", false);
                 updateProgress(0, rawFrames.length);
+            } else {
+                updateStatus("No frames extracted.", false);
             }
         } catch (Exception e) {
             Log.e(TAG, "Frame extraction failed", e);
@@ -277,35 +293,114 @@ public class ProcessingActivity extends AppCompatActivity {
     }
 
     private void updateCurrentFrameHighlight(final int position) {
-        uiHandler.post(new Runnable() { @Override public void run() { if (filmStripAdapter != null) { filmStripAdapter.setCurrentFrame(position); filmStripRecyclerView.scrollToPosition(position); } } });
+        uiHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                if (filmStripAdapter != null) {
+                    filmStripAdapter.setCurrentFrame(position);
+                    filmStripRecyclerView.scrollToPosition(position);
+                }
+            }
+        });
     }
 
     private void updateScanStatus(final String text, final int progress, final int max) {
-        uiHandler.post(new Runnable() { @Override public void run() { scanStatusContainer.setVisibility(View.VISIBLE); scanStatusTextView.setText(text); if (progress > 0 && max > 0) { scanProgressBar.setVisibility(View.VISIBLE); scanProgressBar.setMax(max); scanProgressBar.setProgress(progress); } else { scanProgressBar.setVisibility(View.GONE); } } });
+        uiHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                scanStatusContainer.setVisibility(View.VISIBLE);
+                scanStatusTextView.setText(text);
+                if (progress > 0 && max > 0) {
+                    scanProgressBar.setVisibility(View.VISIBLE);
+                    scanProgressBar.setMax(max);
+                    scanProgressBar.setProgress(progress);
+                } else {
+                    scanProgressBar.setVisibility(View.GONE);
+                }
+            }
+        });
     }
     
     private void hideScanStatus() {
-        uiHandler.post(new Runnable() { @Override public void run() { scanStatusContainer.setVisibility(View.GONE); } });
+        uiHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                scanStatusContainer.setVisibility(View.GONE);
+            }
+        });
     }
 
     private void updateStatus(final String text, final boolean isIndeterminate) {
-        uiHandler.post(new Runnable() { @Override public void run() { statusTextView.setText(text); progressBar.setIndeterminate(isIndeterminate); } });
+        uiHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                statusTextView.setText(text);
+                progressBar.setIndeterminate(isIndeterminate);
+            }
+        });
     }
 
     private void updateProgress(final int current, final int max) {
-        uiHandler.post(new Runnable() { @Override public void run() { progressBar.setMax(max); progressBar.setProgress(current); } });
+        uiHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                progressBar.setMax(max);
+                progressBar.setProgress(current);
+            }
+        });
     }
 
     private void updateMainDisplay(final Bitmap bitmap) {
-        uiHandler.post(new Runnable() { @Override public void run() { if (bitmap != null) { mainDisplay.setImageBitmap(bitmap); } } });
+        uiHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                if (bitmap != null) {
+                    mainDisplay.setImageBitmap(bitmap);
+                }
+            }
+        });
     }
 
     private void showSuccessDialog(final String title, final String message) {
-        uiHandler.post(new Runnable() { @Override public void run() { new AlertDialog.Builder(ProcessingActivity.this).setTitle(title).setMessage(message).setCancelable(false).setPositiveButton("OK", new android.content.DialogInterface.OnClickListener() { @Override public void onClick(android.content.DialogInterface dialog, int which) { finish(); } }).setIcon(android.R.drawable.ic_dialog_info).show(); } });
+        uiHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                new AlertDialog.Builder(ProcessingActivity.this)
+                        .setTitle(title)
+                        .setMessage(message)
+                        .setCancelable(false)
+                        .setPositiveButton("OK", new android.content.DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(android.content.DialogInterface dialog, int which) {
+                                finish();
+                            }
+                        })
+                        .setIcon(android.R.drawable.ic_dialog_info)
+                        .show();
+            }
+        });
     }
 
     private void showErrorDialog(final String title, final String message, final boolean finishActivity) {
-        uiHandler.post(new Runnable() { @Override public void run() { new AlertDialog.Builder(ProcessingActivity.this).setTitle(title).setMessage(message).setCancelable(false).setPositiveButton("OK", new android.content.DialogInterface.OnClickListener() { @Override public void onClick(android.content.DialogInterface dialog, int which) { if (finishActivity) { finish(); } } }).setIcon(android.R.drawable.ic_dialog_alert).show(); } });
+        uiHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                new AlertDialog.Builder(ProcessingActivity.this)
+                        .setTitle(title)
+                        .setMessage(message)
+                        .setCancelable(false)
+                        .setPositiveButton("OK", new android.content.DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(android.content.DialogInterface dialog, int which) {
+                                if (finishActivity) {
+                                    finish();
+                                }
+                            }
+                        })
+                        .setIcon(android.R.drawable.ic_dialog_alert)
+                        .show();
+            }
+        });
     }
 
     private Bitmap decodeAndRotateBitmap(String filePath) throws IOException {
@@ -326,6 +421,7 @@ public class ProcessingActivity extends AppCompatActivity {
     }
 
     private void copyFile(File source, File dest) throws Exception {
+        // This is the full, uncompressed try-with-resources block.
         try (InputStream in = new FileInputStream(source); OutputStream out = new FileOutputStream(dest)) {
             byte[] buf = new byte[4096];
             int len;
