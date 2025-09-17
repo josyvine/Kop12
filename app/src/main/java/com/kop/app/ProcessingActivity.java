@@ -61,9 +61,9 @@ public class ProcessingActivity extends AppCompatActivity {
     private String inputFilePath;
     private File[] rawFrames;
     private String rawFramesDir, processedFramesDir;
-    private int selectedMethod = 1;
+    private int selectedMethod = 0; // Default to Method 0
 
-    // --- NEW UI ELEMENTS AND STATE ---
+    // --- UI ELEMENTS AND STATE FOR MANUAL/AUTOMATIC MODES ---
     private LinearLayout fineTuningControls;
     private SeekBar sliderDepth, sliderSharpness;
     private Button btnSave;
@@ -71,7 +71,7 @@ public class ProcessingActivity extends AppCompatActivity {
     private Bitmap sourceBitmapForTuning; // Holds the original image for re-analysis
     private boolean isFirstFineTuneAnalysis = true;
     
-    // --- UI ELEMENTS FOR AUTOMATIC & METHOD 1 SCANNING ---
+    // --- UI ELEMENTS FOR PROGRESS DISPLAY ---
     private LinearLayout scanStatusContainer;
     private TextView scanStatusTextView;
     private ProgressBar scanProgressBar;
@@ -106,12 +106,10 @@ public class ProcessingActivity extends AppCompatActivity {
         closeButton = findViewById(R.id.btn_close);
         uiHandler = new Handler(Looper.getMainLooper());
         
-        // --- Find views for automatic scanning ---
         scanStatusTextView = findViewById(R.id.tv_scan_status);
         scanProgressBar = findViewById(R.id.scan_progress_bar);
         scanStatusContainer = findViewById(R.id.scan_status_container);
 
-        // --- Find new views for fine-tuning ---
         fineTuningControls = findViewById(R.id.fine_tuning_controls);
         sliderDepth = findViewById(R.id.slider_depth);
         sliderSharpness = findViewById(R.id.slider_sharpness);
@@ -132,24 +130,22 @@ public class ProcessingActivity extends AppCompatActivity {
             public void run() {
                 try {
                     prepareDirectories();
-                    boolean isVideo = isVideoFile(inputFilePath);
-
-                    runOnUiThread(new Runnable() {
-                        @Override
-                        public void run() {
-                            setupAnalysisControls(isVideo);
-                        }
-                    });
+                    final boolean isVideo = isVideoFile(inputFilePath);
 
                     if (isVideo) {
                         extractFramesForVideo(12); // Default FPS
                     } else {
                         rawFrames = extractOrCopyFrames(inputFilePath);
-                        if (rawFrames != null && rawFrames.length > 0) {
-                            Bitmap bmp = decodeAndRotateBitmap(rawFrames[0].getAbsolutePath());
-                            updateMainDisplay(bmp);
-                        }
                     }
+                    
+                    if (rawFrames != null && rawFrames.length > 0) {
+                        sourceBitmapForTuning = decodeAndRotateBitmap(rawFrames[0].getAbsolutePath());
+                        updateMainDisplay(sourceBitmapForTuning);
+                        
+                        // NEW WORKFLOW: Immediately start the AI analysis
+                        beginAutomaticAiScan();
+                    }
+
                 } catch (Exception e) {
                     Log.e(TAG, "Initial setup failed", e);
                     showErrorDialog("Setup Error", "Failed to prepare files.", true);
@@ -158,22 +154,68 @@ public class ProcessingActivity extends AppCompatActivity {
         }).start();
     }
     
+    // --- NEW AUTOMATIC AI SCAN WORKFLOW ---
+    private void beginAutomaticAiScan() {
+        if (sourceBitmapForTuning == null) {
+            showErrorDialog("Error", "Source image not found for AI scan.", true);
+            return;
+        }
+
+        uiHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                statusTextView.setText("Performing AI Analysis...");
+                progressBar.setIndeterminate(true);
+                analysisControlsContainer.setVisibility(View.GONE);
+                btnSave.setVisibility(View.GONE);
+            }
+        });
+        
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                DeepScanProcessor.AiScanListener listener = new DeepScanProcessor.AiScanListener() {
+                    @Override
+                    public void onAiScanComplete(DeepScanProcessor.ProcessingResult finalResult) {
+                        updateMainDisplay(finalResult.resultBitmap);
+                        
+                        // Now that the automatic scan is done, show the controls
+                        uiHandler.post(new Runnable() {
+                            @Override
+                            public void run() {
+                                setupAnalysisControls(isVideoFile(inputFilePath));
+                                statusTextView.setText("AI Analysis Complete. Save or choose another method.");
+                                progressBar.setIndeterminate(false);
+                                btnSave.setVisibility(View.VISIBLE);
+                            }
+                        });
+                    }
+                };
+                
+                // Pass the application context, which is needed by MediaPipe
+                DeepScanProcessor.processMethod0(getApplicationContext(), sourceBitmapForTuning, listener);
+            }
+        }).start();
+    }
+    
     private void setupAnalysisControls(boolean isVideo) {
         analysisControlsContainer.setVisibility(View.VISIBLE);
-        fineTuningControls.setVisibility(View.GONE); // Hide sliders by default
+        fineTuningControls.setVisibility(View.GONE);
 
         ArrayAdapter<CharSequence> methodAdapter = ArrayAdapter.createFromResource(this,
                 R.array.method_options, android.R.layout.simple_spinner_item);
         methodAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         methodSpinner.setAdapter(methodAdapter);
+        methodSpinner.setSelection(0, false); // Select Method 0 by default, don't trigger listener
         methodSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-                selectedMethod = position + 1;
+                // The position in the array directly corresponds to the method number
+                selectedMethod = position;
             }
             @Override
             public void onNothingSelected(AdapterView<?> parent) {
-                selectedMethod = 1;
+                selectedMethod = 0;
             }
         });
 
@@ -208,7 +250,6 @@ public class ProcessingActivity extends AppCompatActivity {
                 if (isChecked) {
                     fineTuningControls.setVisibility(View.GONE);
                 } else {
-                    // Only show fine-tuning controls if an analysis has already been done
                     if (!isFirstFineTuneAnalysis) {
                         fineTuningControls.setVisibility(View.VISIBLE);
                     }
@@ -234,6 +275,7 @@ public class ProcessingActivity extends AppCompatActivity {
     private void beginAnalysis() {
         analyzeButton.setEnabled(false);
         analysisControlsContainer.setVisibility(View.GONE);
+        btnSave.setVisibility(View.GONE);
 
         new Thread(new Runnable() {
             @Override
@@ -242,12 +284,15 @@ public class ProcessingActivity extends AppCompatActivity {
                     if (rawFrames == null || rawFrames.length == 0) {
                         throw new Exception("No frames available to process.");
                     }
+                    
+                    if (selectedMethod == 0) {
+                        beginAutomaticAiScan();
+                        return;
+                    }
 
                     if (switchAutomaticScan.isChecked() || selectedMethod == 1) {
-                        // Use the original automated processing loop for all frames.
                         processAllFramesAutomatically();
                     } else {
-                        // Use the new single-image fine-tuning system.
                         if (isFirstFineTuneAnalysis) {
                             sourceBitmapForTuning = decodeAndRotateBitmap(rawFrames[0].getAbsolutePath());
                         }
@@ -262,7 +307,6 @@ public class ProcessingActivity extends AppCompatActivity {
         }).start();
     }
     
-    // --- AUTOMATIC SCAN WORKFLOW ---
     private void processAllFramesAutomatically() throws Exception {
         final int totalFrames = rawFrames.length;
         for (int i = 0; i < totalFrames; i++) {
@@ -298,12 +342,18 @@ public class ProcessingActivity extends AppCompatActivity {
             @Override
             public void onScanComplete(final DeepScanProcessor.ProcessingResult finalResult) {
                 updateMainDisplay(finalResult.resultBitmap);
-                String outPath = new File(processedFramesDir, String.format("processed_%05d.png", frameIndex)).getAbsolutePath();
-                try {
-                    ImageProcessor.saveBitmap(finalResult.resultBitmap, outPath);
-                } catch (Exception e) {
-                    Log.e(TAG, "Failed to save processed frame.", e);
+                
+                // NO LONGER SAVING AUTOMATICALLY FOR SINGLE IMAGES
+                boolean isVideo = isVideoFile(inputFilePath);
+                if (isVideo) {
+                    String outPath = new File(processedFramesDir, String.format("processed_%05d.png", frameIndex)).getAbsolutePath();
+                    try {
+                        ImageProcessor.saveBitmap(finalResult.resultBitmap, outPath);
+                    } catch (Exception e) {
+                        Log.e(TAG, "Failed to save processed frame.", e);
+                    }
                 }
+                
                 updateScanStatus("Scan Complete. Found " + finalResult.objectsFound + " objects.", -1, -1);
                 latch.countDown();
             }
@@ -322,41 +372,34 @@ public class ProcessingActivity extends AppCompatActivity {
         }
 
         latch.await();
+        boolean isVideo = isVideoFile(inputFilePath);
+        if (!isVideo) {
+             uiHandler.post(new Runnable() {
+                @Override
+                public void run() {
+                    btnSave.setVisibility(View.VISIBLE);
+                    analysisControlsContainer.setVisibility(View.VISIBLE);
+                    analyzeButton.setEnabled(true);
+                }
+            });
+        }
         try { Thread.sleep(2000); } catch (InterruptedException e) {}
         hideScanStatus();
     }
     
-    // --- MANUAL FINE-TUNING WORKFLOW ---
     private void performFineTuningAnalysis() {
         if (sourceBitmapForTuning == null) {
             showErrorDialog("Error", "No source image is loaded for tuning.", true);
             return;
         }
-
         updateStatus("Analyzing...", true);
         
-        final int depth;
-        final int sharpness;
-        if (isFirstFineTuneAnalysis) {
-            depth = 4;
-            sharpness = 50;
-            uiHandler.post(new Runnable() {
-                @Override
-                public void run() {
-                    sliderDepth.setProgress(depth);
-                    sliderSharpness.setProgress(sharpness);
-                }
-            });
-        } else {
-            depth = sliderDepth.getProgress();
-            sharpness = sliderSharpness.getProgress();
-        }
+        final int depth = sliderDepth.getProgress();
+        final int sharpness = sliderSharpness.getProgress();
 
         DeepScanProcessor.ScanListener listener = new DeepScanProcessor.ScanListener() {
             @Override
-            public void onScanProgress(int pass, int totalPasses, String status, Bitmap intermediateResult) {
-                // Not used in manual mode.
-            }
+            public void onScanProgress(int pass, int totalPasses, String status, Bitmap intermediateResult) {}
             @Override
             public void onScanComplete(final DeepScanProcessor.ProcessingResult finalResult) {
                 updateMainDisplay(finalResult.resultBitmap);
@@ -371,6 +414,7 @@ public class ProcessingActivity extends AppCompatActivity {
                             isFirstFineTuneAnalysis = false;
                         }
                         analysisControlsContainer.setVisibility(View.VISIBLE);
+                        btnSave.setVisibility(View.VISIBLE);
                         updateStatus("Ready for fine-tuning. Adjust sliders and Analyze.", false);
                         updateProgress(0, 1);
                         analyzeButton.setEnabled(true);
@@ -378,7 +422,6 @@ public class ProcessingActivity extends AppCompatActivity {
                 });
             }
         };
-
         DeepScanProcessor.processWithFineTuning(sourceBitmapForTuning, selectedMethod, depth, sharpness, listener);
     }
     
@@ -387,7 +430,6 @@ public class ProcessingActivity extends AppCompatActivity {
             Toast.makeText(this, "No image to save.", Toast.LENGTH_SHORT).show();
             return;
         }
-        
         Bitmap bitmapToSave = ((BitmapDrawable) mainDisplay.getDrawable()).getBitmap();
         
         if (bitmapToSave != null) {
@@ -396,7 +438,7 @@ public class ProcessingActivity extends AppCompatActivity {
                 public void run() {
                     try {
                         String timestamp = new SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.US).format(new Date());
-                        String fileName = "Kop_FineTuned_" + timestamp + ".png";
+                        String fileName = "Kop_Saved_" + timestamp + ".png";
                         File outFile = new File(processedFramesDir, fileName);
                         
                         ImageProcessor.saveBitmap(bitmapToSave, outFile.getAbsolutePath());
@@ -451,9 +493,7 @@ public class ProcessingActivity extends AppCompatActivity {
                 latch.countDown();
             }
         };
-        
         DeepScanProcessor.processMethod1(bitmap, listener);
-
         latch.await();
         try { Thread.sleep(2000); } catch (InterruptedException e) {}
         hideScanStatus();
@@ -465,19 +505,13 @@ public class ProcessingActivity extends AppCompatActivity {
             File dir = new File(rawFramesDir);
             if(dir.exists()) {
                 File[] files = dir.listFiles();
-                if (files != null) {
-                    for (File file : files) file.delete();
-                }
+                if (files != null) { for (File file : files) file.delete(); }
             }
             FrameExtractor.extractFrames(inputFilePath, rawFramesDir, fps);
             rawFrames = new File(rawFramesDir).listFiles();
             if (rawFrames != null) {
                 sortFrames(rawFrames);
                 setupFilmStrip(Arrays.asList(rawFrames));
-                updateStatus("Ready: " + rawFrames.length + " frames. Select method and analyze.", false);
-                updateProgress(0, rawFrames.length);
-            } else {
-                updateStatus("No frames extracted.", false);
             }
         } catch (Exception e) {
             Log.e(TAG, "Frame extraction failed", e);
@@ -498,7 +532,6 @@ public class ProcessingActivity extends AppCompatActivity {
     }
 
     private File[] extractOrCopyFrames(String path) throws Exception {
-        updateStatus("Ready. Select method and analyze.", false);
         copyFile(new File(path), new File(rawFramesDir, "frame_00000.png"));
         return new File(rawFramesDir).listFiles();
     }
