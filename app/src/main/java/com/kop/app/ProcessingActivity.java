@@ -25,13 +25,12 @@ import androidx.recyclerview.widget.RecyclerView;
 import android.graphics.Matrix;
 
 import java.io.File;
-import java.io.FileInputStream;  // FIX: Added missing import
-import java.io.FileOutputStream; // FIX: Added missing import
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;      // FIX: Added missing import
-import java.io.OutputStream;     // FIX: Added missing import
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.Date;
@@ -47,15 +46,16 @@ public class ProcessingActivity extends AppCompatActivity {
     private ImageView mainDisplay;
     private TextView statusTextView, scanStatusTextView;
     private ProgressBar progressBar, scanProgressBar;
-    private LinearLayout scanStatusContainer, videoControlsContainer;
+    private LinearLayout scanStatusContainer, analysisControlsContainer, fpsControlsContainer;
     private RecyclerView filmStripRecyclerView;
     private FilmStripAdapter filmStripAdapter;
     private Button analyzeButton, closeButton;
-    private Spinner fpsSpinner;
+    private Spinner fpsSpinner, methodSpinner;
     private Handler uiHandler;
     private String inputFilePath;
     private File[] rawFrames;
     private String rawFramesDir, processedFramesDir;
+    private int selectedMethod = 1; // Default to Method 1 (Best)
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -79,10 +79,12 @@ public class ProcessingActivity extends AppCompatActivity {
         progressBar = findViewById(R.id.progress_bar);
         scanProgressBar = findViewById(R.id.scan_progress_bar);
         scanStatusContainer = findViewById(R.id.scan_status_container);
-        videoControlsContainer = findViewById(R.id.video_controls);
+        analysisControlsContainer = findViewById(R.id.analysis_controls);
+        fpsControlsContainer = findViewById(R.id.fps_controls);
         filmStripRecyclerView = findViewById(R.id.rv_film_strip);
         analyzeButton = findViewById(R.id.btn_analyze);
         fpsSpinner = findViewById(R.id.spinner_fps);
+        methodSpinner = findViewById(R.id.spinner_method);
         closeButton = findViewById(R.id.btn_close);
         uiHandler = new Handler(Looper.getMainLooper());
 
@@ -102,17 +104,23 @@ public class ProcessingActivity extends AppCompatActivity {
                     prepareDirectories();
                     boolean isVideo = isVideoFile(inputFilePath);
 
+                    // Show the analysis controls for both images and videos now.
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            setupAnalysisControls(isVideo);
+                        }
+                    });
+
                     if (isVideo) {
-                        runOnUiThread(new Runnable() {
-                            @Override
-                            public void run() {
-                                setupVideoControls();
-                            }
-                        });
                         extractFramesForVideo(12); // Default FPS
                     } else {
                         rawFrames = extractOrCopyFrames(inputFilePath);
-                        beginDeepScanLoop();
+                        // For images, show the single image immediately.
+                        if (rawFrames != null && rawFrames.length > 0) {
+                            Bitmap bmp = decodeAndRotateBitmap(rawFrames[0].getAbsolutePath());
+                            updateMainDisplay(bmp);
+                        }
                     }
                 } catch (Exception e) {
                     Log.e(TAG, "Initial setup failed", e);
@@ -122,34 +130,56 @@ public class ProcessingActivity extends AppCompatActivity {
         }).start();
     }
     
-    private void setupVideoControls() {
-        videoControlsContainer.setVisibility(View.VISIBLE);
-        ArrayAdapter<CharSequence> adapter = ArrayAdapter.createFromResource(this,
-                R.array.fps_options, android.R.layout.simple_spinner_item);
-        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-        fpsSpinner.setAdapter(adapter);
-        fpsSpinner.setSelection(2); // Default to 12 FPS
+    private void setupAnalysisControls(boolean isVideo) {
+        analysisControlsContainer.setVisibility(View.VISIBLE);
 
-        fpsSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+        // Setup for Method Spinner
+        ArrayAdapter<CharSequence> methodAdapter = ArrayAdapter.createFromResource(this,
+                R.array.method_options, android.R.layout.simple_spinner_item);
+        methodAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        methodSpinner.setAdapter(methodAdapter);
+        methodSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-                String selectedFpsStr = parent.getItemAtPosition(position).toString();
-                int selectedFps = Integer.parseInt(selectedFpsStr.replace(" FPS", ""));
-                new Thread(new Runnable() {
-                    @Override
-                    public void run() {
-                        extractFramesForVideo(selectedFps);
-                    }
-                }).start();
+                // position 0 is Method 1, so we add 1
+                selectedMethod = position + 1;
             }
             @Override
-            public void onNothingSelected(AdapterView<?> parent) {}
+            public void onNothingSelected(AdapterView<?> parent) {
+                selectedMethod = 1; // Default
+            }
         });
+
+        // Setup for FPS Spinner (only if video)
+        if (isVideo) {
+            fpsControlsContainer.setVisibility(View.VISIBLE);
+            ArrayAdapter<CharSequence> fpsAdapter = ArrayAdapter.createFromResource(this,
+                    R.array.fps_options, android.R.layout.simple_spinner_item);
+            fpsAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+            fpsSpinner.setAdapter(fpsAdapter);
+            fpsSpinner.setSelection(2); // Default to 12 FPS
+
+            fpsSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+                @Override
+                public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                    String selectedFpsStr = parent.getItemAtPosition(position).toString();
+                    int selectedFps = Integer.parseInt(selectedFpsStr.replace(" FPS", ""));
+                    new Thread(new Runnable() {
+                        @Override
+                        public void run() {
+                            extractFramesForVideo(selectedFps);
+                        }
+                    }).start();
+                }
+                @Override
+                public void onNothingSelected(AdapterView<?> parent) {}
+            });
+        }
 
         analyzeButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                videoControlsContainer.setVisibility(View.GONE);
+                analysisControlsContainer.setVisibility(View.GONE);
                 new Thread(new Runnable() {
                     @Override
                     public void run() {
@@ -167,9 +197,7 @@ public class ProcessingActivity extends AppCompatActivity {
             if(dir.exists()) {
                 File[] files = dir.listFiles();
                 if (files != null) {
-                    for (File file : files) {
-                        file.delete();
-                    }
+                    for (File file : files) file.delete();
                 }
             }
             FrameExtractor.extractFrames(inputFilePath, rawFramesDir, fps);
@@ -177,7 +205,7 @@ public class ProcessingActivity extends AppCompatActivity {
             if (rawFrames != null) {
                 sortFrames(rawFrames);
                 setupFilmStrip(Arrays.asList(rawFrames));
-                updateStatus("Ready to analyze " + rawFrames.length + " frames.", false);
+                updateStatus("Ready: " + rawFrames.length + " frames. Select method and analyze.", false);
                 updateProgress(0, rawFrames.length);
             } else {
                 updateStatus("No frames extracted.", false);
@@ -202,13 +230,13 @@ public class ProcessingActivity extends AppCompatActivity {
                 updateProgress(frameNum, totalFrames);
                 updateCurrentFrameHighlight(frameIndex);
 
-                File frameFile = rawFrames[frameIndex];
-                Bitmap orientedBitmap = decodeAndRotateBitmap(frameFile.getAbsolutePath());
+                Bitmap orientedBitmap = decodeAndRotateBitmap(rawFrames[frameIndex].getAbsolutePath());
                 if (orientedBitmap == null) continue;
 
                 final CountDownLatch latch = new CountDownLatch(1);
 
-                DeepScanProcessor.performDeepScan(orientedBitmap, new DeepScanProcessor.ScanListener() {
+                // This is the main logic change: calling the correct method based on user selection.
+                DeepScanProcessor.ScanListener listener = new DeepScanProcessor.ScanListener() {
                     @Override
                     public void onScanProgress(final int pass, final int totalPasses, final String status, final Bitmap intermediateResult) {
                         updateScanStatus(status, pass, totalPasses);
@@ -226,7 +254,27 @@ public class ProcessingActivity extends AppCompatActivity {
                         updateScanStatus("Scan Complete. Found " + finalResult.objectsFound + " objects.", -1, -1);
                         latch.countDown();
                     }
-                });
+                };
+
+                switch (selectedMethod) {
+                    case 1:
+                        DeepScanProcessor.processMethod1(orientedBitmap, listener);
+                        break;
+                    case 2:
+                        DeepScanProcessor.processMethod2(orientedBitmap, listener);
+                        break;
+                    case 3:
+                        DeepScanProcessor.processMethod3(orientedBitmap, listener);
+                        break;
+                    case 4:
+                        DeepScanProcessor.processMethod4(orientedBitmap, listener);
+                        break;
+                    case 5:
+                    default:
+                        DeepScanProcessor.processMethod5(orientedBitmap, listener);
+                        break;
+                }
+
                 latch.await();
 
                 try { Thread.sleep(2000); } catch (InterruptedException e) {}
@@ -252,7 +300,7 @@ public class ProcessingActivity extends AppCompatActivity {
     }
 
     private File[] extractOrCopyFrames(String path) throws Exception {
-        updateStatus("Preparing image...", true);
+        updateStatus("Ready to analyze. Select method.", false);
         copyFile(new File(path), new File(rawFramesDir, "frame_00000.png"));
         File[] frames = new File(rawFramesDir).listFiles();
         if (frames != null) {
@@ -421,7 +469,6 @@ public class ProcessingActivity extends AppCompatActivity {
     }
 
     private void copyFile(File source, File dest) throws Exception {
-        // This is the full, uncompressed try-with-resources block.
         try (InputStream in = new FileInputStream(source); OutputStream out = new FileOutputStream(dest)) {
             byte[] buf = new byte[4096];
             int len;
