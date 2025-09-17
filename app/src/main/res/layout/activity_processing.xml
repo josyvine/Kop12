@@ -7,7 +7,7 @@
     android:background="#1C1C2E"
     tools:context=".ProcessingActivity">
 
-    <LinearLayout 
+    <LinearLayout
         android:id="@+id/header"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -43,8 +43,6 @@
         android:layout_marginHorizontal="8dp"
         android:indeterminate="true" />
         
-    <!-- RENAMED: from video_controls to analysis_controls -->
-    <!-- This container will now be visible for both images and videos. -->
     <LinearLayout
         android:id="@+id/analysis_controls"
         android:layout_width="match_parent"
@@ -56,7 +54,6 @@
         android:visibility="gone"
         tools:visibility="visible">
 
-        <!-- This horizontal group contains the new Method selector -->
         <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -78,7 +75,6 @@
                 android:spinnerMode="dropdown"/>
         </LinearLayout>
 
-        <!-- This horizontal group contains the FPS selector for videos -->
         <LinearLayout
             android:id="@+id/fps_controls"
             android:layout_width="wrap_content"
@@ -125,6 +121,14 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:contentDescription="Main processing display"
+            android:scaleType="fitCenter" />
+            
+        <!-- THIS IS THE NECESSARY ELEMENT FOR METHOD 1 -->
+        <ImageView
+            android:id="@+id/iv_overlay_display"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:contentDescription="Live analysis overlay"
             android:scaleType="fitCenter" />
 
         <LinearLayout
