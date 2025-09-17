@@ -44,6 +44,7 @@ public class ProcessingActivity extends AppCompatActivity {
     public static final String EXTRA_FILE_PATH = "extra_file_path";
 
     private ImageView mainDisplay;
+    private ImageView overlayDisplay; // For Method 1
     private TextView statusTextView, scanStatusTextView;
     private ProgressBar progressBar, scanProgressBar;
     private LinearLayout scanStatusContainer, analysisControlsContainer, fpsControlsContainer;
@@ -55,7 +56,7 @@ public class ProcessingActivity extends AppCompatActivity {
     private String inputFilePath;
     private File[] rawFrames;
     private String rawFramesDir, processedFramesDir;
-    private int selectedMethod = 1; // Default to Method 1 (Best)
+    private int selectedMethod = 1;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -74,6 +75,7 @@ public class ProcessingActivity extends AppCompatActivity {
 
     private void initializeViews() {
         mainDisplay = findViewById(R.id.iv_main_display);
+        overlayDisplay = findViewById(R.id.iv_overlay_display);
         statusTextView = findViewById(R.id.tv_status);
         scanStatusTextView = findViewById(R.id.tv_scan_status);
         progressBar = findViewById(R.id.progress_bar);
@@ -104,7 +106,6 @@ public class ProcessingActivity extends AppCompatActivity {
                     prepareDirectories();
                     boolean isVideo = isVideoFile(inputFilePath);
 
-                    // Show the analysis controls for both images and videos now.
                     runOnUiThread(new Runnable() {
                         @Override
                         public void run() {
@@ -116,7 +117,6 @@ public class ProcessingActivity extends AppCompatActivity {
                         extractFramesForVideo(12); // Default FPS
                     } else {
                         rawFrames = extractOrCopyFrames(inputFilePath);
-                        // For images, show the single image immediately.
                         if (rawFrames != null && rawFrames.length > 0) {
                             Bitmap bmp = decodeAndRotateBitmap(rawFrames[0].getAbsolutePath());
                             updateMainDisplay(bmp);
@@ -133,7 +133,6 @@ public class ProcessingActivity extends AppCompatActivity {
     private void setupAnalysisControls(boolean isVideo) {
         analysisControlsContainer.setVisibility(View.VISIBLE);
 
-        // Setup for Method Spinner
         ArrayAdapter<CharSequence> methodAdapter = ArrayAdapter.createFromResource(this,
                 R.array.method_options, android.R.layout.simple_spinner_item);
         methodAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
@@ -141,23 +140,21 @@ public class ProcessingActivity extends AppCompatActivity {
         methodSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-                // position 0 is Method 1, so we add 1
                 selectedMethod = position + 1;
             }
             @Override
             public void onNothingSelected(AdapterView<?> parent) {
-                selectedMethod = 1; // Default
+                selectedMethod = 1;
             }
         });
 
-        // Setup for FPS Spinner (only if video)
         if (isVideo) {
             fpsControlsContainer.setVisibility(View.VISIBLE);
             ArrayAdapter<CharSequence> fpsAdapter = ArrayAdapter.createFromResource(this,
                     R.array.fps_options, android.R.layout.simple_spinner_item);
             fpsAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
             fpsSpinner.setAdapter(fpsAdapter);
-            fpsSpinner.setSelection(2); // Default to 12 FPS
+            fpsSpinner.setSelection(2);
 
             fpsSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
                 @Override
@@ -233,52 +230,12 @@ public class ProcessingActivity extends AppCompatActivity {
                 Bitmap orientedBitmap = decodeAndRotateBitmap(rawFrames[frameIndex].getAbsolutePath());
                 if (orientedBitmap == null) continue;
 
-                final CountDownLatch latch = new CountDownLatch(1);
-
-                // This is the main logic change: calling the correct method based on user selection.
-                DeepScanProcessor.ScanListener listener = new DeepScanProcessor.ScanListener() {
-                    @Override
-                    public void onScanProgress(final int pass, final int totalPasses, final String status, final Bitmap intermediateResult) {
-                        updateScanStatus(status, pass, totalPasses);
-                        updateMainDisplay(intermediateResult);
-                    }
-                    @Override
-                    public void onScanComplete(final DeepScanProcessor.ProcessingResult finalResult) {
-                        updateMainDisplay(finalResult.resultBitmap);
-                        String outPath = new File(processedFramesDir, String.format("processed_%05d.png", frameIndex)).getAbsolutePath();
-                        try {
-                            ImageProcessor.saveBitmap(finalResult.resultBitmap, outPath);
-                        } catch (Exception e) {
-                            Log.e(TAG, "Failed to save processed frame.", e);
-                        }
-                        updateScanStatus("Scan Complete. Found " + finalResult.objectsFound + " objects.", -1, -1);
-                        latch.countDown();
-                    }
-                };
-
-                switch (selectedMethod) {
-                    case 1:
-                        DeepScanProcessor.processMethod1(orientedBitmap, listener);
-                        break;
-                    case 2:
-                        DeepScanProcessor.processMethod2(orientedBitmap, listener);
-                        break;
-                    case 3:
-                        DeepScanProcessor.processMethod3(orientedBitmap, listener);
-                        break;
-                    case 4:
-                        DeepScanProcessor.processMethod4(orientedBitmap, listener);
-                        break;
-                    case 5:
-                    default:
-                        DeepScanProcessor.processMethod5(orientedBitmap, listener);
-                        break;
+                if (selectedMethod == 1) {
+                    beginMethod1LiveScan(orientedBitmap, frameIndex);
+                } else {
+                    beginStandardScan(orientedBitmap, frameIndex);
                 }
 
-                latch.await();
-
-                try { Thread.sleep(2000); } catch (InterruptedException e) {}
-                hideScanStatus();
                 orientedBitmap.recycle();
             }
             showSuccessDialog("Processing Complete", "Your rotoscoped frames have been saved to:\n\n" + processedFramesDir);
@@ -287,6 +244,83 @@ public class ProcessingActivity extends AppCompatActivity {
             String message = (e.getMessage() != null) ? e.getMessage() : "An unknown error occurred.";
             showErrorDialog("Processing Error", message, true);
         }
+    }
+    
+    private void beginStandardScan(Bitmap bitmap, final int frameIndex) throws InterruptedException {
+        final CountDownLatch latch = new CountDownLatch(1);
+        DeepScanProcessor.ScanListener listener = new DeepScanProcessor.ScanListener() {
+            @Override
+            public void onScanProgress(final int pass, final int totalPasses, final String status, final Bitmap intermediateResult) {
+                updateScanStatus(status, pass, totalPasses);
+                updateMainDisplay(intermediateResult);
+            }
+            @Override
+            public void onScanComplete(final DeepScanProcessor.ProcessingResult finalResult) {
+                updateMainDisplay(finalResult.resultBitmap);
+                String outPath = new File(processedFramesDir, String.format("processed_%05d.png", frameIndex)).getAbsolutePath();
+                try {
+                    ImageProcessor.saveBitmap(finalResult.resultBitmap, outPath);
+                } catch (Exception e) {
+                    Log.e(TAG, "Failed to save processed frame.", e);
+                }
+                updateScanStatus("Scan Complete. Found " + finalResult.objectsFound + " objects.", -1, -1);
+                latch.countDown();
+            }
+        };
+
+        switch (selectedMethod) {
+            case 2: DeepScanProcessor.processMethod2(bitmap, listener); break;
+            case 3: DeepScanProcessor.processMethod3(bitmap, listener); break;
+            case 4: DeepScanProcessor.processMethod4(bitmap, listener); break;
+            case 5: DeepScanProcessor.processMethod5(bitmap, listener); break;
+            case 6: DeepScanProcessor.processMethod6(bitmap, listener); break;
+            case 7: DeepScanProcessor.processMethod7(bitmap, listener); break;
+            case 8: DeepScanProcessor.processMethod8(bitmap, listener); break;
+            case 9: DeepScanProcessor.processMethod9(bitmap, listener); break;
+            case 10: default: DeepScanProcessor.processMethod10(bitmap, listener); break;
+        }
+
+        latch.await();
+        try { Thread.sleep(2000); } catch (InterruptedException e) {}
+        hideScanStatus();
+    }
+
+    private void beginMethod1LiveScan(Bitmap bitmap, final int frameIndex) throws InterruptedException {
+        final CountDownLatch latch = new CountDownLatch(1);
+        updateMainDisplay(bitmap);
+        updateOverlayDisplay(null);
+
+        DeepScanProcessor.LiveScanListener listener = new DeepScanProcessor.LiveScanListener() {
+            @Override
+            public void onScanProgress(final int pass, final int totalPasses, final String status) {
+                updateScanStatus(status, pass, totalPasses);
+            }
+            @Override
+            public void onFoundationReady(Bitmap foundationBitmap) {
+                updateOverlayDisplay(foundationBitmap);
+            }
+            @Override
+            public void onLinesReady(Bitmap linesBitmap) {
+                updateOverlayDisplay(linesBitmap);
+            }
+            @Override
+            public void onScanComplete(final DeepScanProcessor.ProcessingResult finalResult) {
+                String outPath = new File(processedFramesDir, String.format("processed_%05d.png", frameIndex)).getAbsolutePath();
+                try {
+                    ImageProcessor.saveBitmap(finalResult.resultBitmap, outPath);
+                } catch (Exception e) {
+                    Log.e(TAG, "Failed to save processed frame.", e);
+                }
+                updateScanStatus("Scan Complete. Found " + finalResult.objectsFound + " objects.", -1, -1);
+                latch.countDown();
+            }
+        };
+        
+        DeepScanProcessor.processMethod1(bitmap, listener);
+
+        latch.await();
+        try { Thread.sleep(2000); } catch (InterruptedException e) {}
+        hideScanStatus();
     }
     
     private void prepareDirectories() {
@@ -300,13 +334,9 @@ public class ProcessingActivity extends AppCompatActivity {
     }
 
     private File[] extractOrCopyFrames(String path) throws Exception {
-        updateStatus("Ready to analyze. Select method.", false);
+        updateStatus("Ready. Select method and analyze.", false);
         copyFile(new File(path), new File(rawFramesDir, "frame_00000.png"));
-        File[] frames = new File(rawFramesDir).listFiles();
-        if (frames != null) {
-            sortFrames(frames);
-        }
-        return frames;
+        return new File(rawFramesDir).listFiles();
     }
     
     private void sortFrames(File[] frames) {
@@ -404,6 +434,19 @@ public class ProcessingActivity extends AppCompatActivity {
             public void run() {
                 if (bitmap != null) {
                     mainDisplay.setImageBitmap(bitmap);
+                }
+            }
+        });
+    }
+
+    private void updateOverlayDisplay(final Bitmap bitmap) {
+        uiHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                if (bitmap != null) {
+                    overlayDisplay.setImageBitmap(bitmap);
+                } else {
+                    overlayDisplay.setImageDrawable(null);
                 }
             }
         });
