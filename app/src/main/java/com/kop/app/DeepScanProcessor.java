@@ -74,11 +74,57 @@ public class DeepScanProcessor {
         finalLines.release();
     }
 
-    // --- Method 2-5: Placeholders for now ---
+    // --- Method 2-4: Placeholders for now ---
     public static void processMethod2(Bitmap originalBitmap, ScanListener listener) { processMethod6(originalBitmap, listener); }
     public static void processMethod3(Bitmap originalBitmap, ScanListener listener) { processMethod6(originalBitmap, listener); }
     public static void processMethod4(Bitmap originalBitmap, ScanListener listener) { processMethod6(originalBitmap, listener); }
-    public static void processMethod5(Bitmap originalBitmap, ScanListener listener) { processMethod6(originalBitmap, listener); }
+
+    // --- NEW Method 5: The "Pencil Sketch" Method ---
+    public static void processMethod5(Bitmap originalBitmap, ScanListener listener) {
+        Mat originalMat = new Mat();
+        Utils.bitmapToMat(originalBitmap, originalMat);
+        Mat grayMat = new Mat();
+        Imgproc.cvtColor(originalMat, grayMat, Imgproc.COLOR_RGBA2GRAY);
+
+        // --- PASS 1: CREATE NEGATIVE ---
+        listener.onScanProgress(1, 4, "Pass 1/4: Inverting Image...", createBitmapFromMat(new Mat(originalMat.size(), CvType.CV_8UC1, new Scalar(0)), originalMat.size()));
+        try { Thread.sleep(2500); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        Mat inverted = new Mat();
+        Core.bitwise_not(grayMat, inverted);
+        
+        // --- PASS 2: BLUR THE NEGATIVE ---
+        listener.onScanProgress(2, 4, "Pass 2/4: Blurring for Shading...", createBitmapFromMat(inverted, originalMat.size()));
+        try { Thread.sleep(2500); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        Mat blurred = new Mat();
+        // A large kernel size (21,21) is essential for the soft shading effect.
+        Imgproc.GaussianBlur(inverted, blurred, new Size(21, 21), 0);
+        
+        // --- PASS 3: COLOR DODGE BLEND (THE MAGIC STEP) ---
+        listener.onScanProgress(3, 4, "Pass 3/4: Creating Sketch...", createBitmapFromMat(blurred, originalMat.size()));
+        try { Thread.sleep(2500); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        Mat sketch = colorDodge(grayMat, blurred);
+        
+        // --- PASS 4: FINALIZE AND ENHANCE CONTRAST ---
+        listener.onScanProgress(4, 4, "Pass 4/4: Finalizing Artwork...", createBitmapFromMat(sketch, originalMat.size()));
+        try { Thread.sleep(2500); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        // Convert back to color to display correctly, then finalize.
+        Mat finalSketch = new Mat();
+        Imgproc.cvtColor(sketch, finalSketch, Imgproc.COLOR_GRAY2BGRA);
+        
+        // Finalize and Complete doesn't apply here as it's not a line drawing. We create the result directly.
+        Bitmap finalBitmap = Bitmap.createBitmap(finalSketch.cols(), finalSketch.rows(), Bitmap.Config.ARGB_8888);
+        Utils.matToBitmap(finalSketch, finalBitmap);
+        ProcessingResult finalResult = new ProcessingResult(finalBitmap, 0); // Object count isn't relevant for this style
+        listener.onScanComplete(finalResult);
+
+        // Release all Mats
+        originalMat.release();
+        grayMat.release();
+        inverted.release();
+        blurred.release();
+        sketch.release();
+        finalSketch.release();
+    }
 
     // --- Method 6: "Selective Detail" ---
     public static void processMethod6(Bitmap originalBitmap, ScanListener listener) {
@@ -196,6 +242,22 @@ public class DeepScanProcessor {
     }
     
     // --- HELPER FUNCTIONS (FULLY EXPANDED) ---
+
+    // NEW HELPER for Method 5
+    private static Mat colorDodge(Mat bottom, Mat top) {
+        Mat topFloat = new Mat();
+        top.convertTo(topFloat, CvType.CV_32F, 1.0/255.0);
+        Mat bottomFloat = new Mat();
+        bottom.convertTo(bottomFloat, CvType.CV_32F, 1.0/255.0);
+        
+        Mat result = new Mat();
+        Core.divide(bottomFloat, Core.subtract(new Mat(topFloat.size(), topFloat.type(), new Scalar(1.0)), topFloat), result, 255.0);
+        
+        result.convertTo(result, CvType.CV_8U);
+        topFloat.release();
+        bottomFloat.release();
+        return result;
+    }
 
     private static Mat getSimplifiedImage(Mat grayMat) {
         Mat downscaled = new Mat();
@@ -324,53 +386,5 @@ public class DeepScanProcessor {
         Utils.matToBitmap(foundation, b);
         foundation.release();
         return b;
-    }
-    
-    // --- HELPER FUNCTIONS FOR NEW METHODS 2 & 3 ---
-
-    private static Mat createShadedRegions(Mat markers, Mat grayMat) {
-        Mat shaded = new Mat(markers.size(), CvType.CV_8UC1, new Scalar(255));
-        // We need to find the contours of the marker regions to process them
-        Mat markers8u = new Mat();
-        markers.convertTo(markers8u, CvType.CV_8U);
-        List<MatOfPoint> contours = new ArrayList<>();
-        Mat hierarchy = new Mat();
-        Imgproc.findContours(markers8u, contours, hierarchy, Imgproc.RETR_CCOMP, Imgproc.CHAIN_APPROX_SIMPLE);
-
-        // For each contour (region), calculate the average gray color and fill it
-        for (int i = 0; i < contours.size(); i++) {
-            Mat mask = new Mat(markers.size(), CvType.CV_8UC1, new Scalar(0));
-            Imgproc.drawContours(mask, contours, i, new Scalar(255), -1); // -1 to fill
-            Scalar averageColor = Core.mean(grayMat, mask);
-            Imgproc.drawContours(shaded, contours, i, averageColor, -1);
-            mask.release();
-        }
-        markers8u.release();
-        hierarchy.release();
-        for(MatOfPoint p : contours) p.release();
-        return shaded;
-    }
-
-    private static Mat applyCrosshatching(Mat shaded) {
-        Mat hatched = new Mat(shaded.size(), CvType.CV_8UC1, new Scalar(255));
-        for(int r = 0; r < shaded.rows(); r++) {
-            for (int c = 0; c < shaded.cols(); c++) {
-                double intensity = shaded.get(r,c)[0];
-                // Darkest regions get two sets of lines (crosshatch)
-                if (intensity < 85) {
-                    if ( (r + c) % 10 == 0 || (r - c) % 10 == 0) {
-                        hatched.put(r,c,0);
-                    }
-                } 
-                // Mid-tones get one set of lines
-                else if (intensity < 170) {
-                     if ( (r + c) % 10 == 0) {
-                        hatched.put(r,c,0);
-                    }
-                }
-                // Lightest regions are left white
-            }
-        }
-        return hatched;
     }
 }
