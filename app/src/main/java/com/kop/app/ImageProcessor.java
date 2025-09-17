@@ -1,7 +1,7 @@
 package com.kop.app;
 
 import android.graphics.Bitmap;
-import java.io.FileOutputStream;
+import java.io.FileOutputStream; 
 
 /**
  * A utility class for handling bitmap operations, such as saving to a file.
