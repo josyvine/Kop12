@@ -5,37 +5,85 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="#1C1C2E"
-    android:padding="16dp"
     tools:context=".ProcessingActivity">
 
-    <!-- Overall progress (e.g., "Frame 5 of 120") -->
-    <TextView
-        android:id="@+id/tv_status"
-        android:layout_width="wrap_content"
+    <LinearLayout
+        android:id="@+id/header"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_alignParentTop="true"
-        android:layout_centerHorizontal="true"
-        android:text="Initializing..."
-        android:textColor="#FFFFFF"
-        android:textSize="18sp"
-        android:textStyle="bold" />
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:padding="8dp">
+
+        <TextView
+            android:id="@+id/tv_status"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Initializing..."
+            android:textColor="#FFFFFF"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:layout_gravity="center"/>
+
+        <Button
+            android:id="@+id/btn_close"
+            android:layout_width="wrap_content"
+            android:layout_height="40dp"
+            android:text="Close"/>
+    </LinearLayout>
 
     <ProgressBar
         android:id="@+id/progress_bar"
         style="?android:attr/progressBarStyleHorizontal"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_below="@id/tv_status"
+        android:layout_below="@id/header"
         android:layout_marginTop="8dp"
+        android:layout_marginHorizontal="8dp"
         android:indeterminate="true" />
+        
+    <!-- NEW: Container for Video-specific controls -->
+    <LinearLayout
+        android:id="@+id/video_controls"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:layout_below="@id/progress_bar"
+        android:padding="8dp"
+        android:visibility="gone"
+        tools:visibility="visible">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Frame Rate:"
+            android:textColor="@android:color/white"
+            android:layout_marginEnd="8dp"/>
+
+        <Spinner
+            android:id="@+id/spinner_fps"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@android:drawable/btn_dropdown"
+            android:spinnerMode="dropdown"/>
+
+        <Button
+            android:id="@+id/btn_analyze"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Analyze"
+            android:layout_marginStart="16dp"/>
+    </LinearLayout>
 
     <FrameLayout
         android:id="@+id/display_container"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layout_below="@id/progress_bar"
+        android:layout_below="@id/video_controls"
         android:layout_above="@+id/rv_film_strip"
-        android:layout_marginTop="16dp">
+        android:layout_marginTop="8dp">
 
         <ImageView
             android:id="@+id/iv_main_display"
@@ -44,7 +92,6 @@
             android:contentDescription="Main processing display"
             android:scaleType="fitCenter" />
 
-        <!-- Container for the detailed scan status -->
         <LinearLayout
             android:id="@+id/scan_status_container"
             android:layout_width="wrap_content"
@@ -82,7 +129,7 @@
         android:layout_width="match_parent"
         android:layout_height="80dp"
         android:layout_alignParentBottom="true"
-        android:layout_marginTop="16dp"
+        android:layout_marginTop="8dp"
         android:visibility="gone"
         android:orientation="horizontal"
         tools:visibility="visible"/>
