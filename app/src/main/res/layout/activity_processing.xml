@@ -8,6 +8,7 @@
     android:padding="16dp"
     tools:context=".ProcessingActivity">
 
+    <!-- Overall progress (e.g., "Frame 5 of 120") -->
     <TextView
         android:id="@+id/tv_status"
         android:layout_width="wrap_content"
@@ -43,21 +44,37 @@
             android:contentDescription="Main processing display"
             android:scaleType="fitCenter" />
 
-        <!-- FIX: This new TextView will show the detailed "scanning" messages. -->
-        <TextView
-            android:id="@+id/tv_scan_status"
+        <!-- Container for the detailed scan status -->
+        <LinearLayout
+            android:id="@+id/scan_status_container"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="center"
-            android:background="#80000000"
-            android:padding="12dp"
-            android:textColor="#FFFFFF"
-            android:textSize="16sp"
-            android:textStyle="italic"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:background="#A0000000"
+            android:padding="16dp"
             android:visibility="gone"
-            tools:text="Analyzing Contours..."
-            tools:visibility="visible"/>
+            tools:visibility="visible">
 
+            <TextView
+                android:id="@+id/tv_scan_status"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="#FFFFFF"
+                android:textSize="16sp"
+                android:textStyle="italic"
+                tools:text="Scanning Pass 1 of 5..." />
+
+            <ProgressBar
+                android:id="@+id/scan_progress_bar"
+                style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="200dp"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:max="5"
+                tools:progress="1"/>
+        </LinearLayout>
     </FrameLayout>
 
     <androidx.recyclerview.widget.RecyclerView
