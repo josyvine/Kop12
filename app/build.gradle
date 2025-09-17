@@ -6,7 +6,7 @@ android {
 
     defaultConfig {
         applicationId "com.kop.app"
-        // THIS IS THE FIX: Increased minSdkVersion to match MediaPipe's requirement.
+        // THIS IS THE FIX: Increased minSdkVersion to match MediaPipe's requirement. 
         minSdkVersion 24
         targetSdkVersion 33
         versionCode 1
