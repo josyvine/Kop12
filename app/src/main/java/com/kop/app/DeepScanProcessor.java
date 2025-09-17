@@ -9,15 +9,12 @@ import org.opencv.core.MatOfPoint;
 import org.opencv.core.Scalar;
 import org.opencv.core.Size;
 import org.opencv.imgproc.Imgproc;
-
 import java.util.ArrayList;
 import java.util.List;
 
 public class DeepScanProcessor {
 
-    private static final int TOTAL_PASSES = 5;
-    private static final long DELAY_PER_PASS_MS = 2000; // 2 seconds per pass
-
+    // Common classes for all methods
     public static class ProcessingResult {
         public final Bitmap resultBitmap;
         public final int objectsFound;
@@ -33,96 +30,227 @@ public class DeepScanProcessor {
         void onScanComplete(ProcessingResult finalResult);
     }
 
-    public static void performDeepScan(Bitmap originalBitmap, ScanListener listener) {
-        if (originalBitmap == null) {
-            listener.onScanComplete(new ProcessingResult(null, 0));
-            return;
-        }
-
+    // This method is a placeholder for the most advanced logic.
+    // For now, it will be the same as Method 2 until we refine it further.
+    public static void processMethod1(Bitmap originalBitmap, ScanListener listener) {
+        // Currently calls Method 2 as the placeholder for "Utmost Best"
+        processMethod2(originalBitmap, listener);
+    }
+    
+    // Method 2: The "Selective Detail" Method (Hybrid Approach)
+    public static void processMethod2(Bitmap originalBitmap, ScanListener listener) {
+        // --- SETUP ---
         Mat originalMat = new Mat();
         Utils.bitmapToMat(originalBitmap, originalMat);
         Mat grayMat = new Mat();
         Imgproc.cvtColor(originalMat, grayMat, Imgproc.COLOR_RGBA2GRAY);
 
-        // --- THE NEW BILATERAL FILTER PIPELINE ---
+        // --- PASS 1: AGGRESSIVE SIMPLIFICATION ---
+        listener.onScanProgress(1, 5, "Pass 1/5: Simplifying Structure...", createBitmapFromMask(new Mat(originalMat.size(), CvType.CV_8UC1, new Scalar(0)), originalMat.size()));
+        try { Thread.sleep(2000); } catch (InterruptedException e) {}
+        Mat simplifiedMat = getSimplifiedImage(grayMat);
 
-        Mat accumulatedLines = new Mat(originalMat.size(), CvType.CV_8UC1, new Scalar(0));
-        int totalObjects = 0;
+        // --- PASS 2: FIND STRUCTURAL LINES ---
+        Mat structuralLines = getCannyEdges(simplifiedMat, 5, 50);
+        listener.onScanProgress(2, 5, "Pass 2/5: Finding Structural Lines...", createBitmapFromMask(structuralLines, originalMat.size()));
+        try { Thread.sleep(2000); } catch (InterruptedException e) {}
+        
+        // --- PASS 3: FIND FINE DETAILS ---
+        Mat detailLines = getCannyEdges(grayMat, 60, 120);
+        listener.onScanProgress(3, 5, "Pass 3/5: Finding Fine Details...", createBitmapFromMask(structuralLines, originalMat.size()));
+        try { Thread.sleep(2000); } catch (InterruptedException e) {}
 
-        // --- PASS 1: SIMPLIFY SURFACES (THE KEY STEP) ---
-        listener.onScanProgress(1, TOTAL_PASSES, getStatusForPass(1), createBitmapFromMask(accumulatedLines, originalMat.size()));
-        try { Thread.sleep(DELAY_PER_PASS_MS); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        // --- PASS 4: INTELLIGENT COMBINATION ---
+        Mat maskedDetails = new Mat();
+        // Create a mask from the main structure to select details intelligently
+        Mat structureMask = new Mat();
+        Imgproc.dilate(structuralLines, structureMask, Imgproc.getStructuringElement(Imgproc.MORPH_RECT, new Size(10, 10)));
+        detailLines.copyTo(maskedDetails, structureMask);
+        Core.bitwise_or(structuralLines, maskedDetails, structuralLines);
+        listener.onScanProgress(4, 5, "Pass 4/5: Combining Lines...", createBitmapFromMask(structuralLines, originalMat.size()));
+        try { Thread.sleep(2000); } catch (InterruptedException e) {}
+
+        // --- PASS 5: FINALIZE ---
+        Mat finalLines = finalizeLines(structuralLines);
+        listener.onScanProgress(5, 5, "Pass 5/5: Finalizing Artwork...", createBitmapFromMask(finalLines, originalMat.size()));
+        try { Thread.sleep(2000); } catch (InterruptedException e) {}
+        
+        // --- COMPLETE ---
+        finalizeAndComplete(finalLines, listener);
+        
+        // Release Mats
+        originalMat.release();
+        grayMat.release();
+        simplifiedMat.release();
+        structuralLines.release();
+        detailLines.release();
+        maskedDetails.release();
+        structureMask.release();
+    }
+    
+    // Method 3: The "Artistic Abstraction" Method
+    public static void processMethod3(Bitmap originalBitmap, ScanListener listener) {
+        Mat originalMat = new Mat();
+        Utils.bitmapToMat(originalBitmap, originalMat);
+        Mat grayMat = new Mat();
+        Imgproc.cvtColor(originalMat, grayMat, Imgproc.COLOR_RGBA2GRAY);
+        
+        listener.onScanProgress(1, 5, "Pass 1/5: Abstracting Image...", createBitmapFromMask(new Mat(originalMat.size(), CvType.CV_8UC1, new Scalar(0)), originalMat.size()));
+        try { Thread.sleep(2000); } catch (InterruptedException e) {}
+        Mat simplifiedMat = getSimplifiedImage(grayMat);
+        
+        listener.onScanProgress(2, 5, "Pass 2/5: Finding Major Edges...", createBitmapFromMask(new Mat(originalMat.size(), CvType.CV_8UC1, new Scalar(0)), originalMat.size()));
+        try { Thread.sleep(2000); } catch (InterruptedException e) {}
+        Mat majorEdges = getCannyEdges(simplifiedMat, 5, 50);
+        
+        listener.onScanProgress(3, 5, "Pass 3/5: Finding Detail Edges...", createBitmapFromMask(majorEdges, originalMat.size()));
+        try { Thread.sleep(2000); } catch (InterruptedException e) {}
+        Mat detailEdges = getCannyEdges(simplifiedMat, 60, 120);
+        
+        Core.bitwise_or(majorEdges, detailEdges, majorEdges);
+        listener.onScanProgress(4, 5, "Pass 4/5: Combining Edges...", createBitmapFromMask(majorEdges, originalMat.size()));
+        try { Thread.sleep(2000); } catch (InterruptedException e) {}
+        
+        Mat finalLines = finalizeLines(majorEdges);
+        listener.onScanProgress(5, 5, "Pass 5/5: Finalizing Artwork...", createBitmapFromMask(finalLines, originalMat.size()));
+        try { Thread.sleep(2000); } catch (InterruptedException e) {}
+        
+        finalizeAndComplete(finalLines, listener);
+        
+        originalMat.release();
+        grayMat.release();
+        simplifiedMat.release();
+        majorEdges.release();
+        detailEdges.release();
+    }
+
+    // Method 4: The "Clean Structure" Method
+    public static void processMethod4(Bitmap originalBitmap, ScanListener listener) {
+        Mat originalMat = new Mat();
+        Utils.bitmapToMat(originalBitmap, originalMat);
+        Mat grayMat = new Mat();
+        Imgproc.cvtColor(originalMat, grayMat, Imgproc.COLOR_RGBA2GRAY);
+        
+        listener.onScanProgress(1, 5, "Pass 1/5: Smoothing Surfaces...", createBitmapFromMask(new Mat(originalMat.size(), CvType.CV_8UC1, new Scalar(0)), originalMat.size()));
+        try { Thread.sleep(2000); } catch (InterruptedException e) {}
+        Mat blurredMat = new Mat();
+        Imgproc.GaussianBlur(grayMat, blurredMat, new Size(5, 5), 0);
+        
+        listener.onScanProgress(2, 5, "Pass 2/5: Finding Major Edges...", createBitmapFromMask(new Mat(originalMat.size(), CvType.CV_8UC1, new Scalar(0)), originalMat.size()));
+        try { Thread.sleep(2000); } catch (InterruptedException e) {}
+        Mat majorEdges = getCannyEdges(blurredMat, 5, 50);
+        
+        listener.onScanProgress(3, 5, "Pass 3/5: Finding Detail Edges...", createBitmapFromMask(majorEdges, originalMat.size()));
+        try { Thread.sleep(2000); } catch (InterruptedException e) {}
+        Mat detailEdges = getCannyEdges(blurredMat, 60, 120);
+        
+        Core.bitwise_or(majorEdges, detailEdges, majorEdges);
+        listener.onScanProgress(4, 5, "Pass 4/5: Combining Edges...", createBitmapFromMask(majorEdges, originalMat.size()));
+        try { Thread.sleep(2000); } catch (InterruptedException e) {}
+        
+        Mat finalLines = finalizeLines(majorEdges);
+        listener.onScanProgress(5, 5, "Pass 5/5: Finalizing Artwork...", createBitmapFromMask(finalLines, originalMat.size()));
+        try { Thread.sleep(2000); } catch (InterruptedException e) {}
+        
+        finalizeAndComplete(finalLines, listener);
+        
+        originalMat.release();
+        grayMat.release();
+        blurredMat.release();
+        majorEdges.release();
+        detailEdges.release();
+    }
+
+    // Method 5: The "Detailed Texture" Method (The last version you approved)
+    public static void processMethod5(Bitmap originalBitmap, ScanListener listener) {
+        Mat originalMat = new Mat();
+        Utils.bitmapToMat(originalBitmap, originalMat);
+        Mat grayMat = new Mat();
+        Imgproc.cvtColor(originalMat, grayMat, Imgproc.COLOR_RGBA2GRAY);
+        
+        listener.onScanProgress(1, 5, "Pass 1/5: Simplifying Surfaces...", createBitmapFromMask(new Mat(originalMat.size(), CvType.CV_8UC1, new Scalar(0)), originalMat.size()));
+        try { Thread.sleep(2000); } catch (InterruptedException e) {}
         Mat simplifiedMat = new Mat();
-        // This is an edge-preserving smoothing filter. It removes texture while keeping main outlines sharp.
-        // Parameters: d=15 (large neighborhood), sigmaColor=80, sigmaSpace=80 (strong smoothing effect).
         Imgproc.bilateralFilter(grayMat, simplifiedMat, 15, 80, 80);
-
-        // --- PASS 2: TRACE LARGE SHAPES ---
-        listener.onScanProgress(2, TOTAL_PASSES, getStatusForPass(2), createBitmapFromMask(accumulatedLines, originalMat.size()));
-        try { Thread.sleep(DELAY_PER_PASS_MS); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        
+        Mat accumulatedLines = new Mat(originalMat.size(), CvType.CV_8UC1, new Scalar(0));
+        
+        listener.onScanProgress(2, 5, "Pass 2/5: Tracing Large Shapes...", createBitmapFromMask(accumulatedLines, originalMat.size()));
+        try { Thread.sleep(2000); } catch (InterruptedException e) {}
         Mat largeShapes = new Mat();
-        // Use adaptiveThreshold on the CLEAN, simplified image. Block size is large to find major shapes.
         Imgproc.adaptiveThreshold(simplifiedMat, largeShapes, 255, Imgproc.ADAPTIVE_THRESH_MEAN_C, Imgproc.THRESH_BINARY_INV, 25, 2);
         Core.bitwise_or(accumulatedLines, largeShapes, accumulatedLines);
-
-        // --- PASS 3: TRACE FINE DETAILS ---
-        listener.onScanProgress(3, TOTAL_PASSES, getStatusForPass(3), createBitmapFromMask(accumulatedLines, originalMat.size()));
-        try { Thread.sleep(DELAY_PER_PASS_MS); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        
+        listener.onScanProgress(3, 5, "Pass 3/5: Tracing Fine Details...", createBitmapFromMask(accumulatedLines, originalMat.size()));
+        try { Thread.sleep(2000); } catch (InterruptedException e) {}
         Mat detailShapes = new Mat();
-        // Use a smaller block size to find smaller, more detailed shapes from the simplified image.
         Imgproc.adaptiveThreshold(simplifiedMat, detailShapes, 255, Imgproc.ADAPTIVE_THRESH_MEAN_C, Imgproc.THRESH_BINARY_INV, 11, 2);
         Core.bitwise_or(accumulatedLines, detailShapes, accumulatedLines);
-
-        // --- PASS 4: CLEAN LINES AND COUNT OBJECTS ---
-        listener.onScanProgress(4, TOTAL_PASSES, getStatusForPass(4), createBitmapFromMask(accumulatedLines, originalMat.size()));
-        try { Thread.sleep(DELAY_PER_PASS_MS); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
-        Mat cleanedLines = new Mat();
-        Mat kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, new Size(2,2));
-        // A closing operation removes small holes and gaps in the lines.
-        Imgproc.morphologyEx(accumulatedLines, cleanedLines, Imgproc.MORPH_CLOSE, kernel);
         
-        List<MatOfPoint> contours = new ArrayList<>();
-        Mat hierarchy = new Mat();
-        Imgproc.findContours(cleanedLines, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
-        totalObjects = contours.size();
-        for (MatOfPoint p : contours) {
-            p.release();
-        }
-        hierarchy.release();
-
-        // --- PASS 5: FINALIZE LINES (DILATION) ---
-        listener.onScanProgress(5, TOTAL_PASSES, getStatusForPass(5), createBitmapFromMask(cleanedLines, originalMat.size()));
-        try { Thread.sleep(DELAY_PER_PASS_MS); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
-        Mat finalLines = new Mat();
-        // Dilate the clean lines to make them slightly bolder and more visually appealing.
-        Imgproc.dilate(cleanedLines, finalLines, kernel);
+        Mat finalLines = finalizeLines(accumulatedLines);
+        listener.onScanProgress(4, 5, "Pass 4/5: Cleaning Lines...", createBitmapFromMask(finalLines, originalMat.size()));
+        try { Thread.sleep(2000); } catch (InterruptedException e) {}
+        listener.onScanProgress(5, 5, "Pass 5/5: Finalizing Artwork...", createBitmapFromMask(finalLines, originalMat.size()));
+        try { Thread.sleep(2000); } catch (InterruptedException e) {}
         
-        // --- FINALIZE AND REPORT COMPLETION ---
-        Bitmap finalBitmap = createBitmapFromMask(finalLines, originalMat.size());
-        ProcessingResult finalResult = new ProcessingResult(finalBitmap, totalObjects);
-        listener.onScanComplete(finalResult);
-
-        // Release all memory
+        finalizeAndComplete(finalLines, listener);
+        
         originalMat.release();
         grayMat.release();
         simplifiedMat.release();
         accumulatedLines.release();
         largeShapes.release();
         detailShapes.release();
-        cleanedLines.release();
-        kernel.release();
-        finalLines.release();
+    }
+    
+    // --- HELPER FUNCTIONS ---
+
+    private static Mat getSimplifiedImage(Mat grayMat) {
+        Mat downscaled = new Mat();
+        Imgproc.pyrDown(grayMat, downscaled);
+        Mat blurred = new Mat();
+        Imgproc.medianBlur(downscaled, blurred, 7);
+        Mat upscaled = new Mat();
+        Imgproc.pyrUp(blurred, upscaled);
+        downscaled.release();
+        blurred.release();
+        return upscaled;
     }
 
-    private static String getStatusForPass(int pass) {
-        switch (pass) {
-            case 1: return "Pass 1/5: Simplifying Surfaces...";
-            case 2: return "Pass 2/5: Tracing Large Shapes...";
-            case 3: return "Pass 3/5: Tracing Fine Details...";
-            case 4: return "Pass 4/5: Cleaning Lines...";
-            case 5: return "Pass 5/5: Finalizing Artwork...";
-            default: return "Scanning...";
+    private static Mat getCannyEdges(Mat inputMat, double threshold1, double threshold2) {
+        Mat edges = new Mat();
+        Imgproc.Canny(inputMat, edges, threshold1, threshold2);
+        return edges;
+    }
+
+    private static Mat finalizeLines(Mat inputLines) {
+        Mat cleanedLines = new Mat();
+        Mat kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, new Size(2, 2));
+        Imgproc.morphologyEx(inputLines, cleanedLines, Imgproc.MORPH_CLOSE, kernel);
+        
+        Mat finalLines = new Mat();
+        Imgproc.dilate(cleanedLines, finalLines, kernel);
+        
+        kernel.release();
+        cleanedLines.release();
+        
+        return finalLines;
+    }
+    
+    private static void finalizeAndComplete(Mat finalLines, ScanListener listener) {
+        List<MatOfPoint> contours = new ArrayList<>();
+        Mat hierarchy = new Mat();
+        Imgproc.findContours(finalLines, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
+        int totalObjects = contours.size();
+        for (MatOfPoint p : contours) {
+            p.release();
         }
+        hierarchy.release();
+        
+        Bitmap finalBitmap = createBitmapFromMask(finalLines, finalLines.size());
+        ProcessingResult finalResult = new ProcessingResult(finalBitmap, totalObjects);
+        listener.onScanComplete(finalResult);
+        finalLines.release();
     }
 
     private static Bitmap createBitmapFromMask(Mat mask, Size originalSize) {
