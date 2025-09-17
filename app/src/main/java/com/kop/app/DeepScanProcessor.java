@@ -2,12 +2,14 @@ package com.kop.app;
 
 import android.graphics.Bitmap;
 import org.opencv.android.Utils;
+import org.opencv.core.Core;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
+import org.opencv.core.MatOfPoint;
 import org.opencv.core.Scalar;
 import org.opencv.core.Size;
 import org.opencv.imgproc.Imgproc;
-import org.opencv.ximgproc.Ximgproc; // Import for the thinning/skeletonization function
+import org.opencv.ximgproc.Ximgproc;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -45,9 +47,6 @@ public class DeepScanProcessor {
         Mat blurredMat = new Mat();
         Imgproc.GaussianBlur(grayMat, blurredMat, new Size(3, 3), 0);
 
-        // --- THE NEW SKELETONIZATION PIPELINE ---
-
-        // This will hold the accumulated lines from each pass.
         Mat accumulatedLines = new Mat(originalMat.size(), CvType.CV_8UC1, new Scalar(0));
         int totalObjects = 0;
 
@@ -57,57 +56,50 @@ public class DeepScanProcessor {
             String status = getStatusForPass(pass);
             listener.onScanProgress(pass, TOTAL_PASSES, status, createBitmapFromMask(accumulatedLines, originalMat.size()));
 
-            if (pass <= 3) { // Use the first 3 passes to find shapes of different sizes
-                // Vary the block size to find different levels of detail in each pass.
-                // Large block size for big shapes, small for details.
-                int blockSize = 31 - (pass * 6); // Decreases from 25 down to 13
+            if (pass <= 3) {
+                int blockSize = 31 - (pass * 6);
                 
-                // Step 1: Detect shapes using adaptive thresholding.
                 Mat threshMat = new Mat();
                 Imgproc.adaptiveThreshold(blurredMat, threshMat, 255, Imgproc.ADAPTIVE_THRESH_MEAN_C, Imgproc.THRESH_BINARY_INV, blockSize, 3);
 
-                // Step 2: SKELETONIZE. This is the key step to get clean, thin lines.
                 Mat skeleton = new Mat();
                 Ximgproc.thinning(threshMat, skeleton, Ximgproc.THINNING_ZHANGSUEN);
                 
-                // Add the new clean lines to our accumulator.
                 Core.bitwise_or(accumulatedLines, skeleton, accumulatedLines);
                 
-                // Release memory for this pass
                 threshMat.release();
                 skeleton.release();
             }
 
             if (pass == 4) {
-                // In pass 4, we count the objects based on the lines found so far.
                 List<MatOfPoint> contours = new ArrayList<>();
                 Mat hierarchy = new Mat();
-                // We find contours on a dilated version to connect nearby lines into single objects.
                 Mat dilatedForCount = new Mat();
                 Imgproc.dilate(accumulatedLines, dilatedForCount, Imgproc.getStructuringElement(Imgproc.MORPH_RECT, new Size(10, 10)));
                 Imgproc.findContours(dilatedForCount, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
                 totalObjects = contours.size();
                 dilatedForCount.release();
                 hierarchy.release();
+                // FIX: Added a loop to release the memory from the contours found for counting.
+                for (MatOfPoint p : contours) {
+                    p.release();
+                }
             }
 
             if (pass == 5) {
-                // In the final pass, we make the lines slightly thicker for better visibility.
                 Mat finalLines = new Mat();
                 Mat kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, new Size(2, 2));
                 Imgproc.dilate(accumulatedLines, finalLines, kernel);
-                accumulatedLines.release(); // Free old accumulator
-                accumulatedLines = finalLines; // Assign the new dilated mat
+                accumulatedLines.release();
+                accumulatedLines = finalLines;
                 kernel.release();
             }
         }
 
-        // --- FINALIZE AND REPORT COMPLETION ---
         Bitmap finalBitmap = createBitmapFromMask(accumulatedLines, originalMat.size());
         ProcessingResult finalResult = new ProcessingResult(finalBitmap, totalObjects);
         listener.onScanComplete(finalResult);
 
-        // Release all remaining memory
         originalMat.release();
         grayMat.release();
         blurredMat.release();
