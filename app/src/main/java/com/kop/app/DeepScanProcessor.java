@@ -22,7 +22,8 @@ import org.opencv.core.Scalar;
 import org.opencv.core.Size;
 import org.opencv.imgproc.Imgproc;
 
-import java.nio.FloatBuffer; // CORRECTED IMPORT
+import java.nio.ByteBuffer;
+import java.nio.FloatBuffer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
@@ -75,11 +76,12 @@ public class DeepScanProcessor {
             ImageSegmenterResult segmenterResult = imageSegmenter.segment(mpImage);
 
             if (segmenterResult != null && segmenterResult.confidenceMasks().isPresent()) {
-                // --- THIS IS THE FIX ---
-                // The old method was .getBuffer(), which does not exist.
-                // The new, correct method is .getFloatBuffer().
-                FloatBuffer confidenceMaskBuffer = segmenterResult.confidenceMasks().get().get(0).getFloatBuffer();
-                confidenceMaskBuffer.rewind(); // IMPORTANT: Reset buffer position to the beginning before reading.
+                // --- THIS IS THE DEFINITIVE FIX ---
+                // Step A: Get the raw data as a ByteBuffer.
+                ByteBuffer byteBuffer = segmenterResult.confidenceMasks().get().get(0).getByteBuffer();
+                // Step B: Interpret that raw data correctly as a FloatBuffer.
+                FloatBuffer confidenceMaskBuffer = byteBuffer.asFloatBuffer();
+                confidenceMaskBuffer.rewind();
                 // --- END OF FIX ---
 
                 int maskWidth = segmenterResult.confidenceMasks().get().get(0).getWidth();
@@ -89,11 +91,9 @@ public class DeepScanProcessor {
 
                 Mat maskMat = new Mat(maskHeight, maskWidth, CvType.CV_32F);
                 
-                // Create a float array and copy the buffer data into it
                 float[] floatArray = new float[confidenceMaskBuffer.remaining()];
                 confidenceMaskBuffer.get(floatArray);
                 
-                // Put the float array data into the OpenCV Mat
                 maskMat.put(0, 0, floatArray);
 
                 Mat mask8u = new Mat();
