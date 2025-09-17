@@ -87,37 +87,37 @@ public class DeepScanProcessor {
         Imgproc.cvtColor(originalMat, grayMat, Imgproc.COLOR_RGBA2GRAY);
 
         // --- PASS 1: CREATE NEGATIVE ---
-        listener.onScanProgress(1, 4, "Pass 1/4: Inverting Image...", createBitmapFromMat(new Mat(originalMat.size(), CvType.CV_8UC1, new Scalar(0)), originalMat.size()));
+        // FIX: Corrected method name from createBitmapFromMat to createBitmapFromMask
+        listener.onScanProgress(1, 4, "Pass 1/4: Inverting Image...", createBitmapFromMask(new Mat(originalMat.size(), CvType.CV_8UC1, new Scalar(0)), originalMat.size()));
         try { Thread.sleep(2500); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
         Mat inverted = new Mat();
         Core.bitwise_not(grayMat, inverted);
         
         // --- PASS 2: BLUR THE NEGATIVE ---
-        listener.onScanProgress(2, 4, "Pass 2/4: Blurring for Shading...", createBitmapFromMat(inverted, originalMat.size()));
+        // FIX: Corrected method name from createBitmapFromMat to createBitmapFromMask
+        listener.onScanProgress(2, 4, "Pass 2/4: Blurring for Shading...", createBitmapFromMask(inverted, originalMat.size()));
         try { Thread.sleep(2500); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
         Mat blurred = new Mat();
-        // A large kernel size (21,21) is essential for the soft shading effect.
         Imgproc.GaussianBlur(inverted, blurred, new Size(21, 21), 0);
         
         // --- PASS 3: COLOR DODGE BLEND (THE MAGIC STEP) ---
-        listener.onScanProgress(3, 4, "Pass 3/4: Creating Sketch...", createBitmapFromMat(blurred, originalMat.size()));
+        // FIX: Corrected method name from createBitmapFromMat to createBitmapFromMask
+        listener.onScanProgress(3, 4, "Pass 3/4: Creating Sketch...", createBitmapFromMask(blurred, originalMat.size()));
         try { Thread.sleep(2500); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
         Mat sketch = colorDodge(grayMat, blurred);
         
         // --- PASS 4: FINALIZE AND ENHANCE CONTRAST ---
-        listener.onScanProgress(4, 4, "Pass 4/4: Finalizing Artwork...", createBitmapFromMat(sketch, originalMat.size()));
+        // FIX: Corrected method name from createBitmapFromMat to createBitmapFromMask
+        listener.onScanProgress(4, 4, "Pass 4/4: Finalizing Artwork...", createBitmapFromMask(sketch, originalMat.size()));
         try { Thread.sleep(2500); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
-        // Convert back to color to display correctly, then finalize.
         Mat finalSketch = new Mat();
         Imgproc.cvtColor(sketch, finalSketch, Imgproc.COLOR_GRAY2BGRA);
         
-        // Finalize and Complete doesn't apply here as it's not a line drawing. We create the result directly.
         Bitmap finalBitmap = Bitmap.createBitmap(finalSketch.cols(), finalSketch.rows(), Bitmap.Config.ARGB_8888);
         Utils.matToBitmap(finalSketch, finalBitmap);
-        ProcessingResult finalResult = new ProcessingResult(finalBitmap, 0); // Object count isn't relevant for this style
+        ProcessingResult finalResult = new ProcessingResult(finalBitmap, 0);
         listener.onScanComplete(finalResult);
 
-        // Release all Mats
         originalMat.release();
         grayMat.release();
         inverted.release();
@@ -243,19 +243,26 @@ public class DeepScanProcessor {
     
     // --- HELPER FUNCTIONS (FULLY EXPANDED) ---
 
-    // NEW HELPER for Method 5
     private static Mat colorDodge(Mat bottom, Mat top) {
         Mat topFloat = new Mat();
         top.convertTo(topFloat, CvType.CV_32F, 1.0/255.0);
         Mat bottomFloat = new Mat();
         bottom.convertTo(bottomFloat, CvType.CV_32F, 1.0/255.0);
         
+        // FIX: The subtract operation needs a destination Mat.
+        Mat one = new Mat(topFloat.size(), topFloat.type(), new Scalar(1.0));
+        Mat topSub = new Mat();
+        Core.subtract(one, topFloat, topSub);
+        
         Mat result = new Mat();
-        Core.divide(bottomFloat, Core.subtract(new Mat(topFloat.size(), topFloat.type(), new Scalar(1.0)), topFloat), result, 255.0);
+        Core.divide(bottomFloat, topSub, result, 255.0);
         
         result.convertTo(result, CvType.CV_8U);
+
         topFloat.release();
         bottomFloat.release();
+        one.release();
+        topSub.release();
         return result;
     }
 
