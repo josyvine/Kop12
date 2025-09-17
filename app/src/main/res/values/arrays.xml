@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="fps_options">
+        <item>1 FPS</item>
+        <item>8 FPS</item>
+        <item>12 FPS</item>
+        <item>24 FPS</item>
+    </string-array>
+</resources>
