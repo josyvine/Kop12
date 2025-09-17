@@ -7,7 +7,7 @@
     android:background="#1C1C2E"
     tools:context=".ProcessingActivity">
 
-    <LinearLayout
+    <LinearLayout 
         android:id="@+id/header"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
