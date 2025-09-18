@@ -141,26 +141,16 @@ public class ProcessingActivity extends AppCompatActivity {
                     if (rawFrames != null && rawFrames.length > 0) {
                         sourceBitmapForTuning = decodeAndRotateBitmap(rawFrames[0].getAbsolutePath());
                         
-                        // --- THIS IS THE FIX FOR THE UI FLOW ---
-                        // Post a task to the UI thread. This task will display the image
-                        // and set up the controls, then wait for the user to press "Analyze".
-                        // This prevents the AI scan from running automatically.
                         uiHandler.post(new Runnable() {
                             @Override
                             public void run() {
-                                // 1. Display the original image so the user sees it.
                                 updateMainDisplay(sourceBitmapForTuning);
-
-                                // 2. Show the analysis controls for user interaction.
                                 setupAnalysisControls(isVideo);
-                                
-                                // 3. Update status and hide the initial progress bar.
                                 statusTextView.setText("Ready. Select a method and press Analyze.");
                                 progressBar.setIndeterminate(false);
                                 progressBar.setVisibility(View.GONE);
                             }
                         });
-                        // --- END OF FIX ---
                     }
 
                 } catch (Exception e) {
@@ -177,40 +167,35 @@ public class ProcessingActivity extends AppCompatActivity {
             return;
         }
 
-        // These UI updates must happen on the UI thread.
-        // The call from beginAnalysis() is already wrapped in a post().
-        statusTextView.setText("Performing AI Analysis...");
-        progressBar.setVisibility(View.VISIBLE);
-        progressBar.setIndeterminate(true);
-        analysisControlsContainer.setVisibility(View.GONE);
-        btnSave.setVisibility(View.GONE);
+        // This method now only starts the background task. 
+        // UI updates are handled in beginAnalysis() before this is called.
         
         new Thread(new Runnable() {
             @Override
             public void run() {
                 DeepScanProcessor.AiScanListener listener = new DeepScanProcessor.AiScanListener() {
                     @Override
-                    public void onAiScanComplete(DeepScanProcessor.ProcessingResult finalResult) {
-                        updateMainDisplay(finalResult.resultBitmap);
-                        
+                    public void onAiScanComplete(final DeepScanProcessor.ProcessingResult finalResult) {
+                        // This callback is on the background thread, so post to UI thread
                         uiHandler.post(new Runnable() {
                             @Override
                             public void run() {
-                                // --- THIS IS THE FIX FOR THE UI AFTER AI ANALYSIS ---
-                                // Restore all controls, re-enable the analyze button,
-                                // and most importantly, show the Save button.
-                                setupAnalysisControls(isVideoFile(inputFilePath));
+                                updateMainDisplay(finalResult.resultBitmap);
+                                analysisControlsContainer.setVisibility(View.VISIBLE);
                                 statusTextView.setText("AI Analysis Complete. Save or choose another method.");
                                 progressBar.setIndeterminate(false);
                                 progressBar.setVisibility(View.GONE);
-                                btnSave.setVisibility(View.VISIBLE);
-                                analyzeButton.setEnabled(true);
-                                // --- END OF FIX ---
+                                
+                                // This will now work because of the layout fix in activity_processing.xml
+                                btnSave.setVisibility(View.VISIBLE); 
+                                
+                                analyzeButton.setEnabled(true); 
                             }
                         });
                     }
                 };
                 
+                // The DeepScanProcessor will call onAiScanComplete whether it succeeds or fails.
                 DeepScanProcessor.processMethod0(getApplicationContext(), sourceBitmapForTuning, listener);
             }
         }).start();
@@ -294,31 +279,34 @@ public class ProcessingActivity extends AppCompatActivity {
         analysisControlsContainer.setVisibility(View.GONE);
         btnSave.setVisibility(View.GONE);
 
+        if (rawFrames == null || rawFrames.length == 0) {
+            showErrorDialog("Processing Error", "No frames available to process.", true);
+            // Re-enable controls if we fail early
+            analyzeButton.setEnabled(true);
+            analysisControlsContainer.setVisibility(View.VISIBLE);
+            return;
+        }
+
+        // --- THIS IS THE FIX ---
+        // For Method 0, update the UI immediately on the UI thread, then start the background scan.
+        // This ensures the user sees the "Analyzing..." message instantly.
+        if (selectedMethod == 0) {
+            statusTextView.setText("Performing AI Analysis...");
+            progressBar.setVisibility(View.VISIBLE);
+            progressBar.setIndeterminate(true);
+            beginAutomaticAiScan(); // This method starts the actual background thread
+            return; // Stop here for Method 0
+        }
+
+        // For all other methods, start the background thread as before.
         new Thread(new Runnable() {
             @Override
             public void run() {
                 try {
-                    if (rawFrames == null || rawFrames.length == 0) {
-                        throw new Exception("No frames available to process.");
-                    }
-                    
-                    if (selectedMethod == 0) {
-                        // This post is required because beginAutomaticAiScan() modifies UI elements
-                        // and must be called from the UI thread.
-                        uiHandler.post(new Runnable() {
-                            @Override
-                            public void run() {
-                                beginAutomaticAiScan();
-                            }
-                        });
-                        return;
-                    }
-
                     if (switchAutomaticScan.isChecked() || selectedMethod == 1) {
                         processAllFramesAutomatically();
                     } else {
                         if (isFirstFineTuneAnalysis) {
-                            // This should already be loaded, but as a safeguard
                             sourceBitmapForTuning = decodeAndRotateBitmap(rawFrames[0].getAbsolutePath());
                         }
                         performFineTuningAnalysis();
@@ -476,7 +464,7 @@ public class ProcessingActivity extends AppCompatActivity {
                         uiHandler.post(new Runnable() {
                             @Override
                             public void run() {
-                                Toast.makeText(ProcessingActivity.this, "Image saved!", Toast.LENGTH_LONG).show();
+                                Toast.makeText(ProcessingActivity.this, "Image saved to " + outFile.getParent(), Toast.LENGTH_LONG).show();
                             }
                         });
                     } catch (Exception e) {
@@ -555,8 +543,6 @@ public class ProcessingActivity extends AppCompatActivity {
         }
     }
     
-    // --- HELPER METHODS (UNCHANGED) ---
-
     private void prepareDirectories() {
         String timestamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date());
         File projectDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "kop/Project_" + timestamp);
