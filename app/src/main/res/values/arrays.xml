@@ -6,17 +6,17 @@
         <item>8 FPS</item>
         <item>12 FPS</item>
         <item>24 FPS</item>
-    </string-array>  
+    </string-array>
 
     <!-- UPDATED: This array now contains all 17 method choices in the correct order. -->
     <string-array name="method_options">
         <item>Method 01 (AI Enhanced)</item>
         <item>Method 0 (AI Smart Outline)</item>
-        <item>Method 1 (Comic Book)</item>
-        <item>Method 2 (Charcoal Smudge)</item>
-        <item>Method 3 (Blueprint Draft)</item>
-        <item>Method 4 (Hatching Pro)</item>
-        <item>Method 5 (Stylized Contours)</item>
+        <item>Method 1 (Vector Cartoon)</item>
+        <item>Method 2 (Fine Etching)</item>
+        <item>Method 3 (Geometric)</item>
+        <item>Method 4 (Impressionist)</item>
+        <item>Method 5 (Dual Tone)</item>
         <item>Method 6 (Live Analysis)</item>
         <item>Method 7 (Crosshatch)</item>
         <item>Method 8 (Shaded)</item>
