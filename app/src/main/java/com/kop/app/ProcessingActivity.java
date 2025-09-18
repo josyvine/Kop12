@@ -5,8 +5,8 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.drawable.BitmapDrawable;
 import android.os.Bundle;
-import android.os.Environment;  
-import android.os.Handler; 
+import android.os.Environment;
+import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 import android.view.View;
@@ -133,17 +133,26 @@ public class ProcessingActivity extends AppCompatActivity {
                     final boolean isVideo = isVideoFile(inputFilePath);
 
                     if (isVideo) {
-                        extractFramesForVideo(12); // Default FPS
+                        extractFramesForVideo(12);
                     } else {
                         rawFrames = extractOrCopyFrames(inputFilePath);
                     }
                     
                     if (rawFrames != null && rawFrames.length > 0) {
                         sourceBitmapForTuning = decodeAndRotateBitmap(rawFrames[0].getAbsolutePath());
-                        updateMainDisplay(sourceBitmapForTuning);
                         
-                        // NEW WORKFLOW: Immediately start the AI analysis
-                        beginAutomaticAiScan();
+                        // --- THIS IS THE FIX FOR THE IMAGE NOT SHOWING ---
+                        // Post a task to the UI thread. This task will first display the image,
+                        // and then, in the same block, start the AI scan. This guarantees the
+                        // user sees the original image before the "Analyzing..." message appears.
+                        uiHandler.post(new Runnable() {
+                            @Override
+                            public void run() {
+                                updateMainDisplay(sourceBitmapForTuning);
+                                beginAutomaticAiScan();
+                            }
+                        });
+                        // --- END OF FIX ---
                     }
 
                 } catch (Exception e) {
@@ -154,22 +163,16 @@ public class ProcessingActivity extends AppCompatActivity {
         }).start();
     }
     
-    // --- NEW AUTOMATIC AI SCAN WORKFLOW ---
     private void beginAutomaticAiScan() {
         if (sourceBitmapForTuning == null) {
             showErrorDialog("Error", "Source image not found for AI scan.", true);
             return;
         }
 
-        uiHandler.post(new Runnable() {
-            @Override
-            public void run() {
-                statusTextView.setText("Performing AI Analysis...");
-                progressBar.setIndeterminate(true);
-                analysisControlsContainer.setVisibility(View.GONE);
-                btnSave.setVisibility(View.GONE);
-            }
-        });
+        statusTextView.setText("Performing AI Analysis...");
+        progressBar.setIndeterminate(true);
+        analysisControlsContainer.setVisibility(View.GONE);
+        btnSave.setVisibility(View.GONE);
         
         new Thread(new Runnable() {
             @Override
@@ -179,20 +182,22 @@ public class ProcessingActivity extends AppCompatActivity {
                     public void onAiScanComplete(DeepScanProcessor.ProcessingResult finalResult) {
                         updateMainDisplay(finalResult.resultBitmap);
                         
-                        // Now that the automatic scan is done, show the controls
                         uiHandler.post(new Runnable() {
                             @Override
                             public void run() {
+                                // --- THIS IS THE FIX FOR THE UI GETTING STUCK ---
+                                // Restore all controls correctly after the AI scan is done.
                                 setupAnalysisControls(isVideoFile(inputFilePath));
                                 statusTextView.setText("AI Analysis Complete. Save or choose another method.");
                                 progressBar.setIndeterminate(false);
                                 btnSave.setVisibility(View.VISIBLE);
+                                analyzeButton.setEnabled(true); // Re-enable the analyze button.
+                                // --- END OF FIX ---
                             }
                         });
                     }
                 };
                 
-                // Pass the application context, which is needed by MediaPipe
                 DeepScanProcessor.processMethod0(getApplicationContext(), sourceBitmapForTuning, listener);
             }
         }).start();
@@ -206,11 +211,10 @@ public class ProcessingActivity extends AppCompatActivity {
                 R.array.method_options, android.R.layout.simple_spinner_item);
         methodAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         methodSpinner.setAdapter(methodAdapter);
-        methodSpinner.setSelection(0, false); // Select Method 0 by default, don't trigger listener
+        methodSpinner.setSelection(0, false); 
         methodSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-                // The position in the array directly corresponds to the method number
                 selectedMethod = position;
             }
             @Override
@@ -286,7 +290,13 @@ public class ProcessingActivity extends AppCompatActivity {
                     }
                     
                     if (selectedMethod == 0) {
-                        beginAutomaticAiScan();
+                        // Re-run the AI scan if the user selects it again.
+                        uiHandler.post(new Runnable() {
+                            @Override
+                            public void run() {
+                                beginAutomaticAiScan();
+                            }
+                        });
                         return;
                     }
 
@@ -294,6 +304,7 @@ public class ProcessingActivity extends AppCompatActivity {
                         processAllFramesAutomatically();
                     } else {
                         if (isFirstFineTuneAnalysis) {
+                            // This should already be loaded, but as a safeguard
                             sourceBitmapForTuning = decodeAndRotateBitmap(rawFrames[0].getAbsolutePath());
                         }
                         performFineTuningAnalysis();
@@ -343,7 +354,6 @@ public class ProcessingActivity extends AppCompatActivity {
             public void onScanComplete(final DeepScanProcessor.ProcessingResult finalResult) {
                 updateMainDisplay(finalResult.resultBitmap);
                 
-                // NO LONGER SAVING AUTOMATICALLY FOR SINGLE IMAGES
                 boolean isVideo = isVideoFile(inputFilePath);
                 if (isVideo) {
                     String outPath = new File(processedFramesDir, String.format("processed_%05d.png", frameIndex)).getAbsolutePath();
