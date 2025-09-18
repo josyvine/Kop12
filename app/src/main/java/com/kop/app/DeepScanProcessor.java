@@ -62,17 +62,15 @@ public class DeepScanProcessor {
         void onScanComplete(ProcessingResult finalResult);
     }
 
-    // --- NEW METHOD 0: AI Smart Outline (MediaPipe + OpenCV) ---
+    // --- PREMIUM FIX: Method 0 is now "AI-Powered Detail Scan" ---
     public static void processMethod0(Context context, Bitmap originalBitmap, AiScanListener listener) {
-        // --- THIS IS THE CORRECTED IMPLEMENTATION ---
-        // It uses the synchronous IMAGE mode and is wrapped in a full try-catch-finally
-        // block to handle all possible errors gracefully.
         ImageSegmenter imageSegmenter = null;
         try {
+            // Step 1: Initialize the MediaPipe Image Segmenter
             ImageSegmenterOptions.Builder optionsBuilder =
                 ImageSegmenterOptions.builder()
                     .setBaseOptions(BaseOptions.builder().setModelAssetPath(MODEL_FILE).build())
-                    .setRunningMode(RunningMode.IMAGE) // Use IMAGE mode for single-image processing
+                    .setRunningMode(RunningMode.IMAGE)
                     .setOutputConfidenceMasks(true);
 
             ImageSegmenterOptions options = optionsBuilder.build();
@@ -80,59 +78,82 @@ public class DeepScanProcessor {
 
             MPImage mpImage = new BitmapImageBuilder(originalBitmap).build();
 
-            // Use the synchronous `segment` method for IMAGE mode
+            // Step 2: Run AI Segmentation to get the mask
             ImageSegmenterResult segmenterResult = imageSegmenter.segment(mpImage);
 
             if (segmenterResult != null && segmenterResult.confidenceMasks().isPresent()) {
                 try (MPImage mask = segmenterResult.confidenceMasks().get().get(0)) {
 
+                    // Convert the AI mask to an OpenCV Mat
                     ByteBuffer byteBuffer = ByteBufferExtractor.extract(mask);
                     FloatBuffer confidenceMaskBuffer = byteBuffer.asFloatBuffer();
                     confidenceMaskBuffer.rewind();
-
                     int maskWidth = mask.getWidth();
                     int maskHeight = mask.getHeight();
-
                     Mat maskMat = new Mat(maskHeight, maskWidth, CvType.CV_32F);
                     float[] floatArray = new float[confidenceMaskBuffer.remaining()];
                     confidenceMaskBuffer.get(floatArray);
                     maskMat.put(0, 0, floatArray);
-
                     Mat mask8u = new Mat();
                     maskMat.convertTo(mask8u, CvType.CV_8U, 255.0);
-
-                    Mat thresholdMat = new Mat();
+                    Mat thresholdMat = new Mat(); // This is our final AI silhouette mask
                     Imgproc.threshold(mask8u, thresholdMat, 128, 255, Imgproc.THRESH_BINARY);
 
+                    // --- START OF NEW LOGIC FOR DETAIL SCAN ---
+
+                    // Step 3: Isolate the subject from the original image using the AI mask
+                    Mat originalMat = new Mat();
+                    Utils.bitmapToMat(originalBitmap, originalMat);
+                    Mat resizedMask = new Mat();
+                    Imgproc.resize(thresholdMat, resizedMask, originalMat.size()); // Ensure mask and image are same size
+                    Mat isolatedSubjectMat = new Mat();
+                    Core.bitwise_and(originalMat, originalMat, isolatedSubjectMat, resizedMask);
+
+                    // Step 4: Find all internal details on the isolated subject
+                    Mat grayIsolated = new Mat();
+                    Imgproc.cvtColor(isolatedSubjectMat, grayIsolated, Imgproc.COLOR_RGBA2GRAY);
+                    Imgproc.GaussianBlur(grayIsolated, grayIsolated, new Size(3, 3), 0); // Denoise for cleaner lines
+                    Mat detailLines = new Mat();
+                    Imgproc.Canny(grayIsolated, detailLines, 50, 150); // Canny edge detection finds all lines
+
+                    // Step 5: Find the strong outer outline from the AI mask
                     List<MatOfPoint> contours = new ArrayList<>();
                     Mat hierarchy = new Mat();
-                    Imgproc.findContours(thresholdMat, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
+                    Imgproc.findContours(resizedMask, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
 
+                    // Step 6: Combine the outer outline and internal details
                     Mat finalDrawing = new Mat(originalBitmap.getHeight(), originalBitmap.getWidth(), CvType.CV_8UC4, new Scalar(255, 255, 255, 255));
-                    Imgproc.drawContours(finalDrawing, contours, -1, new Scalar(0, 0, 0, 255), 2);
+                    Imgproc.drawContours(finalDrawing, contours, -1, new Scalar(0, 0, 0, 255), 2); // Draw the strong outline
+                    finalDrawing.setTo(new Scalar(0, 0, 0, 255), detailLines); // Paint the internal details on top
 
+                    // --- END OF NEW LOGIC ---
+
+                    // Convert the final result to a Bitmap
                     Bitmap finalBitmap = Bitmap.createBitmap(finalDrawing.cols(), finalDrawing.rows(), Bitmap.Config.ARGB_8888);
                     Utils.matToBitmap(finalDrawing, finalBitmap);
 
                     ProcessingResult result = new ProcessingResult(finalBitmap, contours.size());
                     listener.onAiScanComplete(result);
 
-                    // Clean up OpenCV Mats
+                    // Clean up all OpenCV Mats to prevent memory leaks
                     maskMat.release();
                     mask8u.release();
                     thresholdMat.release();
                     hierarchy.release();
                     finalDrawing.release();
+                    originalMat.release();
+                    resizedMask.release();
+                    isolatedSubjectMat.release();
+                    grayIsolated.release();
+                    detailLines.release();
                     for (MatOfPoint contour : contours) {
                         contour.release();
                     }
                 }
             } else {
-                // This case handles if segmentation runs but returns no result
                 throw new Exception("MediaPipe segmentation returned a null or empty result.");
             }
         } catch (Exception e) {
-            // This single catch block will handle initialization failures AND processing failures.
             Log.e(TAG, "MediaPipe AI segmentation has CRITICALLY FAILED. See exception below.", e);
             ProcessingResult failureResult = new ProcessingResult(null, 0);
             listener.onAiScanComplete(failureResult);
@@ -141,7 +162,6 @@ public class DeepScanProcessor {
                 imageSegmenter.close();
             }
         }
-        // --- END OF CORRECTED IMPLEMENTATION ---
     }
 
 
