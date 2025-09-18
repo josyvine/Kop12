@@ -8,7 +8,6 @@ import com.google.mediapipe.framework.image.BitmapImageBuilder;
 import com.google.mediapipe.framework.image.ByteBufferExtractor;
 import com.google.mediapipe.framework.image.MPImage;
 import com.google.mediapipe.tasks.core.BaseOptions;
-import com.google.mediapipe.tasks.core.OutputHandler;
 import com.google.mediapipe.tasks.vision.core.RunningMode;
 import com.google.mediapipe.tasks.vision.imagesegmenter.ImageSegmenter;
 import com.google.mediapipe.tasks.vision.imagesegmenter.ImageSegmenter.ImageSegmenterOptions;
@@ -29,9 +28,6 @@ import java.nio.FloatBuffer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 
 public class DeepScanProcessor {
     
@@ -67,117 +63,85 @@ public class DeepScanProcessor {
     }
 
     // --- NEW METHOD 0: AI Smart Outline (MediaPipe + OpenCV) ---
-    public static void processMethod0(Context context, final Bitmap originalBitmap, final AiScanListener listener) {
-        // --- THIS IS THE FINAL, CORRECT IMPLEMENTATION FOR MEDIAPIPE 0.10.14+ ---
-        // It uses the recommended asynchronous (listener-based) approach which is
-        // more robust and handles initialization correctly for the new library version.
-        
-        final ExecutorService executor = Executors.newSingleThreadExecutor();
-
-        OutputHandler.ResultListener<ImageSegmenterResult, MPImage> resultListener =
-            new OutputHandler.ResultListener<ImageSegmenterResult, MPImage>() {
-                @Override
-                public void run(ImageSegmenterResult segmenterResult, MPImage image) {
-                    if (segmenterResult != null && segmenterResult.confidenceMasks().isPresent()) {
-                        try {
-                            MPImage mask = segmenterResult.confidenceMasks().get().get(0);
-                            
-                            ByteBuffer byteBuffer = ByteBufferExtractor.extract(mask);
-                            FloatBuffer confidenceMaskBuffer = byteBuffer.asFloatBuffer();
-                            confidenceMaskBuffer.rewind();
-                            
-                            int maskWidth = mask.getWidth();
-                            int maskHeight = mask.getHeight();
-
-                            Mat maskMat = new Mat(maskHeight, maskWidth, CvType.CV_32F);
-                            float[] floatArray = new float[confidenceMaskBuffer.remaining()];
-                            confidenceMaskBuffer.get(floatArray);
-                            maskMat.put(0, 0, floatArray);
-
-                            Mat mask8u = new Mat();
-                            maskMat.convertTo(mask8u, CvType.CV_8U, 255.0);
-                            
-                            Mat thresholdMat = new Mat();
-                            Imgproc.threshold(mask8u, thresholdMat, 128, 255, Imgproc.THRESH_BINARY);
-                            
-                            List<MatOfPoint> contours = new ArrayList<>();
-                            Mat hierarchy = new Mat();
-                            Imgproc.findContours(thresholdMat, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
-
-                            Mat finalDrawing = new Mat(originalBitmap.getHeight(), originalBitmap.getWidth(), CvType.CV_8UC4, new Scalar(255, 255, 255, 255));
-                            Imgproc.drawContours(finalDrawing, contours, -1, new Scalar(0, 0, 0, 255), 2);
-
-                            Bitmap finalBitmap = Bitmap.createBitmap(finalDrawing.cols(), finalDrawing.rows(), Bitmap.Config.ARGB_8888);
-                            Utils.matToBitmap(finalDrawing, finalBitmap);
-                            
-                            ProcessingResult result = new ProcessingResult(finalBitmap, contours.size());
-                            listener.onAiScanComplete(result);
-
-                            // Clean up OpenCV Mats
-                            maskMat.release();
-                            mask8u.release();
-                            thresholdMat.release();
-                            hierarchy.release();
-                            finalDrawing.release();
-                            for (MatOfPoint contour : contours) {
-                                contour.release();
-                            }
-                            mask.close();
-
-                        } catch (Exception e) {
-                            Log.e(TAG, "OpenCV processing within MediaPipe listener failed.", e);
-                            ProcessingResult failureResult = new ProcessingResult(null, 0);
-                            listener.onAiScanComplete(failureResult);
-                        }
-                    } else {
-                        Log.e(TAG, "MediaPipe returned a null result or no confidence masks.");
-                        ProcessingResult failureResult = new ProcessingResult(null, 0);
-                        listener.onAiScanComplete(failureResult);
-                    }
-                }
-            };
-
+    public static void processMethod0(Context context, Bitmap originalBitmap, AiScanListener listener) {
+        // --- THIS IS THE CORRECTED IMPLEMENTATION THAT COMPLIES WITH MEDIAPIPE 0.10.14+ ---
+        // It uses the synchronous IMAGE mode, which is simpler and correct for single images.
+        // The entire process is wrapped in a try-catch block to handle any and all failures.
+        ImageSegmenter imageSegmenter = null;
         try {
-            ImageSegmenterOptions.Builder optionsBuilder = ImageSegmenterOptions.builder()
-                .setBaseOptions(BaseOptions.builder().setModelAssetPath(MODEL_FILE).build())
-                .setRunningMode(RunningMode.LIVE_STREAM) // LIVE_STREAM is required for the listener to work
-                .setOutputConfidenceMasks(true)
-                .setResultListener(resultListener)
-                .setErrorListener(new OutputHandler.ErrorListener() {
-                    @Override
-                    public void run(RuntimeException e) {
-                        Log.e(TAG, "MediaPipe ImageSegmenter Error: " + e.getMessage(), e);
-                        ProcessingResult failureResult = new ProcessingResult(null, 0);
-                        listener.onAiScanComplete(failureResult);
-                    }
-                });
-
-            final ImageSegmenter imageSegmenter = ImageSegmenter.createFromOptions(context, optionsBuilder.build());
+            ImageSegmenterOptions.Builder optionsBuilder =
+                ImageSegmenterOptions.builder()
+                    .setBaseOptions(BaseOptions.builder().setModelAssetPath(MODEL_FILE).build())
+                    .setRunningMode(RunningMode.IMAGE) // Use IMAGE mode for single-image processing
+                    .setOutputConfidenceMasks(true);
             
-            // The new library requires running the task on its own thread.
-            executor.execute(new Runnable() {
-                @Override
-                public void run() {
-                    MPImage mpImage = new BitmapImageBuilder(originalBitmap).build();
-                    // Use segmentAsync for LIVE_STREAM mode
-                    imageSegmenter.segmentAsync(mpImage, System.currentTimeMillis());
-                }
-            });
+            ImageSegmenterOptions options = optionsBuilder.build();
+            imageSegmenter = ImageSegmenter.createFromOptions(context, options);
 
+            MPImage mpImage = new BitmapImageBuilder(originalBitmap).build();
+            
+            // Use the synchronous `segment` method for IMAGE mode
+            ImageSegmenterResult segmenterResult = imageSegmenter.segment(mpImage);
+
+            if (segmenterResult != null && segmenterResult.confidenceMasks().isPresent()) {
+                try (MPImage mask = segmenterResult.confidenceMasks().get().get(0)) {
+                    
+                    ByteBuffer byteBuffer = ByteBufferExtractor.extract(mask);
+                    FloatBuffer confidenceMaskBuffer = byteBuffer.asFloatBuffer();
+                    confidenceMaskBuffer.rewind();
+                    
+                    int maskWidth = mask.getWidth();
+                    int maskHeight = mask.getHeight();
+
+                    Mat maskMat = new Mat(maskHeight, maskWidth, CvType.CV_32F);
+                    float[] floatArray = new float[confidenceMaskBuffer.remaining()];
+                    confidenceMaskBuffer.get(floatArray);
+                    maskMat.put(0, 0, floatArray);
+
+                    Mat mask8u = new Mat();
+                    maskMat.convertTo(mask8u, CvType.CV_8U, 255.0);
+                    
+                    Mat thresholdMat = new Mat();
+                    Imgproc.threshold(mask8u, thresholdMat, 128, 255, Imgproc.THRESH_BINARY);
+                    
+                    List<MatOfPoint> contours = new ArrayList<>();
+                    Mat hierarchy = new Mat();
+                    Imgproc.findContours(thresholdMat, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
+
+                    Mat finalDrawing = new Mat(originalBitmap.getHeight(), originalBitmap.getWidth(), CvType.CV_8UC4, new Scalar(255, 255, 255, 255));
+                    Imgproc.drawContours(finalDrawing, contours, -1, new Scalar(0, 0, 0, 255), 2);
+
+                    Bitmap finalBitmap = Bitmap.createBitmap(finalDrawing.cols(), finalDrawing.rows(), Bitmap.Config.ARGB_8888);
+                    Utils.matToBitmap(finalDrawing, finalBitmap);
+                    
+                    ProcessingResult result = new ProcessingResult(finalBitmap, contours.size());
+                    listener.onAiScanComplete(result);
+
+                    // Clean up OpenCV Mats
+                    maskMat.release();
+                    mask8u.release();
+                    thresholdMat.release();
+                    hierarchy.release();
+                    finalDrawing.release();
+                    for (MatOfPoint contour : contours) {
+                        contour.release();
+                    }
+                }
+            } else {
+                // This case handles if segmentation runs but returns no result
+                throw new Exception("MediaPipe segmentation returned a null or empty result.");
+            }
         } catch (Exception e) {
-            Log.e(TAG, "Failed to initialize MediaPipe ImageSegmenter.", e);
+            // This single catch block will handle initialization failures AND processing failures.
+            Log.e(TAG, "MediaPipe AI segmentation has CRITICALLY FAILED. See exception below.", e);
             ProcessingResult failureResult = new ProcessingResult(null, 0);
             listener.onAiScanComplete(failureResult);
         } finally {
-            // Shutdown the executor after the task is done
-            executor.shutdown();
-            try {
-                executor.awaitTermination(20, TimeUnit.SECONDS); // Wait up to 20 seconds
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
+            if (imageSegmenter != null) {
+                imageSegmenter.close();
             }
         }
-        // --- END OF THE NEW IMPLEMENTATION ---
+        // --- END OF CORRECTED IMPLEMENTATION ---
     }
 
 
