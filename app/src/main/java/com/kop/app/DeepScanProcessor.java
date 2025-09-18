@@ -63,7 +63,7 @@ public class DeepScanProcessor {
         void onScanComplete(ProcessingResult finalResult);
     }
 
-    // --- REBUILT: Method 01 is "AI Composite Scan" ---
+    // --- REBUILT AS REQUESTED: Method 01 (AI Composite) - Line art person on raw background ---
     public static void processMethod01(Context context, Bitmap originalBitmap, AiScanListener listener) {
         ImageSegmenter imageSegmenter = null;
         try {
@@ -73,25 +73,18 @@ public class DeepScanProcessor {
                     .setBaseOptions(BaseOptions.builder().setModelAssetPath(MODEL_FILE).build())
                     .setRunningMode(RunningMode.IMAGE)
                     .setOutputConfidenceMasks(true);
-
             ImageSegmenterOptions options = optionsBuilder.build();
             imageSegmenter = ImageSegmenter.createFromOptions(context, options);
-
             MPImage mpImage = new BitmapImageBuilder(originalBitmap).build();
-
-            // Step 2: Run AI Segmentation to get the mask
             ImageSegmenterResult segmenterResult = imageSegmenter.segment(mpImage);
 
             if (segmenterResult != null && segmenterResult.confidenceMasks().isPresent()) {
                 try (MPImage mask = segmenterResult.confidenceMasks().get().get(0)) {
-
                     // Convert the AI mask to an OpenCV Mat
                     ByteBuffer byteBuffer = ByteBufferExtractor.extract(mask);
                     FloatBuffer confidenceMaskBuffer = byteBuffer.asFloatBuffer();
                     confidenceMaskBuffer.rewind();
-                    int maskWidth = mask.getWidth();
-                    int maskHeight = mask.getHeight();
-                    Mat maskMat = new Mat(maskHeight, maskWidth, CvType.CV_32F);
+                    Mat maskMat = new Mat(mask.getHeight(), mask.getWidth(), CvType.CV_32F);
                     float[] floatArray = new float[confidenceMaskBuffer.remaining()];
                     confidenceMaskBuffer.get(floatArray);
                     maskMat.put(0, 0, floatArray);
@@ -100,52 +93,59 @@ public class DeepScanProcessor {
                     Mat thresholdMat = new Mat();
                     Imgproc.threshold(mask8u, thresholdMat, 128, 255, Imgproc.THRESH_BINARY);
 
-                    // --- START OF NEW "STICKER EFFECT" LOGIC ---
+                    // --- START: Generate line art for the person ONLY using the logic from your Method 0 ---
+                    Mat originalMat = new Mat();
+                    Utils.bitmapToMat(originalBitmap, originalMat);
+                    Mat resizedMask = new Mat();
+                    Imgproc.resize(thresholdMat, resizedMask, originalMat.size());
+                    Mat isolatedSubjectMat = new Mat();
+                    Core.bitwise_and(originalMat, originalMat, isolatedSubjectMat, resizedMask);
 
-                    // Create the final canvas from the original bitmap to keep the background
+                    Mat grayIsolated = new Mat();
+                    Imgproc.cvtColor(isolatedSubjectMat, grayIsolated, Imgproc.COLOR_RGBA2GRAY);
+                    Imgproc.GaussianBlur(grayIsolated, grayIsolated, new Size(3, 3), 0);
+                    Mat detailLines = new Mat();
+                    Imgproc.Canny(grayIsolated, detailLines, 50, 150);
+
+                    List<MatOfPoint> contours = new ArrayList<>();
+                    Mat hierarchy = new Mat();
+                    // Use a copy of resizedMask for findContours as it can be modified by the function
+                    Mat contoursMask = resizedMask.clone();
+                    Imgproc.findContours(contoursMask, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
+                    contoursMask.release();
+
+                    Mat personLineArt = new Mat(originalBitmap.getHeight(), originalBitmap.getWidth(), CvType.CV_8UC4, new Scalar(255, 255, 255, 255));
+                    Imgproc.drawContours(personLineArt, contours, -1, new Scalar(0, 0, 0, 255), 2);
+                    personLineArt.setTo(new Scalar(0, 0, 0, 255), detailLines);
+                    // --- END: Line art of person is now in 'personLineArt' ---
+
+                    // --- START: Composite the line art onto the original raw background ---
                     Mat finalComposite = new Mat();
                     Utils.bitmapToMat(originalBitmap, finalComposite);
                     if (finalComposite.channels() == 3) {
                         Imgproc.cvtColor(finalComposite, finalComposite, Imgproc.COLOR_RGB2RGBA);
                     }
                     
-                    Mat resizedMask = new Mat();
-                    Imgproc.resize(thresholdMat, resizedMask, finalComposite.size());
-                    List<MatOfPoint> contours = new ArrayList<>();
-                    Mat hierarchy = new Mat();
-                    Imgproc.findContours(resizedMask, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
+                    personLineArt.copyTo(finalComposite, resizedMask);
+                    // --- END: Composite ---
 
-                    // Step 1: Draw a thick white border directly onto the final image canvas.
-                    Imgproc.drawContours(finalComposite, contours, -1, new Scalar(255, 255, 255, 255), 10);
-
-                    // Step 2: Draw a thinner black outline on top of the white border.
-                    Imgproc.drawContours(finalComposite, contours, -1, new Scalar(0, 0, 0, 255), 4);
-
-                    // Step 3: Paste the original, colored person back on top using the mask.
-                    Mat originalMat = new Mat();
-                    Utils.bitmapToMat(originalBitmap, originalMat);
-                    if (originalMat.channels() == 3) {
-                        Imgproc.cvtColor(originalMat, originalMat, Imgproc.COLOR_RGB2RGBA);
-                    }
-                    originalMat.copyTo(finalComposite, resizedMask);
-
-                    // --- END OF NEW LOGIC ---
-
-                    // Convert the final result to a Bitmap
                     Bitmap finalBitmap = Bitmap.createBitmap(finalComposite.cols(), finalComposite.rows(), Bitmap.Config.ARGB_8888);
                     Utils.matToBitmap(finalComposite, finalBitmap);
-
                     ProcessingResult result = new ProcessingResult(finalBitmap, contours.size());
                     listener.onAiScanComplete(result);
 
-                    // Clean up all OpenCV Mats to prevent memory leaks
+                    // Clean up all OpenCV Mats
                     maskMat.release();
                     mask8u.release();
                     thresholdMat.release();
-                    finalComposite.release();
-                    resizedMask.release();
-                    hierarchy.release();
                     originalMat.release();
+                    resizedMask.release();
+                    isolatedSubjectMat.release();
+                    grayIsolated.release();
+                    detailLines.release();
+                    hierarchy.release();
+                    personLineArt.release();
+                    finalComposite.release();
                     for (MatOfPoint contour : contours) {
                         contour.release();
                     }
@@ -155,8 +155,7 @@ public class DeepScanProcessor {
             }
         } catch (Exception e) {
             Log.e(TAG, "MediaPipe AI segmentation has CRITICALLY FAILED. See exception below.", e);
-            ProcessingResult failureResult = new ProcessingResult(null, 0);
-            listener.onAiScanComplete(failureResult);
+            listener.onAiScanComplete(new ProcessingResult(null, 0));
         } finally {
             if (imageSegmenter != null) {
                 imageSegmenter.close();
@@ -165,7 +164,7 @@ public class DeepScanProcessor {
     }
 
 
-    // --- ENHANCED: Method 0 "AI Smart Outline" with more internal detail ---
+    // --- Method 0 is "AI-Powered Detail Scan" (RESTORED to your original logic with one small fix) ---
     public static void processMethod0(Context context, Bitmap originalBitmap, AiScanListener listener) {
         ImageSegmenter imageSegmenter = null;
         try {
@@ -199,43 +198,45 @@ public class DeepScanProcessor {
                     maskMat.put(0, 0, floatArray);
                     Mat mask8u = new Mat();
                     maskMat.convertTo(mask8u, CvType.CV_8U, 255.0);
-                    Mat thresholdMat = new Mat();
+                    Mat thresholdMat = new Mat(); // This is our final AI silhouette mask
                     Imgproc.threshold(mask8u, thresholdMat, 128, 255, Imgproc.THRESH_BINARY);
 
-                    // --- START OF ENHANCED DETAIL LOGIC ---
+                    // --- START OF LOGIC FOR DETAIL SCAN ---
+
+                    // Step 3: Isolate the subject from the original image using the AI mask
                     Mat originalMat = new Mat();
                     Utils.bitmapToMat(originalBitmap, originalMat);
                     Mat resizedMask = new Mat();
-                    Imgproc.resize(thresholdMat, resizedMask, originalMat.size());
+                    Imgproc.resize(thresholdMat, resizedMask, originalMat.size()); // Ensure mask and image are same size
                     Mat isolatedSubjectMat = new Mat();
                     Core.bitwise_and(originalMat, originalMat, isolatedSubjectMat, resizedMask);
+                    
+                    // GENTLE FIX: Add denoising here to reduce patches and darkness before processing.
+                    Photo.fastNlMeansDenoisingColored(isolatedSubjectMat, isolatedSubjectMat, 3, 3, 7, 21);
 
+                    // Step 4: Find all internal details on the isolated subject
                     Mat grayIsolated = new Mat();
                     Imgproc.cvtColor(isolatedSubjectMat, grayIsolated, Imgproc.COLOR_RGBA2GRAY);
-                    Imgproc.GaussianBlur(grayIsolated, grayIsolated, new Size(3, 3), 0);
-                    
-                    // Step 1: Get strong edges using Canny
-                    Mat cannyLines = new Mat();
-                    Imgproc.Canny(grayIsolated, cannyLines, 50, 150);
-                    
-                    // Step 2: Get fine details using Adaptive Threshold
+                    Imgproc.GaussianBlur(grayIsolated, grayIsolated, new Size(3, 3), 0); // Denoise for cleaner lines
                     Mat detailLines = new Mat();
-                    Imgproc.adaptiveThreshold(grayIsolated, detailLines, 255, Imgproc.ADAPTIVE_THRESH_MEAN_C, Imgproc.THRESH_BINARY_INV, 11, 2);
+                    Imgproc.Canny(grayIsolated, detailLines, 50, 150); // Canny edge detection finds all lines
 
-                    // Step 3: Combine both sets of lines
-                    Core.bitwise_or(cannyLines, detailLines, detailLines);
-
-                    // Step 4: Get the main outer contour from the AI mask
+                    // Step 5: Find the strong outer outline from the AI mask
                     List<MatOfPoint> contours = new ArrayList<>();
                     Mat hierarchy = new Mat();
-                    Imgproc.findContours(resizedMask, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
+                    // Use a copy of resizedMask for findContours as it can be modified by the function
+                    Mat contoursMask = resizedMask.clone();
+                    Imgproc.findContours(contoursMask, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
+                    contoursMask.release();
 
-                    // Step 5: Draw everything onto a clean white canvas
+                    // Step 6: Combine the outer outline and internal details
                     Mat finalDrawing = new Mat(originalBitmap.getHeight(), originalBitmap.getWidth(), CvType.CV_8UC4, new Scalar(255, 255, 255, 255));
-                    Imgproc.drawContours(finalDrawing, contours, -1, new Scalar(0, 0, 0, 255), 2);
-                    finalDrawing.setTo(new Scalar(0, 0, 0, 255), detailLines);
+                    Imgproc.drawContours(finalDrawing, contours, -1, new Scalar(0, 0, 0, 255), 2); // Draw the strong outline
+                    finalDrawing.setTo(new Scalar(0, 0, 0, 255), detailLines); // Paint the internal details on top
+
                     // --- END OF LOGIC ---
 
+                    // Convert the final result to a Bitmap
                     Bitmap finalBitmap = Bitmap.createBitmap(finalDrawing.cols(), finalDrawing.rows(), Bitmap.Config.ARGB_8888);
                     Utils.matToBitmap(finalDrawing, finalBitmap);
 
@@ -253,7 +254,6 @@ public class DeepScanProcessor {
                     isolatedSubjectMat.release();
                     grayIsolated.release();
                     detailLines.release();
-                    cannyLines.release();
                     for (MatOfPoint contour : contours) {
                         contour.release();
                     }
@@ -273,7 +273,7 @@ public class DeepScanProcessor {
     }
 
 
-    // --- Method 1: The "Utmost Best" - Live Foundational Analysis ---
+    // --- Method 1: The "Utmost Best" - Live Foundational Analysis (UNCHANGED) ---
     public static void processMethod1(Bitmap originalBitmap, LiveScanListener listener) {
         Mat originalMat = new Mat();
         Utils.bitmapToMat(originalBitmap, originalMat);
@@ -309,15 +309,12 @@ public class DeepScanProcessor {
         finalLines.release();
     }
 
-
     // --- Method 4: "Segmented Detail" (Now Method 2 in UI) ---
     public static void processMethod4(Bitmap originalBitmap, ScanListener listener) {
         Mat originalMat = new Mat();
         Utils.bitmapToMat(originalBitmap, originalMat);
         Mat grayMat = new Mat();
         Imgproc.cvtColor(originalMat, grayMat, Imgproc.COLOR_RGBA2GRAY);
-
-        Photo.fastNlMeansDenoising(grayMat, grayMat, 10, 7, 21);
 
         listener.onScanProgress(1, 4, "Pass 1/4: Segmenting Objects...", createBitmapFromMask(new Mat(), originalMat.size()));
         try { Thread.sleep(2500); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
@@ -347,17 +344,10 @@ public class DeepScanProcessor {
 
         Mat finalLines = finalizeLines(boundaries);
         finalizeAndComplete(finalLines, listener);
-
-        originalMat.release(); 
-        grayMat.release(); 
-        bgrMat.release(); 
-        cannyForSeeds.release(); 
-        markers.release(); 
-        boundaries.release(); 
-        detailLines.release();
+        originalMat.release(); grayMat.release(); bgrMat.release(); cannyForSeeds.release(); markers.release(); boundaries.release(); detailLines.release();
     }
 
-    // --- CRASH FIXED & ENHANCED: Method 5 "Pencil Sketch" ---
+    // --- Method 5: "Pencil Sketch" (Now Method 3 in UI) ---
     public static void processMethod5(Bitmap originalBitmap, ScanListener listener) {
         Mat originalMat = new Mat();
         Utils.bitmapToMat(originalBitmap, originalMat);
@@ -376,8 +366,8 @@ public class DeepScanProcessor {
         try { Thread.sleep(2500); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
         Mat sharpLines = getMethod8Lines(grayMat);
 
-        // CRASH FIX: Count the contours on the valid, single-channel 'sharpLines' Mat BEFORE combining it.
-        int objectCount = countContours(sharpLines);
+        // CRASH FIX: Get the object count from the valid single-channel 'sharpLines' Mat.
+        int objectCount = countContours(sharpLines.clone());
 
         listener.onScanProgress(3, 4, "Pass 3/4: Combining Shading & Lines...", createBitmapFromMask(sketch, originalMat.size()));
         try { Thread.sleep(2500); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
@@ -387,26 +377,16 @@ public class DeepScanProcessor {
 
         listener.onScanProgress(4, 4, "Pass 4/4: Finalizing Artwork...", createBitmapFromMask(sketch, originalMat.size()));
         try { Thread.sleep(2500); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
-        
-        // The 'sketch' is now the final grayscale image. Convert it to a color format for display.
         Mat finalSketch = new Mat();
         Imgproc.cvtColor(sketch, finalSketch, Imgproc.COLOR_GRAY2BGRA);
 
-        // Manually create the final bitmap and result object.
         Bitmap finalBitmap = Bitmap.createBitmap(finalSketch.cols(), finalSketch.rows(), Bitmap.Config.ARGB_8888);
         Utils.matToBitmap(finalSketch, finalBitmap);
+        // CRASH FIX: Manually create the result with the correct count and the final bitmap.
         ProcessingResult finalResult = new ProcessingResult(finalBitmap, objectCount);
         listener.onScanComplete(finalResult);
 
-        // Release all Mats.
-        originalMat.release(); 
-        grayMat.release(); 
-        inverted.release(); 
-        blurred.release(); 
-        sketch.release(); 
-        sharpLines.release(); 
-        invertedLines.release();
-        finalSketch.release();
+        originalMat.release(); grayMat.release(); inverted.release(); blurred.release(); sketch.release(); sharpLines.release(); invertedLines.release(); finalSketch.release();
     }
 
     // --- Method 6: "Selective Detail" (Now Method 4 in UI) ---
@@ -435,14 +415,7 @@ public class DeepScanProcessor {
         listener.onScanProgress(5, 5, "Pass 5/5: Finalizing Artwork...", createBitmapFromMask(finalLines, originalMat.size()));
         try { Thread.sleep(2000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
         finalizeAndComplete(finalLines, listener);
-        
-        originalMat.release(); 
-        grayMat.release(); 
-        simplifiedMat.release(); 
-        structuralLines.release(); 
-        detailLines.release(); 
-        maskedDetails.release(); 
-        structureMask.release();
+        originalMat.release(); grayMat.release(); simplifiedMat.release(); structuralLines.release(); detailLines.release(); maskedDetails.release(); structureMask.release();
     }
 
     // --- Method 7: "Artistic Abstraction" (Now Method 5 in UI) ---
@@ -467,12 +440,7 @@ public class DeepScanProcessor {
         listener.onScanProgress(5, 5, "Pass 5/5: Finalizing Artwork...", createBitmapFromMask(finalLines, originalMat.size()));
         try { Thread.sleep(2000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
         finalizeAndComplete(finalLines, listener);
-        
-        originalMat.release(); 
-        grayMat.release(); 
-        simplifiedMat.release(); 
-        majorEdges.release(); 
-        detailEdges.release();
+        originalMat.release(); grayMat.release(); simplifiedMat.release(); majorEdges.release(); detailEdges.release();
     }
 
     // --- Method 8: "Clean Structure" (Now Method 6 in UI) ---
@@ -483,16 +451,14 @@ public class DeepScanProcessor {
         Imgproc.cvtColor(originalMat, grayMat, Imgproc.COLOR_RGBA2GRAY);
         listener.onScanProgress(1, 5, "Pass 1/5: Smoothing Surfaces...", createBitmapFromMask(new Mat(originalMat.size(), CvType.CV_8UC1, new Scalar(0)), originalMat.size()));
         try { Thread.sleep(2000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
-        
-        Mat smoothedMat = new Mat();
-        Imgproc.bilateralFilter(grayMat, smoothedMat, 9, 75, 75);
-
+        Mat blurredMat = new Mat();
+        Imgproc.GaussianBlur(grayMat, blurredMat, new Size(5, 5), 0);
         listener.onScanProgress(2, 5, "Pass 2/5: Finding Major Edges...", createBitmapFromMask(new Mat(originalMat.size(), CvType.CV_8UC1, new Scalar(0)), originalMat.size()));
         try { Thread.sleep(2000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
-        Mat majorEdges = getCannyEdges(smoothedMat, 5, 50);
+        Mat majorEdges = getCannyEdges(blurredMat, 5, 50);
         listener.onScanProgress(3, 5, "Pass 3/5: Finding Detail Edges...", createBitmapFromMask(majorEdges, originalMat.size()));
         try { Thread.sleep(2000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
-        Mat detailEdges = getCannyEdges(smoothedMat, 60, 120);
+        Mat detailEdges = getCannyEdges(blurredMat, 60, 120);
         Core.bitwise_or(majorEdges, detailEdges, majorEdges);
         listener.onScanProgress(4, 5, "Pass 4/5: Combining Edges...", createBitmapFromMask(majorEdges, originalMat.size()));
         try { Thread.sleep(2000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
@@ -500,12 +466,7 @@ public class DeepScanProcessor {
         listener.onScanProgress(5, 5, "Pass 5/5: Finalizing Artwork...", createBitmapFromMask(finalLines, originalMat.size()));
         try { Thread.sleep(2000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
         finalizeAndComplete(finalLines, listener);
-        
-        originalMat.release(); 
-        grayMat.release(); 
-        smoothedMat.release(); 
-        majorEdges.release(); 
-        detailEdges.release();
+        originalMat.release(); grayMat.release(); blurredMat.release(); majorEdges.release(); detailEdges.release();
     }
 
     // --- Method 9: "Detailed Texture" (Now Method 7 in UI) ---
@@ -535,13 +496,7 @@ public class DeepScanProcessor {
         listener.onScanProgress(5, 5, "Pass 5/5: Finalizing Artwork...", createBitmapFromMask(finalLines, originalMat.size()));
         try { Thread.sleep(2000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
         finalizeAndComplete(finalLines, listener);
-        
-        originalMat.release(); 
-        grayMat.release(); 
-        simplifiedMat.release(); 
-        accumulatedLines.release(); 
-        largeShapes.release(); 
-        detailShapes.release();
+        originalMat.release(); grayMat.release(); simplifiedMat.release(); accumulatedLines.release(); largeShapes.release(); detailShapes.release();
     }
 
     // --- Method 10: Legacy (Now Method 8 in UI) ---
@@ -558,7 +513,11 @@ public class DeepScanProcessor {
         Imgproc.cvtColor(originalMat, grayMat, Imgproc.COLOR_RGBA2GRAY);
         Mat finalLines = new Mat();
 
+        // Note: The 'method' parameter is the spinner index. This switch must be updated
+        // in ProcessingActivity to pass the correct logical method number.
+        // Assuming the mapping is handled there, this code remains similar.
         switch (method) {
+            // Cases for old methods 2 and 3 are removed.
             case 2: // Now Segmented Detail
             case 4: // Now Selective Detail
             case 5: // Now Artistic
@@ -621,13 +580,16 @@ public class DeepScanProcessor {
         Mat finalized = new Mat();
         Mat boldKernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, new Size(boldKernelSize, boldKernelSize));
         Imgproc.dilate(cleaned, finalized, boldKernel);
+        if (depth == 3 || depth == 4) {
+            blurredMat.release();
+            detail.release();
+            foundation.release();
+            cleaned.release();
+            cleanKernel.release();
+            boldKernel.release();
+            return finalized;
+        }
 
-        blurredMat.release();
-        detail.release();
-        foundation.release();
-        cleaned.release();
-        cleanKernel.release();
-        boldKernel.release();
         return finalized;
     }
 
@@ -671,13 +633,16 @@ public class DeepScanProcessor {
         Mat finalized = new Mat();
         Mat boldKernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, new Size(boldKernelSize, boldKernelSize));
         Imgproc.dilate(cleaned, finalized, boldKernel);
+        if (depth == 3 || depth == 4) {
+            simplifiedMat.release();
+            detail.release();
+            foundation.release();
+            cleaned.release();
+            cleanKernel.release();
+            boldKernel.release();
+            return finalized;
+        }
 
-        simplifiedMat.release();
-        detail.release();
-        foundation.release();
-        cleaned.release();
-        cleanKernel.release();
-        boldKernel.release();
         return finalized;
     }
 
@@ -767,6 +732,17 @@ public class DeepScanProcessor {
         return finalLines;
     }
 
+    private static Mat getMethod7Lines(Mat grayMat) {
+        Mat simplified = getSimplifiedImage(grayMat);
+        Mat major = getCannyEdges(simplified, 5, 50);
+        Mat detail = getCannyEdges(simplified, 60, 120);
+        Core.bitwise_or(major, detail, major);
+        Mat finalLines = finalizeLines(major);
+        simplified.release();
+        detail.release();
+        return finalLines;
+    }
+
     private static Mat getMethod8Lines(Mat grayMat) {
         Mat blurred = new Mat();
         Imgproc.GaussianBlur(grayMat, blurred, new Size(5, 5), 0);
@@ -779,9 +755,8 @@ public class DeepScanProcessor {
         return finalLines;
     }
 
-    // SAFETY FIX: This now operates on a clone to prevent modifying the original Mat.
     private static int countContours(Mat mat) {
-        // findContours can modify the source image. Using a clone prevents side effects.
+        // SAFETY FIX: Use a clone because findContours can modify the source Mat.
         Mat matCopy = mat.clone();
         List<MatOfPoint> contours = new ArrayList<>();
         Mat hierarchy = new Mat();
@@ -795,7 +770,6 @@ public class DeepScanProcessor {
         return total;
     }
 
-    // SAVING FIX: This function now takes ownership of the Mat and is responsible for releasing it.
     private static void finalizeAndComplete(Mat finalLines, ScanListener listener) {
         int totalObjects = countContours(finalLines);
         if (finalLines.channels() == 1) {
@@ -808,8 +782,7 @@ public class DeepScanProcessor {
             ProcessingResult finalResult = new ProcessingResult(finalBitmap, totalObjects);
             listener.onScanComplete(finalResult);
         }
-        // SAVING FIX: The Mat is released here, AFTER the listener has received the final bitmap.
-        // This prevents the data from being deleted before it can be saved.
+        // SAVING FIX: The Mat must be released here, after it has been converted to a bitmap, to prevent memory errors.
         finalLines.release();
     }
 
