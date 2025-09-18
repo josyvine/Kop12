@@ -4,7 +4,7 @@ import android.content.Context;
 import android.graphics.Bitmap;
 import android.util.Log;
 
-import com.google.mediapipe.framework.image.BitmapImageBuilder;
+import  com.google.mediapipe.framework.image.BitmapImageBuilder;
 import com.google.mediapipe.framework.image.ByteBufferExtractor;
 import com.google.mediapipe.framework.image.MPImage;
 import com.google.mediapipe.tasks.core.BaseOptions;
