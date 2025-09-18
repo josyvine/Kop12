@@ -141,15 +141,23 @@ public class ProcessingActivity extends AppCompatActivity {
                     if (rawFrames != null && rawFrames.length > 0) {
                         sourceBitmapForTuning = decodeAndRotateBitmap(rawFrames[0].getAbsolutePath());
                         
-                        // --- THIS IS THE FIX FOR THE IMAGE NOT SHOWING ---
-                        // Post a task to the UI thread. This task will first display the image,
-                        // and then, in the same block, start the AI scan. This guarantees the
-                        // user sees the original image before the "Analyzing..." message appears.
+                        // --- THIS IS THE FIX FOR THE UI FLOW ---
+                        // Post a task to the UI thread. This task will display the image
+                        // and set up the controls, then wait for the user to press "Analyze".
+                        // This prevents the AI scan from running automatically.
                         uiHandler.post(new Runnable() {
                             @Override
                             public void run() {
+                                // 1. Display the original image so the user sees it.
                                 updateMainDisplay(sourceBitmapForTuning);
-                                beginAutomaticAiScan();
+
+                                // 2. Show the analysis controls for user interaction.
+                                setupAnalysisControls(isVideo);
+                                
+                                // 3. Update status and hide the initial progress bar.
+                                statusTextView.setText("Ready. Select a method and press Analyze.");
+                                progressBar.setIndeterminate(false);
+                                progressBar.setVisibility(View.GONE);
                             }
                         });
                         // --- END OF FIX ---
@@ -169,7 +177,10 @@ public class ProcessingActivity extends AppCompatActivity {
             return;
         }
 
+        // These UI updates must happen on the UI thread.
+        // The call from beginAnalysis() is already wrapped in a post().
         statusTextView.setText("Performing AI Analysis...");
+        progressBar.setVisibility(View.VISIBLE);
         progressBar.setIndeterminate(true);
         analysisControlsContainer.setVisibility(View.GONE);
         btnSave.setVisibility(View.GONE);
@@ -185,13 +196,15 @@ public class ProcessingActivity extends AppCompatActivity {
                         uiHandler.post(new Runnable() {
                             @Override
                             public void run() {
-                                // --- THIS IS THE FIX FOR THE UI GETTING STUCK ---
-                                // Restore all controls correctly after the AI scan is done.
+                                // --- THIS IS THE FIX FOR THE UI AFTER AI ANALYSIS ---
+                                // Restore all controls, re-enable the analyze button,
+                                // and most importantly, show the Save button.
                                 setupAnalysisControls(isVideoFile(inputFilePath));
                                 statusTextView.setText("AI Analysis Complete. Save or choose another method.");
                                 progressBar.setIndeterminate(false);
+                                progressBar.setVisibility(View.GONE);
                                 btnSave.setVisibility(View.VISIBLE);
-                                analyzeButton.setEnabled(true); // Re-enable the analyze button.
+                                analyzeButton.setEnabled(true);
                                 // --- END OF FIX ---
                             }
                         });
@@ -211,7 +224,7 @@ public class ProcessingActivity extends AppCompatActivity {
                 R.array.method_options, android.R.layout.simple_spinner_item);
         methodAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         methodSpinner.setAdapter(methodAdapter);
-        methodSpinner.setSelection(0, false); 
+        methodSpinner.setSelection(selectedMethod, false); 
         methodSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
@@ -290,7 +303,8 @@ public class ProcessingActivity extends AppCompatActivity {
                     }
                     
                     if (selectedMethod == 0) {
-                        // Re-run the AI scan if the user selects it again.
+                        // This post is required because beginAutomaticAiScan() modifies UI elements
+                        // and must be called from the UI thread.
                         uiHandler.post(new Runnable() {
                             @Override
                             public void run() {
@@ -320,6 +334,12 @@ public class ProcessingActivity extends AppCompatActivity {
     
     private void processAllFramesAutomatically() throws Exception {
         final int totalFrames = rawFrames.length;
+        uiHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                progressBar.setVisibility(View.VISIBLE);
+            }
+        });
         for (int i = 0; i < totalFrames; i++) {
             final int frameNum = i + 1;
             final int frameIndex = i;
@@ -512,6 +532,12 @@ public class ProcessingActivity extends AppCompatActivity {
     private void extractFramesForVideo(int fps) {
         try {
             updateStatus("Extracting " + fps + " FPS...", true);
+            uiHandler.post(new Runnable() {
+                @Override
+                public void run() {
+                    progressBar.setVisibility(View.VISIBLE);
+                }
+            });
             File dir = new File(rawFramesDir);
             if(dir.exists()) {
                 File[] files = dir.listFiles();
