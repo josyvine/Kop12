@@ -2,7 +2,7 @@ package com.kop.app;
 
 import android.content.Context;
 import android.graphics.Bitmap;
-import android.util.Log;
+import android.util.Log; 
 
 import com.google.mediapipe.framework.image.BitmapImageBuilder;
 import com.google.mediapipe.framework.image.ByteBufferExtractor;
