@@ -4,7 +4,7 @@ import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.drawable.BitmapDrawable;
-import android.os.Bundle; 
+import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
@@ -61,7 +61,7 @@ public class ProcessingActivity extends AppCompatActivity {
     private String inputFilePath;
     private File[] rawFrames;
     private String rawFramesDir, processedFramesDir;
-    private int selectedMethod = 0; // Default to Method 01
+    private int selectedMethod = 0; // Default to Method 0
 
     // --- UI ELEMENTS AND STATE FOR MANUAL/AUTOMATIC MODES ---
     private LinearLayout fineTuningControls;
@@ -161,45 +161,6 @@ public class ProcessingActivity extends AppCompatActivity {
         }).start();
     }
 
-    private void beginEnhancedAiScan() {
-        if (sourceBitmapForTuning == null) {
-            showErrorDialog("Error", "Source image not found for AI scan.", true);
-            return;
-        }
-
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                DeepScanProcessor.AiScanListener listener = new DeepScanProcessor.AiScanListener() {
-                    @Override
-                    public void onAiScanComplete(final DeepScanProcessor.ProcessingResult finalResult) {
-                        uiHandler.post(new Runnable() {
-                            @Override
-                            public void run() {
-                                if (finalResult.resultBitmap == null) {
-                                    showErrorDialog("AI Analysis Failed", "The AI model could not process the image. Please try a different image or method.", false);
-                                    statusTextView.setText("AI Analysis Failed. Ready to try again.");
-                                    progressBar.setVisibility(View.GONE);
-                                    analysisControlsContainer.setVisibility(View.VISIBLE);
-                                    analyzeButton.setEnabled(true);
-                                } else {
-                                    updateMainDisplay(finalResult.resultBitmap);
-                                    statusTextView.setText("AI Analysis Complete. Save or choose another method.");
-                                    progressBar.setIndeterminate(false);
-                                    progressBar.setVisibility(View.GONE);
-                                    btnSave.setVisibility(View.VISIBLE);
-                                    analysisControlsContainer.setVisibility(View.VISIBLE);
-                                    analyzeButton.setEnabled(true);
-                                }
-                            }
-                        });
-                    }
-                };
-                DeepScanProcessor.processMethod01_AiEnhanced(getApplicationContext(), sourceBitmapForTuning, listener);
-            }
-        }).start();
-    }
-
     private void beginAutomaticAiScan() {
         if (sourceBitmapForTuning == null) {
             showErrorDialog("Error", "Source image not found for AI scan.", true);
@@ -215,13 +176,17 @@ public class ProcessingActivity extends AppCompatActivity {
                         uiHandler.post(new Runnable() {
                             @Override
                             public void run() {
+                                // --- THIS IS THE CHANGE ---
+                                // Check if the result from the processor is a failure (null bitmap)
                                 if (finalResult.resultBitmap == null) {
+                                    // FAILURE CASE: Show an error, restore the UI so the user can try again.
                                     showErrorDialog("AI Analysis Failed", "The AI model could not process the image. Please try a different image or method.", false);
                                     statusTextView.setText("AI Analysis Failed. Ready to try again.");
                                     progressBar.setVisibility(View.GONE);
                                     analysisControlsContainer.setVisibility(View.VISIBLE);
                                     analyzeButton.setEnabled(true);
                                 } else {
+                                    // SUCCESS CASE: Show the result, show the save button.
                                     updateMainDisplay(finalResult.resultBitmap);
                                     statusTextView.setText("AI Analysis Complete. Save or choose another method.");
                                     progressBar.setIndeterminate(false);
@@ -230,6 +195,7 @@ public class ProcessingActivity extends AppCompatActivity {
                                     analysisControlsContainer.setVisibility(View.VISIBLE);
                                     analyzeButton.setEnabled(true);
                                 }
+                                // --- END OF CHANGE ---
                             }
                         });
                     }
@@ -248,7 +214,7 @@ public class ProcessingActivity extends AppCompatActivity {
                 R.array.method_options, android.R.layout.simple_spinner_item);
         methodAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         methodSpinner.setAdapter(methodAdapter);
-        methodSpinner.setSelection(selectedMethod, false); // Default to Method 01
+        methodSpinner.setSelection(selectedMethod, false);
         methodSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
@@ -325,14 +291,7 @@ public class ProcessingActivity extends AppCompatActivity {
             return;
         }
 
-        // Check for AI methods based on spinner position
-        if (selectedMethod == 0) { // Method 01
-            statusTextView.setText("Performing Enhanced AI Analysis...");
-            progressBar.setVisibility(View.VISIBLE);
-            progressBar.setIndeterminate(true);
-            beginEnhancedAiScan();
-            return;
-        } else if (selectedMethod == 1) { // Method 0
+        if (selectedMethod == 0) {
             statusTextView.setText("Performing AI Analysis...");
             progressBar.setVisibility(View.VISIBLE);
             progressBar.setIndeterminate(true);
@@ -344,7 +303,7 @@ public class ProcessingActivity extends AppCompatActivity {
             @Override
             public void run() {
                 try {
-                    if (switchAutomaticScan.isChecked() || selectedMethod == 6) { // Method 6 is Live Analysis
+                    if (switchAutomaticScan.isChecked() || selectedMethod == 1) {
                         processAllFramesAutomatically();
                     } else {
                         if (isFirstFineTuneAnalysis) {
@@ -380,7 +339,7 @@ public class ProcessingActivity extends AppCompatActivity {
             Bitmap orientedBitmap = decodeAndRotateBitmap(rawFrames[frameIndex].getAbsolutePath());
             if (orientedBitmap == null) continue;
 
-            if (selectedMethod == 6) { // Your original Method 1, now Method 6
+            if (selectedMethod == 1) {
                 beginMethod1LiveScan(orientedBitmap, frameIndex);
             } else {
                 beginStandardScan(orientedBitmap, frameIndex);
@@ -418,24 +377,16 @@ public class ProcessingActivity extends AppCompatActivity {
             }
         };
 
-        // This switch is now updated for all 17 methods.
         switch (selectedMethod) {
-            // New Premium Methods
-            case 2: DeepScanProcessor.processMethod1_VectorCartoon(bitmap, listener); break;
-            case 3: DeepScanProcessor.processMethod2_FineEtching(bitmap, listener); break;
-            case 4: DeepScanProcessor.processMethod3_Geometric(bitmap, listener); break;
-            case 5: DeepScanProcessor.processMethod4_Impressionist(bitmap, listener); break;
-            case 6: DeepScanProcessor.processMethod5_DualTone(bitmap, listener); break;
-            // Your Original Methods (Renumbered)
-            case 7: DeepScanProcessor.processMethod7_Crosshatch(bitmap, listener); break;
-            case 8: DeepScanProcessor.processMethod8_Shaded(bitmap, listener); break;
-            case 9: DeepScanProcessor.processMethod9_SegmentedDetail(bitmap, listener); break;
-            case 10: DeepScanProcessor.processMethod10_PencilSketch(bitmap, listener); break;
-            case 11: DeepScanProcessor.processMethod11_SelectiveDetail(bitmap, listener); break;
-            case 12: DeepScanProcessor.processMethod12_ArtisticAbstraction(bitmap, listener); break;
-            case 13: DeepScanProcessor.processMethod13_CleanStructure(bitmap, listener); break;
-            case 14: DeepScanProcessor.processMethod14_DetailedTexture(bitmap, listener); break;
-            case 15: default: DeepScanProcessor.processMethod15_Legacy(bitmap, listener); break;
+            case 2: DeepScanProcessor.processMethod2(bitmap, listener); break;
+            case 3: DeepScanProcessor.processMethod3(bitmap, listener); break;
+            case 4: DeepScanProcessor.processMethod4(bitmap, listener); break;
+            case 5: DeepScanProcessor.processMethod5(bitmap, listener); break;
+            case 6: DeepScanProcessor.processMethod6(bitmap, listener); break;
+            case 7: DeepScanProcessor.processMethod7(bitmap, listener); break;
+            case 8: DeepScanProcessor.processMethod8(bitmap, listener); break;
+            case 9: DeepScanProcessor.processMethod9(bitmap, listener); break;
+            case 10: default: DeepScanProcessor.processMethod10(bitmap, listener); break;
         }
 
         latch.await();
@@ -489,7 +440,6 @@ public class ProcessingActivity extends AppCompatActivity {
                 });
             }
         };
-        // The selectedMethod index is passed directly, DeepScanProcessor handles the mapping.
         DeepScanProcessor.processWithFineTuning(sourceBitmapForTuning, selectedMethod, depth, sharpness, listener);
     }
 
@@ -561,7 +511,7 @@ public class ProcessingActivity extends AppCompatActivity {
                 latch.countDown();
             }
         };
-        DeepScanProcessor.processMethod6_LiveAnalysis(bitmap, listener); // Calling the correctly renumbered method
+        DeepScanProcessor.processMethod1(bitmap, listener);
         latch.await();
         try { Thread.sleep(2000); } catch (InterruptedException e) {}
         hideScanStatus();
