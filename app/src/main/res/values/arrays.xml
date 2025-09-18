@@ -6,20 +6,24 @@
         <item>8 FPS</item>
         <item>12 FPS</item>
         <item>24 FPS</item>
-    </string-array>  
+    </string-array>
 
-    <!-- UPDATED: This array now contains all 11 method choices, with Method 0 at the top. -->
+    <!--
+      UPDATED: This array contains the new method list.
+      - Method 01 (AI Composite) has been added at the top.
+      - Methods 2 (Crosshatch) and 3 (Shaded) have been removed.
+      - The remaining methods have been renumbered.
+    -->
     <string-array name="method_options">
+        <item>Method 01 (AI Composite)</item>
         <item>Method 0 (AI Smart Outline)</item>
         <item>Method 1 (Live Analysis)</item>
-        <item>Method 2 (Crosshatch)</item>
-        <item>Method 3 (Shaded)</item>
-        <item>Method 4 (Segmented Detail)</item>
-        <item>Method 5 (Pencil Sketch)</item>
-        <item>Method 6 (Selective Detail)</item>
-        <item>Method 7 (Artistic)</item>
-        <item>Method 8 (Clean Structure)</item>
-        <item>Method 9 (Detailed Texture)</item>
-        <item>Method 10 (Legacy Detailed)</item>
+        <item>Method 2 (Segmented Detail)</item>
+        <item>Method 3 (Pencil Sketch)</item>
+        <item>Method 4 (Selective Detail)</item>
+        <item>Method 5 (Artistic)</item>
+        <item>Method 6 (Clean Structure)</item>
+        <item>Method 7 (Detailed Texture)</item>
+        <item>Method 8 (Legacy Detailed)</item>
     </string-array>
 </resources>
