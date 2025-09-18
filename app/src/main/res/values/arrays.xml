@@ -8,18 +8,24 @@
         <item>24 FPS</item>
     </string-array>  
 
-    <!-- UPDATED: This array now contains all 11 method choices, with Method 0 at the top. -->
+    <!-- UPDATED: This array now contains all 17 method choices in the correct order. -->
     <string-array name="method_options">
+        <item>Method 01 (AI Enhanced)</item>
         <item>Method 0 (AI Smart Outline)</item>
-        <item>Method 1 (Live Analysis)</item>
-        <item>Method 2 (Crosshatch)</item>
-        <item>Method 3 (Shaded)</item>
-        <item>Method 4 (Segmented Detail)</item>
-        <item>Method 5 (Pencil Sketch)</item>
-        <item>Method 6 (Selective Detail)</item>
-        <item>Method 7 (Artistic)</item>
-        <item>Method 8 (Clean Structure)</item>
-        <item>Method 9 (Detailed Texture)</item>
-        <item>Method 10 (Legacy Detailed)</item>
+        <item>Method 1 (Comic Book)</item>
+        <item>Method 2 (Charcoal Smudge)</item>
+        <item>Method 3 (Blueprint Draft)</item>
+        <item>Method 4 (Hatching Pro)</item>
+        <item>Method 5 (Stylized Contours)</item>
+        <item>Method 6 (Live Analysis)</item>
+        <item>Method 7 (Crosshatch)</item>
+        <item>Method 8 (Shaded)</item>
+        <item>Method 9 (Segmented Detail)</item>
+        <item>Method 10 (Pencil Sketch)</item>
+        <item>Method 11 (Selective Detail)</item>
+        <item>Method 12 (Artistic)</item>
+        <item>Method 13 (Clean Structure)</item>
+        <item>Method 14 (Detailed Texture)</item>
+        <item>Method 15 (Legacy Detailed)</item>
     </string-array>
 </resources>
