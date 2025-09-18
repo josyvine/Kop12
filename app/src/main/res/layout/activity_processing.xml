@@ -131,13 +131,35 @@
             android:layout_marginTop="12dp"/>
     </LinearLayout>
 
+    <!--
+      THIS IS THE FIX: The Save button is now outside the fine_tuning_controls
+      and inside its own container so it can be shown independently.
+    -->
+    <LinearLayout
+        android:id="@+id/save_button_container"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/analysis_controls"
+        android:gravity="center_horizontal"
+        android:paddingTop="8dp">
+
+        <Button
+            android:id="@+id/btn_save"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Save"
+            android:visibility="gone"
+            tools:visibility="visible"/>
+    </LinearLayout>
+
+
     <!-- FINE-TUNING CONTROLS FOR MANUAL MODE -->
     <LinearLayout
         android:id="@+id/fine_tuning_controls"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:layout_below="@id/analysis_controls"
+        android:layout_below="@id/save_button_container"
         android:padding="16dp"
         android:visibility="gone"
         tools:visibility="visible">
@@ -171,14 +193,6 @@
             android:layout_height="wrap_content"
             android:max="100" />
             
-        <Button
-            android:id="@+id/btn_save"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center_horizontal"
-            android:text="Save"
-            android:layout_marginTop="16dp"/>
-
     </LinearLayout>
 
     <FrameLayout
