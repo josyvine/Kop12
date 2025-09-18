@@ -6,7 +6,6 @@ import android.util.Log;
 
 import com.google.mediapipe.framework.image.BitmapImageBuilder;
 import com.google.mediapipe.framework.image.MPImage;
-import com.google.mediapipe.framework.image.internal.ImageContainer.CloseableBuffer;
 import com.google.mediapipe.tasks.core.BaseOptions;
 import com.google.mediapipe.tasks.vision.core.RunningMode;
 import com.google.mediapipe.tasks.vision.imagesegmenter.ImageSegmenter;
@@ -65,8 +64,6 @@ public class DeepScanProcessor {
     public static void processMethod0(Context context, Bitmap originalBitmap, AiScanListener listener) {
         ImageSegmenter imageSegmenter = null;
         try {
-            // --- Part 1: MediaPipe's Job - Create the Perfect Stencil ---
-
             ImageSegmenterOptions.Builder optionsBuilder = ImageSegmenterOptions.builder()
                 .setBaseOptions(BaseOptions.builder().setModelAssetPath("selfie_segmenter.tflite").build())
                 .setRunningMode(RunningMode.IMAGE)
@@ -78,15 +75,10 @@ public class DeepScanProcessor {
             ImageSegmenterResult segmenterResult = imageSegmenter.segment(mpImage);
 
             if (segmenterResult != null && segmenterResult.confidenceMasks().isPresent()) {
-                MPImage mask = null;
-                CloseableBuffer buffer = null;
-                try {
-                    // --- THIS IS THE DEFINITIVE FIX ---
-                    // Get the mask object from the results.
-                    mask = segmenterResult.confidenceMasks().get().get(0);
-                    // Acquire a CloseableBuffer from the mask. This is the correct method.
-                    buffer = mask.acquireBuffer();
-                    ByteBuffer byteBuffer = buffer.getByteBuffer();
+                // --- THIS IS THE DEFINITIVE, CORRECT IMPLEMENTATION ---
+                try (MPImage mask = segmenterResult.confidenceMasks().get().get(0)) {
+                    // The correct method to get the buffer is directly from the MPImage mask object.
+                    ByteBuffer byteBuffer = mask.getByteBuffer();
                     FloatBuffer confidenceMaskBuffer = byteBuffer.asFloatBuffer();
                     confidenceMaskBuffer.rewind();
                     // --- END OF FIX ---
@@ -94,7 +86,7 @@ public class DeepScanProcessor {
                     int maskWidth = mask.getWidth();
                     int maskHeight = mask.getHeight();
 
-                    // --- Part 2: OpenCV's Job - Trace the Stencil and Draw the Line ---
+                    // --- Part 2: OpenCV's Job ---
                     Mat maskMat = new Mat(maskHeight, maskWidth, CvType.CV_32F);
                     
                     float[] floatArray = new float[confidenceMaskBuffer.remaining()];
@@ -129,14 +121,6 @@ public class DeepScanProcessor {
                     finalDrawing.release();
                     for (MatOfPoint contour : contours) {
                         contour.release();
-                    }
-                } finally {
-                    // Ensure resources are always released
-                    if (buffer != null) {
-                        buffer.close();
-                    }
-                    if (mask != null) {
-                        mask.close();
                     }
                 }
             } else {
