@@ -126,14 +126,9 @@ public class DeepScanProcessor {
                 throw new Exception("MediaPipe did not return a segmentation mask.");
             }
         } catch (Exception e) {
-            // --- THIS IS THE CRITICAL FIX ---
-            // Instead of creating a blank bitmap and hiding the error, we now log the
-            // real error and send back a "null" result to signal that the analysis failed.
-            // The ProcessingActivity will now be able to detect this failure.
             Log.e(TAG, "MediaPipe AI segmentation has CRITICALLY FAILED. See exception below.", e);
             ProcessingResult failureResult = new ProcessingResult(null, 0);
             listener.onAiScanComplete(failureResult);
-            // --- END OF FIX ---
         } finally {
             if (imageSegmenter != null) {
                 imageSegmenter.close();
@@ -784,7 +779,8 @@ public class DeepScanProcessor {
         Bitmap b = Bitmap.createBitmap((int)size.width, (int)size.height, Bitmap.Config.ARGB_8888);
         Utils.matToBitmap(foundation, b);
         foundation.release();
-        return b.
+        // THIS IS THE FIX FOR THE BUILD ERROR. The period is now a semicolon.
+        return b;
     }
 
     private static Mat createShadedRegions(Mat markers, Mat grayMat) {
