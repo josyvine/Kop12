@@ -166,9 +166,6 @@ public class ProcessingActivity extends AppCompatActivity {
             showErrorDialog("Error", "Source image not found for AI scan.", true);
             return;
         }
-
-        // This method now only starts the background task. 
-        // UI updates are handled in beginAnalysis() before this is called.
         
         new Thread(new Runnable() {
             @Override
@@ -176,26 +173,34 @@ public class ProcessingActivity extends AppCompatActivity {
                 DeepScanProcessor.AiScanListener listener = new DeepScanProcessor.AiScanListener() {
                     @Override
                     public void onAiScanComplete(final DeepScanProcessor.ProcessingResult finalResult) {
-                        // This callback is on the background thread, so post to UI thread
                         uiHandler.post(new Runnable() {
                             @Override
                             public void run() {
-                                updateMainDisplay(finalResult.resultBitmap);
-                                analysisControlsContainer.setVisibility(View.VISIBLE);
-                                statusTextView.setText("AI Analysis Complete. Save or choose another method.");
-                                progressBar.setIndeterminate(false);
-                                progressBar.setVisibility(View.GONE);
-                                
-                                // This will now work because of the layout fix in activity_processing.xml
-                                btnSave.setVisibility(View.VISIBLE); 
-                                
-                                analyzeButton.setEnabled(true); 
+                                // --- THIS IS THE FINAL FIX ---
+                                // Check if the result from the processor is a failure (null bitmap)
+                                if (finalResult.resultBitmap == null) {
+                                    // FAILURE CASE: Show an error, restore the UI so the user can try again.
+                                    showErrorDialog("AI Analysis Failed", "The AI model could not process the image. Please try a different image or method.", false);
+                                    statusTextView.setText("AI Analysis Failed. Ready to try again.");
+                                    progressBar.setVisibility(View.GONE);
+                                    analysisControlsContainer.setVisibility(View.VISIBLE);
+                                    analyzeButton.setEnabled(true);
+                                } else {
+                                    // SUCCESS CASE: Show the result, show the save button.
+                                    updateMainDisplay(finalResult.resultBitmap);
+                                    statusTextView.setText("AI Analysis Complete. Save or choose another method.");
+                                    progressBar.setIndeterminate(false);
+                                    progressBar.setVisibility(View.GONE);
+                                    btnSave.setVisibility(View.VISIBLE); 
+                                    analysisControlsContainer.setVisibility(View.VISIBLE);
+                                    analyzeButton.setEnabled(true); 
+                                }
+                                // --- END OF FINAL FIX ---
                             }
                         });
                     }
                 };
                 
-                // The DeepScanProcessor will call onAiScanComplete whether it succeeds or fails.
                 DeepScanProcessor.processMethod0(getApplicationContext(), sourceBitmapForTuning, listener);
             }
         }).start();
@@ -281,24 +286,19 @@ public class ProcessingActivity extends AppCompatActivity {
 
         if (rawFrames == null || rawFrames.length == 0) {
             showErrorDialog("Processing Error", "No frames available to process.", true);
-            // Re-enable controls if we fail early
             analyzeButton.setEnabled(true);
             analysisControlsContainer.setVisibility(View.VISIBLE);
             return;
         }
 
-        // --- THIS IS THE FIX ---
-        // For Method 0, update the UI immediately on the UI thread, then start the background scan.
-        // This ensures the user sees the "Analyzing..." message instantly.
         if (selectedMethod == 0) {
             statusTextView.setText("Performing AI Analysis...");
             progressBar.setVisibility(View.VISIBLE);
             progressBar.setIndeterminate(true);
-            beginAutomaticAiScan(); // This method starts the actual background thread
-            return; // Stop here for Method 0
+            beginAutomaticAiScan();
+            return;
         }
 
-        // For all other methods, start the background thread as before.
         new Thread(new Runnable() {
             @Override
             public void run() {
