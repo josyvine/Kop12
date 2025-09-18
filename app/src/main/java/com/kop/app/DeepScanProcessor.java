@@ -5,13 +5,13 @@ import android.graphics.Bitmap;
 import android.util.Log;
 
 import com.google.mediapipe.framework.image.BitmapImageBuilder;
+import com.google.mediapipe.framework.image.ByteBufferExtractor; // NEW AND REQUIRED IMPORT
 import com.google.mediapipe.framework.image.MPImage;
 import com.google.mediapipe.tasks.core.BaseOptions;
 import com.google.mediapipe.tasks.vision.core.RunningMode;
 import com.google.mediapipe.tasks.vision.imagesegmenter.ImageSegmenter;
 import com.google.mediapipe.tasks.vision.imagesegmenter.ImageSegmenter.ImageSegmenterOptions;
 import com.google.mediapipe.tasks.vision.imagesegmenter.ImageSegmenterResult;
-import com.google.mediapipe.tasks.vision.imagesegmenter.OutputType; // NEW AND REQUIRED IMPORT
 
 import org.opencv.android.Utils;
 import org.opencv.core.Core;
@@ -65,12 +65,12 @@ public class DeepScanProcessor {
     public static void processMethod0(Context context, Bitmap originalBitmap, AiScanListener listener) {
         ImageSegmenter imageSegmenter = null;
         try {
-            // --- THIS IS THE DEFINITIVE, CORRECT IMPLEMENTATION ---
+            // --- THIS IS THE DEFINITIVE, CORRECT IMPLEMENTATION BASED ON YOUR RESEARCH ---
             ImageSegmenterOptions.Builder optionsBuilder =
                 ImageSegmenterOptions.builder()
                     .setBaseOptions(BaseOptions.builder().setModelAssetPath("selfie_segmenter.tflite").build())
                     .setRunningMode(RunningMode.IMAGE)
-                    .setOutputType(OutputType.CONFIDENCE_MASK); // Must specify CONFIDENCE_MASK output type
+                    .setOutputConfidenceMasks(true); // Correct way to request confidence masks
             
             ImageSegmenterOptions options = optionsBuilder.build();
             imageSegmenter = ImageSegmenter.createFromOptions(context, options);
@@ -79,54 +79,52 @@ public class DeepScanProcessor {
             ImageSegmenterResult segmenterResult = imageSegmenter.segment(mpImage);
 
             if (segmenterResult != null && segmenterResult.confidenceMasks().isPresent()) {
-                MPImage mask = segmenterResult.confidenceMasks().get().get(0);
-                
-                // The correct way to get the buffer.
-                ByteBuffer byteBuffer = mask.getByteBuffer();
-                FloatBuffer confidenceMaskBuffer = byteBuffer.asFloatBuffer();
-                confidenceMaskBuffer.rewind();
+                try (MPImage mask = segmenterResult.confidenceMasks().get().get(0)) {
+                    
+                    // The correct method to get the buffer, using ByteBufferExtractor.
+                    ByteBuffer byteBuffer = ByteBufferExtractor.extract(mask);
+                    FloatBuffer confidenceMaskBuffer = byteBuffer.asFloatBuffer();
+                    confidenceMaskBuffer.rewind();
+                    
+                    int maskWidth = mask.getWidth();
+                    int maskHeight = mask.getHeight();
+                    // --- END OF FIX ---
 
-                int maskWidth = mask.getWidth();
-                int maskHeight = mask.getHeight();
-                
-                // CRUCIAL: Must close the mask MPImage object to free up memory.
-                mask.close();
-                // --- END OF FIX ---
+                    // --- Part 2: OpenCV's Job ---
+                    Mat maskMat = new Mat(maskHeight, maskWidth, CvType.CV_32F);
+                    
+                    float[] floatArray = new float[confidenceMaskBuffer.remaining()];
+                    confidenceMaskBuffer.get(floatArray);
+                    
+                    maskMat.put(0, 0, floatArray);
 
-                // --- Part 2: OpenCV's Job ---
-                Mat maskMat = new Mat(maskHeight, maskWidth, CvType.CV_32F);
-                
-                float[] floatArray = new float[confidenceMaskBuffer.remaining()];
-                confidenceMaskBuffer.get(floatArray);
-                
-                maskMat.put(0, 0, floatArray);
+                    Mat mask8u = new Mat();
+                    maskMat.convertTo(mask8u, CvType.CV_8U, 255.0);
+                    
+                    Mat thresholdMat = new Mat();
+                    Imgproc.threshold(mask8u, thresholdMat, 128, 255, Imgproc.THRESH_BINARY);
+                    
+                    List<MatOfPoint> contours = new ArrayList<>();
+                    Mat hierarchy = new Mat();
+                    Imgproc.findContours(thresholdMat, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
 
-                Mat mask8u = new Mat();
-                maskMat.convertTo(mask8u, CvType.CV_8U, 255.0);
-                
-                Mat thresholdMat = new Mat();
-                Imgproc.threshold(mask8u, thresholdMat, 128, 255, Imgproc.THRESH_BINARY);
-                
-                List<MatOfPoint> contours = new ArrayList<>();
-                Mat hierarchy = new Mat();
-                Imgproc.findContours(thresholdMat, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
+                    Mat finalDrawing = new Mat(originalBitmap.getHeight(), originalBitmap.getWidth(), CvType.CV_8UC4, new Scalar(255, 255, 255, 255));
+                    Imgproc.drawContours(finalDrawing, contours, -1, new Scalar(0, 0, 0, 255), 2);
 
-                Mat finalDrawing = new Mat(originalBitmap.getHeight(), originalBitmap.getWidth(), CvType.CV_8UC4, new Scalar(255, 255, 255, 255));
-                Imgproc.drawContours(finalDrawing, contours, -1, new Scalar(0, 0, 0, 255), 2);
+                    Bitmap finalBitmap = Bitmap.createBitmap(finalDrawing.cols(), finalDrawing.rows(), Bitmap.Config.ARGB_8888);
+                    Utils.matToBitmap(finalDrawing, finalBitmap);
+                    
+                    ProcessingResult result = new ProcessingResult(finalBitmap, contours.size());
+                    listener.onAiScanComplete(result);
 
-                Bitmap finalBitmap = Bitmap.createBitmap(finalDrawing.cols(), finalDrawing.rows(), Bitmap.Config.ARGB_8888);
-                Utils.matToBitmap(finalDrawing, finalBitmap);
-                
-                ProcessingResult result = new ProcessingResult(finalBitmap, contours.size());
-                listener.onAiScanComplete(result);
-
-                maskMat.release();
-                mask8u.release();
-                thresholdMat.release();
-                hierarchy.release();
-                finalDrawing.release();
-                for (MatOfPoint contour : contours) {
-                    contour.release();
+                    maskMat.release();
+                    mask8u.release();
+                    thresholdMat.release();
+                    hierarchy.release();
+                    finalDrawing.release();
+                    for (MatOfPoint contour : contours) {
+                        contour.release();
+                    }
                 }
             } else {
                 throw new Exception("MediaPipe did not return a segmentation mask.");
