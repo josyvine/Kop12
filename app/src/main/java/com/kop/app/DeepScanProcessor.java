@@ -65,12 +65,11 @@ public class DeepScanProcessor {
     public static void processMethod0(Context context, Bitmap originalBitmap, AiScanListener listener) {
         ImageSegmenter imageSegmenter = null;
         try {
-            // --- THIS IS THE DEFINITIVE, CORRECT IMPLEMENTATION BASED ON YOUR RESEARCH ---
             ImageSegmenterOptions.Builder optionsBuilder =
                 ImageSegmenterOptions.builder()
                     .setBaseOptions(BaseOptions.builder().setModelAssetPath("selfie_segmenter.tflite").build())
                     .setRunningMode(RunningMode.IMAGE)
-                    .setOutputConfidenceMasks(true); // Correct way to request confidence masks
+                    .setOutputConfidenceMasks(true);
             
             ImageSegmenterOptions options = optionsBuilder.build();
             imageSegmenter = ImageSegmenter.createFromOptions(context, options);
@@ -81,16 +80,13 @@ public class DeepScanProcessor {
             if (segmenterResult != null && segmenterResult.confidenceMasks().isPresent()) {
                 try (MPImage mask = segmenterResult.confidenceMasks().get().get(0)) {
                     
-                    // The correct method to get the buffer, using ByteBufferExtractor.
                     ByteBuffer byteBuffer = ByteBufferExtractor.extract(mask);
                     FloatBuffer confidenceMaskBuffer = byteBuffer.asFloatBuffer();
                     confidenceMaskBuffer.rewind();
                     
                     int maskWidth = mask.getWidth();
                     int maskHeight = mask.getHeight();
-                    // --- END OF FIX ---
 
-                    // --- Part 2: OpenCV's Job ---
                     Mat maskMat = new Mat(maskHeight, maskWidth, CvType.CV_32F);
                     
                     float[] floatArray = new float[confidenceMaskBuffer.remaining()];
@@ -130,10 +126,14 @@ public class DeepScanProcessor {
                 throw new Exception("MediaPipe did not return a segmentation mask.");
             }
         } catch (Exception e) {
-            Log.e(TAG, "Method 0 AI processing failed.", e);
-            Bitmap blankBitmap = Bitmap.createBitmap(originalBitmap.getWidth(), originalBitmap.getHeight(), Bitmap.Config.ARGB_8888);
-            ProcessingResult result = new ProcessingResult(blankBitmap, 0);
-            listener.onAiScanComplete(result);
+            // --- THIS IS THE CRITICAL FIX ---
+            // Instead of creating a blank bitmap and hiding the error, we now log the
+            // real error and send back a "null" result to signal that the analysis failed.
+            // The ProcessingActivity will now be able to detect this failure.
+            Log.e(TAG, "MediaPipe AI segmentation has CRITICALLY FAILED. See exception below.", e);
+            ProcessingResult failureResult = new ProcessingResult(null, 0);
+            listener.onAiScanComplete(failureResult);
+            // --- END OF FIX ---
         } finally {
             if (imageSegmenter != null) {
                 imageSegmenter.close();
@@ -784,7 +784,7 @@ public class DeepScanProcessor {
         Bitmap b = Bitmap.createBitmap((int)size.width, (int)size.height, Bitmap.Config.ARGB_8888);
         Utils.matToBitmap(foundation, b);
         foundation.release();
-        return b;
+        return b.
     }
 
     private static Mat createShadedRegions(Mat markers, Mat grayMat) {
