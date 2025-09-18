@@ -61,7 +61,7 @@ public class ProcessingActivity extends AppCompatActivity {
     private String inputFilePath;
     private File[] rawFrames;
     private String rawFramesDir, processedFramesDir;
-    private int selectedMethod = 0; // Default to Method 0
+    private int selectedMethod = 0; // Default to Method 01 (AI Enhanced)
 
     // --- UI ELEMENTS AND STATE FOR MANUAL/AUTOMATIC MODES ---
     private LinearLayout fineTuningControls;
@@ -176,17 +176,13 @@ public class ProcessingActivity extends AppCompatActivity {
                         uiHandler.post(new Runnable() {
                             @Override
                             public void run() {
-                                // --- THIS IS THE CHANGE ---
-                                // Check if the result from the processor is a failure (null bitmap)
                                 if (finalResult.resultBitmap == null) {
-                                    // FAILURE CASE: Show an error, restore the UI so the user can try again.
                                     showErrorDialog("AI Analysis Failed", "The AI model could not process the image. Please try a different image or method.", false);
                                     statusTextView.setText("AI Analysis Failed. Ready to try again.");
                                     progressBar.setVisibility(View.GONE);
                                     analysisControlsContainer.setVisibility(View.VISIBLE);
                                     analyzeButton.setEnabled(true);
                                 } else {
-                                    // SUCCESS CASE: Show the result, show the save button.
                                     updateMainDisplay(finalResult.resultBitmap);
                                     statusTextView.setText("AI Analysis Complete. Save or choose another method.");
                                     progressBar.setIndeterminate(false);
@@ -195,13 +191,17 @@ public class ProcessingActivity extends AppCompatActivity {
                                     analysisControlsContainer.setVisibility(View.VISIBLE);
                                     analyzeButton.setEnabled(true);
                                 }
-                                // --- END OF CHANGE ---
                             }
                         });
                     }
                 };
 
-                DeepScanProcessor.processMethod0(getApplicationContext(), sourceBitmapForTuning, listener);
+                // This logic now checks which AI method was selected
+                if (selectedMethod == 0) { // Method 01 (AI Enhanced)
+                    DeepScanProcessor.processMethod01(getApplicationContext(), sourceBitmapForTuning, listener);
+                } else { // Method 0 (AI Smart Outline)
+                    DeepScanProcessor.processMethod0(getApplicationContext(), sourceBitmapForTuning, listener);
+                }
             }
         }).start();
     }
@@ -291,7 +291,8 @@ public class ProcessingActivity extends AppCompatActivity {
             return;
         }
 
-        if (selectedMethod == 0) {
+        // Check if selected method is one of the AI methods (position 0 or 1)
+        if (selectedMethod == 0 || selectedMethod == 1) {
             statusTextView.setText("Performing AI Analysis...");
             progressBar.setVisibility(View.VISIBLE);
             progressBar.setIndeterminate(true);
@@ -303,7 +304,8 @@ public class ProcessingActivity extends AppCompatActivity {
             @Override
             public void run() {
                 try {
-                    if (switchAutomaticScan.isChecked() || selectedMethod == 1) {
+                    // Method 6 (Live Analysis) is also an automatic method
+                    if (switchAutomaticScan.isChecked() || selectedMethod == 6) {
                         processAllFramesAutomatically();
                     } else {
                         if (isFirstFineTuneAnalysis) {
@@ -339,8 +341,8 @@ public class ProcessingActivity extends AppCompatActivity {
             Bitmap orientedBitmap = decodeAndRotateBitmap(rawFrames[frameIndex].getAbsolutePath());
             if (orientedBitmap == null) continue;
 
-            if (selectedMethod == 1) {
-                beginMethod1LiveScan(orientedBitmap, frameIndex);
+            if (selectedMethod == 6) { // Position 6 is the renumbered "Live Analysis"
+                beginMethod6LiveScan(orientedBitmap, frameIndex);
             } else {
                 beginStandardScan(orientedBitmap, frameIndex);
             }
@@ -360,33 +362,48 @@ public class ProcessingActivity extends AppCompatActivity {
             }
             @Override
             public void onScanComplete(final DeepScanProcessor.ProcessingResult finalResult) {
-                updateMainDisplay(finalResult.resultBitmap);
-
-                boolean isVideo = isVideoFile(inputFilePath);
-                if (isVideo) {
-                    String outPath = new File(processedFramesDir, String.format("processed_%05d.png", frameIndex)).getAbsolutePath();
-                    try {
-                        ImageProcessor.saveBitmap(finalResult.resultBitmap, outPath);
-                    } catch (Exception e) {
-                        Log.e(TAG, "Failed to save processed frame.", e);
+                if (finalResult.resultBitmap != null) {
+                    updateMainDisplay(finalResult.resultBitmap);
+                    boolean isVideo = isVideoFile(inputFilePath);
+                    if (isVideo) {
+                        String outPath = new File(processedFramesDir, String.format("processed_%05d.png", frameIndex)).getAbsolutePath();
+                        try {
+                            ImageProcessor.saveBitmap(finalResult.resultBitmap, outPath);
+                        } catch (Exception e) {
+                            Log.e(TAG, "Failed to save processed frame.", e);
+                        }
                     }
+                    updateScanStatus("Scan Complete. Found " + finalResult.objectsFound + " objects.", -1, -1);
+                } else {
+                    Log.e(TAG, "Scan completed but result bitmap was null.");
+                    updateScanStatus("Scan Failed.", -1, -1);
                 }
-
-                updateScanStatus("Scan Complete. Found " + finalResult.objectsFound + " objects.", -1, -1);
                 latch.countDown();
             }
         };
 
+        // UPDATED SWITCH to handle all 17 methods
         switch (selectedMethod) {
-            case 2: DeepScanProcessor.processMethod2(bitmap, listener); break;
-            case 3: DeepScanProcessor.processMethod3(bitmap, listener); break;
-            case 4: DeepScanProcessor.processMethod4(bitmap, listener); break;
-            case 5: DeepScanProcessor.processMethod5(bitmap, listener); break;
-            case 6: DeepScanProcessor.processMethod6(bitmap, listener); break;
+            case 2: DeepScanProcessor.processMethod1(bitmap, listener); break;
+            case 3: DeepScanProcessor.processMethod2(bitmap, listener); break;
+            case 4: DeepScanProcessor.processMethod3(bitmap, listener); break;
+            case 5: DeepScanProcessor.processMethod4(bitmap, listener); break;
+            case 6: DeepScanProcessor.processMethod5(bitmap, listener); break;
+            // Case 7 (old 2) is "Live Analysis", handled separately
             case 7: DeepScanProcessor.processMethod7(bitmap, listener); break;
             case 8: DeepScanProcessor.processMethod8(bitmap, listener); break;
             case 9: DeepScanProcessor.processMethod9(bitmap, listener); break;
-            case 10: default: DeepScanProcessor.processMethod10(bitmap, listener); break;
+            case 10: DeepScanProcessor.processMethod10(bitmap, listener); break;
+            case 11: DeepScanProcessor.processMethod11(bitmap, listener); break;
+            case 12: DeepScanProcessor.processMethod12(bitmap, listener); break;
+            case 13: DeepScanProcessor.processMethod13(bitmap, listener); break;
+            case 14: DeepScanProcessor.processMethod14(bitmap, listener); break;
+            case 15: DeepScanProcessor.processMethod15(bitmap, listener); break;
+            default:
+                // Fallback for any unhandled case
+                Log.e(TAG, "Unhandled method selection: " + selectedMethod);
+                latch.countDown();
+                break;
         }
 
         latch.await();
@@ -481,7 +498,7 @@ public class ProcessingActivity extends AppCompatActivity {
         }
     }
 
-    private void beginMethod1LiveScan(Bitmap bitmap, final int frameIndex) throws InterruptedException {
+    private void beginMethod6LiveScan(Bitmap bitmap, final int frameIndex) throws InterruptedException {
         final CountDownLatch latch = new CountDownLatch(1);
         updateMainDisplay(bitmap);
         updateOverlayDisplay(null);
@@ -511,7 +528,7 @@ public class ProcessingActivity extends AppCompatActivity {
                 latch.countDown();
             }
         };
-        DeepScanProcessor.processMethod1(bitmap, listener);
+        DeepScanProcessor.processMethod6(bitmap, listener); // Calls the renumbered method
         latch.await();
         try { Thread.sleep(2000); } catch (InterruptedException e) {}
         hideScanStatus();
