@@ -55,6 +55,12 @@ public class DeepScanProcessor {
         void onScanProgress(int pass, int totalPasses, String status, Bitmap intermediateResult);
         void onScanComplete(ProcessingResult finalResult);
     }
+    
+    // NEW INTERFACE for Method 9 to pass the ksize value
+    public interface ScanListenerWithKsize {
+        void onScanProgress(int pass, int totalPasses, String status, Bitmap intermediateResult);
+        void onScanComplete(ProcessingResult finalResult);
+    }
 
     public interface LiveScanListener {
         void onScanProgress(int pass, int totalPasses, String status);
@@ -93,7 +99,7 @@ public class DeepScanProcessor {
                     Mat thresholdMat = new Mat();
                     Imgproc.threshold(mask8u, thresholdMat, 128, 255, Imgproc.THRESH_BINARY);
 
-                    // --- START: Generate line art for the person ONLY using the logic from your Method 0 ---
+                    // --- START: Generate line art for the person ONLY using the logic from Method 0 ---
                     Mat originalMat = new Mat();
                     Utils.bitmapToMat(originalBitmap, originalMat);
                     Mat resizedMask = new Mat();
@@ -502,6 +508,52 @@ public class DeepScanProcessor {
     // --- Method 10: Legacy (Now Method 8 in UI) ---
     public static void processMethod10(Bitmap originalBitmap, ScanListener listener) {
         processMethod8(originalBitmap, listener);
+    }
+    
+    // --- NEW METHOD 11 (Corresponds to Method 9 in UI) ---
+    public static void processMethod11(Bitmap originalBitmap, int ksize, ScanListenerWithKsize listener) {
+        // Step 1: Convert the input Bitmap to grayscale OpenCV Mat
+        Mat originalMat = new Mat();
+        Utils.bitmapToMat(originalBitmap, originalMat);
+        Mat grayMat = new Mat();
+        Imgproc.cvtColor(originalMat, grayMat, Imgproc.COLOR_RGBA2GRAY);
+
+        // Step 2: Invert the grayscale image
+        Mat invertedGray = new Mat();
+        Core.bitwise_not(grayMat, invertedGray);
+
+        // Step 3: Apply Gaussian Blur with the ksize from the controller
+        // The ksize must be an odd number.
+        int kernelSize = (ksize * 2) + 1;
+        Mat blurred = new Mat();
+        Imgproc.GaussianBlur(invertedGray, blurred, new Size(kernelSize, kernelSize), 0);
+
+        // Step 4: Invert the blurred image
+        Mat invertedBlurred = new Mat();
+        Core.bitwise_not(blurred, invertedBlurred);
+
+        // Step 5: Create the pencil sketch by dividing the grayscale image by the inverted-blurred image
+        Mat pencilSketch = new Mat();
+        Core.divide(grayMat, invertedBlurred, pencilSketch, 256.0);
+
+        // Convert the final sketch to a displayable format
+        Bitmap finalBitmap = Bitmap.createBitmap(pencilSketch.cols(), pencilSketch.rows(), Bitmap.Config.ARGB_8888);
+        Mat finalRgba = new Mat();
+        Imgproc.cvtColor(pencilSketch, finalRgba, Imgproc.COLOR_GRAY2RGBA);
+        Utils.matToBitmap(finalRgba, finalBitmap);
+
+        // Object count is not very meaningful for a sketch, so we can return a default value like 1
+        ProcessingResult result = new ProcessingResult(finalBitmap, 1);
+        listener.onScanComplete(result);
+
+        // Clean up all the Mats
+        originalMat.release();
+        grayMat.release();
+        invertedGray.release();
+        blurred.release();
+        invertedBlurred.release();
+        pencilSketch.release();
+        finalRgba.release();
     }
 
 
