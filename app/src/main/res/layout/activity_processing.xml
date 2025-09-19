@@ -192,6 +192,32 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:max="100" />
+
+        <!-- NEW KSIZE CONTROLLER FOR METHOD 9 -->
+        <LinearLayout
+            android:id="@+id/ksize_controls_container"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone"
+            tools:visibility="visible">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Pencil Style (ksize)"
+                android:textColor="@android:color/white"
+                android:layout_marginStart="4dp"
+                android:layout_marginTop="16dp"
+                android:layout_marginBottom="4dp"/>
+
+            <SeekBar
+                android:id="@+id/slider_ksize"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:max="100" />
+
+        </LinearLayout>
             
     </LinearLayout>
 
