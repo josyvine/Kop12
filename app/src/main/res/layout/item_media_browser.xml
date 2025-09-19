@@ -6,7 +6,7 @@
     android:layout_height="wrap_content"
     android:layout_margin="1dp">
 
-    <ImageView
+    <ImageView 
         android:id="@+id/iv_media_thumbnail"
         android:layout_width="match_parent"
         android:layout_height="120dp"
