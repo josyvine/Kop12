@@ -227,13 +227,19 @@ public class ProcessingActivity extends AppCompatActivity {
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
                 selectedMethod = position;
                 
-                // NEW: Logic to show/hide the ksize controller for Method 9
                 boolean isAutomatic = switchAutomaticScan.isChecked();
                 // Spinner position 10 corresponds to Method 9
                 if (position == 10 && !isAutomatic) {
+                    fineTuningControls.setVisibility(View.VISIBLE);
                     ksizeControlsContainer.setVisibility(View.VISIBLE);
                 } else {
                     ksizeControlsContainer.setVisibility(View.GONE);
+                    // Also hide the other fine tuning controls if not a manual method
+                    if (position > 2 && position != 10 && !isAutomatic) {
+                        fineTuningControls.setVisibility(View.VISIBLE);
+                    } else {
+                         fineTuningControls.setVisibility(View.GONE);
+                    }
                 }
             }
             @Override
@@ -272,16 +278,14 @@ public class ProcessingActivity extends AppCompatActivity {
             public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
                 if (isChecked) {
                     fineTuningControls.setVisibility(View.GONE);
-                    // NEW: Also hide ksize controller when switching to Automatic
                     ksizeControlsContainer.setVisibility(View.GONE); 
                 } else {
-                    // Do not show fine tuning for AI or Live Analysis methods
                     if (!isFirstFineTuneAnalysis) {
-                        if (selectedMethod > 2 && selectedMethod != 10) { // Exclude new method 9
+                        if (selectedMethod > 2 && selectedMethod != 10) { 
                              fineTuningControls.setVisibility(View.VISIBLE);
                         }
-                        // NEW: Show ksize controller if Method 9 is selected
                         if (selectedMethod == 10) {
+                            fineTuningControls.setVisibility(View.VISIBLE);
                             ksizeControlsContainer.setVisibility(View.VISIBLE);
                         }
                     }
@@ -324,6 +328,19 @@ public class ProcessingActivity extends AppCompatActivity {
             // Pass 1 for Method 01, 0 for Method 0
             beginAutomaticAiScan(selectedMethod == 0 ? 1 : 0);
             return;
+        }
+        
+        // NEW: Check to block Method 9 from running in Automatic Scan mode
+        if (switchAutomaticScan.isChecked() && selectedMethod == 10) {
+            uiHandler.post(new Runnable() {
+                @Override
+                public void run() {
+                    Toast.makeText(ProcessingActivity.this, "Method 9 requires Automatic Scan to be OFF.", Toast.LENGTH_LONG).show();
+                    analysisControlsContainer.setVisibility(View.VISIBLE);
+                    analyzeButton.setEnabled(true);
+                }
+            });
+            return; // Stop the analysis
         }
 
         new Thread(new Runnable() {
@@ -378,6 +395,7 @@ public class ProcessingActivity extends AppCompatActivity {
                     public void run() {
                         if (isFirstFineTuneAnalysis) {
                             if (!switchAutomaticScan.isChecked()) {
+                                fineTuningControls.setVisibility(View.VISIBLE);
                                 ksizeControlsContainer.setVisibility(View.VISIBLE);
                             }
                             isFirstFineTuneAnalysis = false;
