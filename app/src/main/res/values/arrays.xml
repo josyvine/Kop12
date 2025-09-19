@@ -25,7 +25,9 @@
         <item>Method 6 (Clean Structure)</item>
         <item>Method 7 (Detailed Texture)</item>
         <item>Method 8 (Legacy Detailed)</item>
-        <!-- NEW METHOD ADDED HERE -->
         <item>Method 9 (Advanced Pencil Sketch)</item>
+        <!-- NEW METHODS ADDED HERE -->
+        <item>AI Method 11 (Person Sketch)</item>
+        <item>AI Method 12 (Line Art BG)</item>
     </string-array>
 </resources>
