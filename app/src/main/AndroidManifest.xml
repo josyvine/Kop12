@@ -22,14 +22,11 @@
             </intent-filter>
         </activity>
         
-        <!-- NEW: Declaration for our custom in-app media gallery -->
-        <activity
-            android:name=".MediaPickerActivity"
-            android:theme="@style/Theme.AppCompat.NoActionBar" />
-        
-        <activity
-            android:name=".ProcessingActivity"
-            android:theme="@style/Theme.AppCompat.NoActionBar" />
+        <!--
+          REMOVED: The declarations for MediaPickerActivity and ProcessingActivity are gone
+          because they have been converted into DialogFragments, which do not need to be
+          declared in the manifest.
+        -->
         
         <provider
             android:name="androidx.core.content.FileProvider"
