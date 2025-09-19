@@ -102,7 +102,7 @@ public class ProcessingDialogFragment extends DialogFragment {
         super.onCreate(savedInstanceState);
         setStyle(DialogFragment.STYLE_NORMAL, android.R.style.Theme_Black_NoTitleBar_Fullscreen);
         if (getArguments() != null) {
-            inputFilePath = getArguments().getString(ARG_FILE_PATH);
+            inputFilePath = getArguments().getString(ARG_FILE_PATH, "");
         }
     }
 
@@ -116,7 +116,7 @@ public class ProcessingDialogFragment extends DialogFragment {
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
         initializeViews(view);
-        if (inputFilePath != null) {
+        if (inputFilePath != null && !inputFilePath.isEmpty()) {
             startInitialSetup();
         } else {
             showErrorDialog("Error", "No input file path provided.", true);
@@ -207,7 +207,7 @@ public class ProcessingDialogFragment extends DialogFragment {
         }).start();
     }
 
-    private void beginAutomaticAiScan(final int methodToRun) {
+    private void beginAutomaticAiScan(final int methodIndex) {
         if (sourceBitmapForTuning == null) {
             showErrorDialog("Error", "Source image not found for AI scan.", true);
             return;
@@ -225,26 +225,24 @@ public class ProcessingDialogFragment extends DialogFragment {
                                 if (finalResult.resultBitmap == null) {
                                     showErrorDialog("AI Analysis Failed", "The AI model could not process the image. Please try a different image or method.", false);
                                     statusTextView.setText("AI Analysis Failed. Ready to try again.");
-                                    progressBar.setVisibility(View.GONE);
-                                    analysisControlsContainer.setVisibility(View.VISIBLE);
-                                    analyzeButton.setEnabled(true);
                                 } else {
                                     updateMainDisplay(finalResult.resultBitmap);
                                     statusTextView.setText("AI Analysis Complete. Save or choose another method.");
-                                    progressBar.setIndeterminate(false);
-                                    progressBar.setVisibility(View.GONE);
                                     btnSave.setVisibility(View.VISIBLE);
-                                    analysisControlsContainer.setVisibility(View.VISIBLE);
-                                    analyzeButton.setEnabled(true);
                                 }
+                                progressBar.setVisibility(View.GONE);
+                                analysisControlsContainer.setVisibility(View.VISIBLE);
+                                analyzeButton.setEnabled(true);
                             }
                         });
                     }
                 };
-
-                if (methodToRun == 0) {
+                
+                // The spinner index for these methods is 0 and 1.
+                // We map them to the correct processor functions here.
+                if (methodIndex == 1) { // Method 0 (AI Smart Outline) is at index 1
                     DeepScanProcessor.processMethod0(getContext(), sourceBitmapForTuning, listener);
-                } else {
+                } else { // Method 01 (AI Composite) is at index 0
                     DeepScanProcessor.processMethod01(getContext(), sourceBitmapForTuning, listener);
                 }
             }
@@ -264,23 +262,12 @@ public class ProcessingDialogFragment extends DialogFragment {
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
                 selectedMethod = position;
-
-                boolean isAutomatic = switchAutomaticScan.isChecked();
-                if (position == 10 && !isAutomatic) {
-                    fineTuningControls.setVisibility(View.VISIBLE);
-                    ksizeControlsContainer.setVisibility(View.VISIBLE);
-                } else {
-                    ksizeControlsContainer.setVisibility(View.GONE);
-                    if (position > 2 && position != 10 && !isAutomatic) {
-                        fineTuningControls.setVisibility(View.VISIBLE);
-                    } else {
-                        fineTuningControls.setVisibility(View.GONE);
-                    }
-                }
+                updateControlsVisibility();
             }
             @Override
             public void onNothingSelected(AdapterView<?> parent) {
                 selectedMethod = 0;
+                updateControlsVisibility();
             }
         });
 
@@ -312,20 +299,7 @@ public class ProcessingDialogFragment extends DialogFragment {
         switchAutomaticScan.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
             @Override
             public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
-                if (isChecked) {
-                    fineTuningControls.setVisibility(View.GONE);
-                    ksizeControlsContainer.setVisibility(View.GONE);
-                } else {
-                    if (!isFirstFineTuneAnalysis) {
-                        if (selectedMethod > 2 && selectedMethod != 10) {
-                            fineTuningControls.setVisibility(View.VISIBLE);
-                        }
-                        if (selectedMethod == 10) {
-                            fineTuningControls.setVisibility(View.VISIBLE);
-                            ksizeControlsContainer.setVisibility(View.VISIBLE);
-                        }
-                    }
-                }
+                updateControlsVisibility();
             }
         });
 
@@ -342,6 +316,27 @@ public class ProcessingDialogFragment extends DialogFragment {
                 saveCurrentImage();
             }
         });
+    }
+    
+    private void updateControlsVisibility() {
+        boolean isAutomatic = switchAutomaticScan.isChecked();
+
+        // Hide all special controls by default
+        fineTuningControls.setVisibility(View.GONE);
+        ksizeControlsContainer.setVisibility(View.GONE);
+
+        if (!isAutomatic) { // Manual mode is enabled, show controls based on method
+            boolean needsDepthSharpness = selectedMethod > 2 && selectedMethod < 10;
+            boolean needsKsize = selectedMethod >= 10 && selectedMethod <= 12;
+
+            if (needsDepthSharpness) {
+                fineTuningControls.setVisibility(View.VISIBLE);
+            } else if (needsKsize) {
+                fineTuningControls.setVisibility(View.VISIBLE);
+                ksizeControlsContainer.setVisibility(View.VISIBLE);
+            }
+        }
+        // If automatic is checked, all special controls remain hidden.
     }
 
     private void beginAnalysis() {
@@ -360,15 +355,19 @@ public class ProcessingDialogFragment extends DialogFragment {
             statusTextView.setText("Performing AI Analysis...");
             progressBar.setVisibility(View.VISIBLE);
             progressBar.setIndeterminate(true);
-            beginAutomaticAiScan(selectedMethod == 0 ? 1 : 0);
+            beginAutomaticAiScan(selectedMethod);
             return;
         }
 
-        if (switchAutomaticScan.isChecked() && selectedMethod == 10) {
+        if (switchAutomaticScan.isChecked() && (selectedMethod >= 10 && selectedMethod <= 12)) {
             uiHandler.post(new Runnable() {
                 @Override
                 public void run() {
-                    Toast.makeText(getContext(), "Method 9 requires Automatic Scan to be OFF.", Toast.LENGTH_LONG).show();
+                    String methodName = "The selected method";
+                    if (selectedMethod == 10) methodName = "Method 9";
+                    if (selectedMethod == 11) methodName = "AI Method 11";
+                    if (selectedMethod == 12) methodName = "AI Method 12";
+                    Toast.makeText(getContext(), methodName + " requires Automatic Scan to be OFF.", Toast.LENGTH_LONG).show();
                     analysisControlsContainer.setVisibility(View.VISIBLE);
                     analyzeButton.setEnabled(true);
                 }
@@ -386,8 +385,11 @@ public class ProcessingDialogFragment extends DialogFragment {
                         if (isFirstFineTuneAnalysis) {
                             sourceBitmapForTuning = decodeAndRotateBitmap(rawFrames[0].getAbsolutePath());
                         }
+                        
                         if (selectedMethod == 10) {
                             performMethod9Analysis();
+                        } else if (selectedMethod == 11 || selectedMethod == 12) {
+                            performNewAiAnalysis(selectedMethod);
                         } else {
                             performFineTuningAnalysis();
                         }
@@ -396,6 +398,63 @@ public class ProcessingDialogFragment extends DialogFragment {
                     Log.e(TAG, "Analysis failed", e);
                     String message = (e.getMessage() != null) ? e.getMessage() : "An unknown error occurred.";
                     showErrorDialog("Processing Error", message, true);
+                }
+            }
+        }).start();
+    }
+
+    private void performNewAiAnalysis(final int methodToRun) {
+        if (sourceBitmapForTuning == null) {
+            showErrorDialog("Error", "Source image not found for AI scan.", true);
+            return;
+        }
+
+        uiHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                statusTextView.setText("Performing AI Analysis...");
+                progressBar.setVisibility(View.VISIBLE);
+                progressBar.setIndeterminate(true);
+            }
+        });
+        
+        final int ksize = sliderKsize.getProgress();
+
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                DeepScanProcessor.AiScanListener listener = new DeepScanProcessor.AiScanListener() {
+                    @Override
+                    public void onAiScanComplete(final DeepScanProcessor.ProcessingResult finalResult) {
+                        uiHandler.post(new Runnable() {
+                            @Override
+                            public void run() {
+                                if (finalResult.resultBitmap == null) {
+                                    showErrorDialog("AI Analysis Failed", "The AI model could not process the image. Please try a different image or method.", false);
+                                    statusTextView.setText("AI Analysis Failed. Ready to try again.");
+                                } else {
+                                    updateMainDisplay(finalResult.resultBitmap);
+                                    statusTextView.setText("AI Analysis Complete. Adjust slider and Analyze again, or Save.");
+                                }
+                                
+                                if (isFirstFineTuneAnalysis) {
+                                    isFirstFineTuneAnalysis = false;
+                                }
+
+                                progressBar.setVisibility(View.GONE);
+                                analysisControlsContainer.setVisibility(View.VISIBLE);
+                                analyzeButton.setEnabled(true);
+                                btnSave.setVisibility(View.VISIBLE);
+                                updateControlsVisibility();
+                            }
+                        });
+                    }
+                };
+
+                if (methodToRun == 11) {
+                    DeepScanProcessor.processMethod12(getContext(), sourceBitmapForTuning, ksize, listener);
+                } else if (methodToRun == 12) {
+                    DeepScanProcessor.processMethod13(getContext(), sourceBitmapForTuning, ksize, listener);
                 }
             }
         }).start();
@@ -423,10 +482,6 @@ public class ProcessingDialogFragment extends DialogFragment {
                     @Override
                     public void run() {
                         if (isFirstFineTuneAnalysis) {
-                            if (!switchAutomaticScan.isChecked()) {
-                                fineTuningControls.setVisibility(View.VISIBLE);
-                                ksizeControlsContainer.setVisibility(View.VISIBLE);
-                            }
                             isFirstFineTuneAnalysis = false;
                         }
                         analysisControlsContainer.setVisibility(View.VISIBLE);
@@ -434,6 +489,7 @@ public class ProcessingDialogFragment extends DialogFragment {
                         updateStatus("Ready for fine-tuning. Adjust slider and Analyze.", false);
                         updateProgress(0, 1);
                         analyzeButton.setEnabled(true);
+                        updateControlsVisibility();
                     }
                 });
             }
@@ -571,16 +627,14 @@ public class ProcessingDialogFragment extends DialogFragment {
                     @Override
                     public void run() {
                         if (isFirstFineTuneAnalysis) {
-                            if (!switchAutomaticScan.isChecked()) {
-                                fineTuningControls.setVisibility(View.VISIBLE);
-                            }
-                            isFirstFineTuneAnalysis = false;
+                           isFirstFineTuneAnalysis = false;
                         }
                         analysisControlsContainer.setVisibility(View.VISIBLE);
                         btnSave.setVisibility(View.VISIBLE);
                         updateStatus("Ready for fine-tuning. Adjust sliders and Analyze.", false);
                         updateProgress(0, 1);
                         analyzeButton.setEnabled(true);
+                        updateControlsVisibility();
                     }
                 });
             }
