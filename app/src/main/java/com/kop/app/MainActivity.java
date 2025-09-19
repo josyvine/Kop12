@@ -1,15 +1,13 @@
 package com.kop.app;
 
-import androidx.activity.result.ActivityResult;
-import androidx.activity.result.ActivityResultCallback;
-import androidx.activity.result.ActivityResultLauncher;
-import androidx.activity.result.contract.ActivityResultContracts;
-import androidx.appcompat.app.AlertDialog; 
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.fragment.app.Fragment;
+import androidx.fragment.app.FragmentTransaction;
+
 import android.Manifest;
 import android.content.Context;
 import android.content.DialogInterface;
-import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
@@ -20,6 +18,7 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Toast;
+
 import org.opencv.android.OpenCVLoader;
 
 public class MainActivity extends AppCompatActivity {
@@ -27,40 +26,20 @@ public class MainActivity extends AppCompatActivity {
     private static final String TAG = "MainActivity";
     private static final int PERMISSION_REQUEST_CODE = 100;
     private WebView webView;
-
-    // The modern way to handle results from activities we launch.
-    private ActivityResultLauncher<Intent> mediaPickerLauncher;
+    
+    private MediaPickerDialogFragment mediaPickerDialog;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        
-        OpenCVLoader.initDebug();
-        
-        setContentView(R.layout.activity_main);
 
-        // Register the launcher to handle the result from MediaPickerActivity.
-        mediaPickerLauncher = registerForActivityResult(
-            new ActivityResultContracts.StartActivityForResult(),
-            new ActivityResultCallback<ActivityResult>() {
-                @Override
-                public void onActivityResult(ActivityResult result) {
-                    if (result.getResultCode() == RESULT_OK && result.getData() != null) {
-                        // We got a file path back from our picker.
-                        String filePath = result.getData().getStringExtra(MediaPickerActivity.EXTRA_SELECTED_FILE_PATH);
-                        if (filePath != null && !filePath.isEmpty()) {
-                            // Launch the ProcessingActivity with the selected file path.
-                            Intent processIntent = new Intent(MainActivity.this, ProcessingActivity.class);
-                            processIntent.putExtra(ProcessingActivity.EXTRA_FILE_PATH, filePath);
-                            startActivity(processIntent);
-                        }
-                    }
-                }
-            });
+        OpenCVLoader.initDebug();
+
+        setContentView(R.layout.activity_main);
 
         webView = findViewById(R.id.webview);
         setupWebView();
-        
+
         webView.loadUrl("file:///android_asset/index.html");
     }
 
@@ -83,7 +62,6 @@ public class MainActivity extends AppCompatActivity {
 
         @JavascriptInterface
         public void startFileProcessing() {
-            // Run on the UI thread to show dialogs.
             new Handler(Looper.getMainLooper()).post(new Runnable() {
                 @Override
                 public void run() {
@@ -95,35 +73,37 @@ public class MainActivity extends AppCompatActivity {
                 }
             });
         }
-        
+
         @JavascriptInterface
-        public void clearCache() { showToast("Cache clearing not yet implemented."); }
+        public void clearCache() {
+            showToast("Cache clearing not yet implemented.");
+        }
+
         @JavascriptInterface
-        public void openContactForm() { showToast("Contact form not yet implemented."); }
+        public void openContactForm() {
+            showToast("Contact form not yet implemented.");
+        }
+
         @JavascriptInterface
-        public void setTheme(String themeName) { showToast("Theme switching requires an app restart."); }
+        public void setTheme(String themeName) {
+            showToast("Theme switching requires an app restart.");
+        }
     }
-    
-    // This method shows the "Image or Video?" dialog you requested.
+
     private void showMediaTypeChooserDialog() {
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle("Select Media Type");
 
-        // Set up the buttons
         builder.setPositiveButton("Image", new DialogInterface.OnClickListener() {
             @Override
             public void onClick(DialogInterface dialog, int which) {
-                Intent intent = new Intent(MainActivity.this, MediaPickerActivity.class);
-                intent.putExtra(MediaPickerActivity.EXTRA_MEDIA_TYPE, MediaPickerActivity.MEDIA_TYPE_IMAGE);
-                mediaPickerLauncher.launch(intent);
+                launchMediaPicker(MediaPickerActivity.MEDIA_TYPE_IMAGE);
             }
         });
         builder.setNegativeButton("Video", new DialogInterface.OnClickListener() {
             @Override
             public void onClick(DialogInterface dialog, int which) {
-                Intent intent = new Intent(MainActivity.this, MediaPickerActivity.class);
-                intent.putExtra(MediaPickerActivity.EXTRA_MEDIA_TYPE, MediaPickerActivity.MEDIA_TYPE_VIDEO);
-                mediaPickerLauncher.launch(intent);
+                launchMediaPicker(MediaPickerActivity.MEDIA_TYPE_VIDEO);
             }
         });
         builder.setNeutralButton("Cancel", null);
@@ -131,6 +111,43 @@ public class MainActivity extends AppCompatActivity {
         AlertDialog dialog = builder.create();
         dialog.show();
     }
+
+    private void launchMediaPicker(String mediaType) {
+        mediaPickerDialog = MediaPickerDialogFragment.newInstance(mediaType);
+        mediaPickerDialog.setOnMediaSelectedListener(new MediaPickerDialogFragment.OnMediaSelectedListener() {
+            @Override
+            public void onFileSelected(String filePath) {
+                // Hide the media picker
+                if (mediaPickerDialog != null && mediaPickerDialog.isAdded()) {
+                    getSupportFragmentManager().beginTransaction().hide(mediaPickerDialog).commit();
+                }
+                // Launch the processing dialog
+                launchProcessingDialog(filePath);
+            }
+        });
+        mediaPickerDialog.show(getSupportFragmentManager(), MediaPickerDialogFragment.TAG);
+    }
+
+    private void launchProcessingDialog(String filePath) {
+        ProcessingDialogFragment processingDialog = ProcessingDialogFragment.newInstance(filePath);
+        processingDialog.setOnDialogClosedListener(new ProcessingDialogFragment.OnDialogClosedListener() {
+            @Override
+            public void onDialogClosed() {
+                // When the processing dialog is closed, show the media picker again
+                if (mediaPickerDialog != null) {
+                    FragmentTransaction ft = getSupportFragmentManager().beginTransaction();
+                    Fragment prev = getSupportFragmentManager().findFragmentByTag(ProcessingDialogFragment.TAG);
+                    if (prev != null) {
+                        ft.remove(prev);
+                    }
+                    ft.show(mediaPickerDialog);
+                    ft.commit();
+                }
+            }
+        });
+        processingDialog.show(getSupportFragmentManager(), ProcessingDialogFragment.TAG);
+    }
+
 
     private void showToast(final String message) {
         runOnUiThread(new Runnable() {
