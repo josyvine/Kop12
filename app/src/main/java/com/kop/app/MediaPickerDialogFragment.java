@@ -1,4 +1,4 @@
-package com.kop.app;  
+package com.kop.app;
 
 import android.app.Dialog;
 import android.os.Bundle;
@@ -33,6 +33,11 @@ import java.util.List;
 import java.util.Locale;
 
 public class MediaPickerDialogFragment extends DialogFragment {
+
+    // --- FIX START: Move the constants here from the deleted activity ---
+    public static final String MEDIA_TYPE_IMAGE = "image";
+    public static final String MEDIA_TYPE_VIDEO = "video";
+    // --- FIX END ---
 
     public static final String TAG = "MediaPickerDialog";
     private static final String ARG_MEDIA_TYPE = "media_type";
@@ -92,7 +97,8 @@ public class MediaPickerDialogFragment extends DialogFragment {
         searchEditText = view.findViewById(R.id.et_search);
         ImageButton closeButton = view.findViewById(R.id.btn_close_picker);
 
-        titleTextView.setText("Select " + (MediaPickerActivity.MEDIA_TYPE_VIDEO.equals(mediaType) ? "Video" : "Image"));
+        // FIX: Reference the constant directly from this class
+        titleTextView.setText("Select " + (MEDIA_TYPE_VIDEO.equals(mediaType) ? "Video" : "Image"));
 
         setupRecyclerView();
 
@@ -138,11 +144,11 @@ public class MediaPickerDialogFragment extends DialogFragment {
                         filterMedia(s.toString());
                     }
                 };
-                searchHandler.postDelayed(searchRunnable, 300); // Debounce search
+                searchHandler.postDelayed(searchRunnable, 300);
             }
         });
 
-        navigateTo(Environment.getExternalStorageDirectory()); // Start at internal storage root
+        navigateTo(Environment.getExternalStorageDirectory());
     }
 
     public void setOnMediaSelectedListener(OnMediaSelectedListener listener) {
@@ -171,12 +177,11 @@ public class MediaPickerDialogFragment extends DialogFragment {
 
     private void navigateTo(File directory) {
         if (directory == null) {
-            // This case handles the ".." when at the root
             return;
         }
         this.currentDirectory = directory;
         currentPathTextView.setText(directory.getAbsolutePath());
-        searchEditText.setText(""); // Clear search when navigating
+        searchEditText.setText("");
         loadDirectoryContents(directory);
     }
 
@@ -191,7 +196,6 @@ public class MediaPickerDialogFragment extends DialogFragment {
                 File[] files = directory.listFiles();
                 final List<MediaItem> items = new ArrayList<>();
 
-                // Add parent directory link ("..") if not at a root
                 if (!isRoot(directory)) {
                     items.add(new MediaItem(directory.getParentFile(), MediaItem.ItemType.PARENT));
                 }
@@ -221,7 +225,7 @@ public class MediaPickerDialogFragment extends DialogFragment {
                         }
                     }
                 }
-                
+
                 allItemsInCurrentDir.clear();
                 allItemsInCurrentDir.addAll(items);
 
@@ -256,9 +260,9 @@ public class MediaPickerDialogFragment extends DialogFragment {
                 }
             }
         }
-        
+
         adapter.updateData(filteredList);
-        
+
         if (filteredList.isEmpty()) {
             emptyFolderTextView.setVisibility(View.VISIBLE);
             mediaGrid.setVisibility(View.GONE);
@@ -270,9 +274,11 @@ public class MediaPickerDialogFragment extends DialogFragment {
 
     private boolean isTargetMediaFile(File file) {
         String lowerCasePath = file.getName().toLowerCase(Locale.US);
-        if (MediaPickerActivity.MEDIA_TYPE_IMAGE.equals(mediaType)) {
+        // FIX: Reference the constant directly from this class
+        if (MEDIA_TYPE_IMAGE.equals(mediaType)) {
             return lowerCasePath.endsWith(".jpg") || lowerCasePath.endsWith(".jpeg") || lowerCasePath.endsWith(".png") || lowerCasePath.endsWith(".webp");
-        } else if (MediaPickerActivity.MEDIA_TYPE_VIDEO.equals(mediaType)) {
+        // FIX: Reference the constant directly from this class
+        } else if (MEDIA_TYPE_VIDEO.equals(mediaType)) {
             return lowerCasePath.endsWith(".mp4") || lowerCasePath.endsWith(".mov") || lowerCasePath.endsWith(".3gp") || lowerCasePath.endsWith(".mkv");
         }
         return false;
@@ -282,8 +288,6 @@ public class MediaPickerDialogFragment extends DialogFragment {
         File[] externalDirs = ContextCompat.getExternalFilesDirs(requireContext(), null);
         for (File dir : externalDirs) {
             if (dir != null && Environment.isExternalStorageRemovable(dir)) {
-                // Path is like /storage/XXXX-XXXX/Android/data/com.kop.app/files
-                // We need to go up to get /storage/XXXX-XXXX
                 String path = dir.getAbsolutePath();
                 int androidDataIndex = path.indexOf("/Android/data");
                 if (androidDataIndex != -1) {
