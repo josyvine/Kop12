@@ -25,5 +25,7 @@
         <item>Method 6 (Clean Structure)</item>
         <item>Method 7 (Detailed Texture)</item>
         <item>Method 8 (Legacy Detailed)</item>
+        <!-- NEW METHOD ADDED HERE -->
+        <item>Method 9 (Advanced Pencil Sketch)</item>
     </string-array>
 </resources>
