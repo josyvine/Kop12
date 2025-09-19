@@ -1,4 +1,4 @@
-package com.kop.app;  
+package com.kop.app;
 
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
@@ -26,7 +26,7 @@ public class MainActivity extends AppCompatActivity {
     private static final String TAG = "MainActivity";
     private static final int PERMISSION_REQUEST_CODE = 100;
     private WebView webView;
-    
+
     private MediaPickerDialogFragment mediaPickerDialog;
 
     @Override
@@ -97,13 +97,15 @@ public class MainActivity extends AppCompatActivity {
         builder.setPositiveButton("Image", new DialogInterface.OnClickListener() {
             @Override
             public void onClick(DialogInterface dialog, int which) {
-                launchMediaPicker(MediaPickerActivity.MEDIA_TYPE_IMAGE);
+                // FIX: Reference the constant from its new home in MediaPickerDialogFragment
+                launchMediaPicker(MediaPickerDialogFragment.MEDIA_TYPE_IMAGE);
             }
         });
         builder.setNegativeButton("Video", new DialogInterface.OnClickListener() {
             @Override
             public void onClick(DialogInterface dialog, int which) {
-                launchMediaPicker(MediaPickerActivity.MEDIA_TYPE_VIDEO);
+                // FIX: Reference the constant from its new home in MediaPickerDialogFragment
+                launchMediaPicker(MediaPickerDialogFragment.MEDIA_TYPE_VIDEO);
             }
         });
         builder.setNeutralButton("Cancel", null);
