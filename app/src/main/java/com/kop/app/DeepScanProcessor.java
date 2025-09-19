@@ -510,7 +510,7 @@ public class DeepScanProcessor {
         processMethod8(originalBitmap, listener);
     }
     
-    // --- NEW METHOD 11 (Corresponds to Method 9 in UI) ---
+    // --- METHOD 11 (Corresponds to Method 9 in UI) ---
     public static void processMethod11(Bitmap originalBitmap, int ksize, ScanListenerWithKsize listener) {
         // Step 1: Convert the input Bitmap to grayscale OpenCV Mat
         Mat originalMat = new Mat();
@@ -554,6 +554,182 @@ public class DeepScanProcessor {
         invertedBlurred.release();
         pencilSketch.release();
         finalRgba.release();
+    }
+
+    // --- NEW AI METHOD 11: Pencil Sketch Person on Raw Background ---
+    public static void processMethod12(Context context, Bitmap originalBitmap, int ksize, AiScanListener listener) {
+        ImageSegmenter imageSegmenter = null;
+        try {
+            // Step 1: Initialize MediaPipe to get the person mask
+            ImageSegmenterOptions.Builder optionsBuilder =
+                ImageSegmenterOptions.builder()
+                    .setBaseOptions(BaseOptions.builder().setModelAssetPath(MODEL_FILE).build())
+                    .setRunningMode(RunningMode.IMAGE)
+                    .setOutputConfidenceMasks(true);
+            ImageSegmenterOptions options = optionsBuilder.build();
+            imageSegmenter = ImageSegmenter.createFromOptions(context, options);
+            MPImage mpImage = new BitmapImageBuilder(originalBitmap).build();
+            ImageSegmenterResult segmenterResult = imageSegmenter.segment(mpImage);
+
+            if (segmenterResult != null && segmenterResult.confidenceMasks().isPresent()) {
+                try (MPImage mask = segmenterResult.confidenceMasks().get().get(0)) {
+                    // Step 2: Convert the AI mask to an OpenCV Mat
+                    ByteBuffer byteBuffer = ByteBufferExtractor.extract(mask);
+                    FloatBuffer confidenceMaskBuffer = byteBuffer.asFloatBuffer();
+                    confidenceMaskBuffer.rewind();
+                    Mat maskMat = new Mat(mask.getHeight(), mask.getWidth(), CvType.CV_32F);
+                    float[] floatArray = new float[confidenceMaskBuffer.remaining()];
+                    confidenceMaskBuffer.get(floatArray);
+                    maskMat.put(0, 0, floatArray);
+                    Mat mask8u = new Mat();
+                    maskMat.convertTo(mask8u, CvType.CV_8U, 255.0);
+                    Mat personMask = new Mat();
+                    Imgproc.threshold(mask8u, personMask, 128, 255, Imgproc.THRESH_BINARY);
+
+                    // Step 3: Prepare the full-color original image and the full pencil sketch
+                    Mat originalMat = new Mat();
+                    Utils.bitmapToMat(originalBitmap, originalMat);
+                    if (originalMat.channels() == 3) {
+                        Imgproc.cvtColor(originalMat, originalMat, Imgproc.COLOR_RGB2RGBA);
+                    }
+                    Mat grayMat = new Mat();
+                    Imgproc.cvtColor(originalMat, grayMat, Imgproc.COLOR_RGBA2GRAY);
+                    
+                    // Create the pencil sketch using our helper function
+                    Mat pencilSketchMat = createAdvancedPencilSketchMat(grayMat, ksize);
+                    Mat pencilSketchRgba = new Mat();
+                    Imgproc.cvtColor(pencilSketchMat, pencilSketchRgba, Imgproc.COLOR_GRAY2RGBA);
+
+                    // Step 4: Resize the mask to match the image dimensions
+                    Mat resizedMask = new Mat();
+                    Imgproc.resize(personMask, resizedMask, originalMat.size());
+
+                    // Step 5: Composite the pencil sketch person onto the original full-color image
+                    pencilSketchRgba.copyTo(originalMat, resizedMask);
+
+                    // Step 6: Convert the final result to a Bitmap and notify listener
+                    Bitmap finalBitmap = Bitmap.createBitmap(originalMat.cols(), originalMat.rows(), Bitmap.Config.ARGB_8888);
+                    Utils.matToBitmap(originalMat, finalBitmap);
+                    ProcessingResult result = new ProcessingResult(finalBitmap, 1); // Object count is 1 (the person)
+                    listener.onAiScanComplete(result);
+
+                    // Clean up all OpenCV Mats
+                    maskMat.release();
+                    mask8u.release();
+                    personMask.release();
+                    originalMat.release();
+                    grayMat.release();
+                    pencilSketchMat.release();
+                    pencilSketchRgba.release();
+                    resizedMask.release();
+                }
+            } else {
+                throw new Exception("MediaPipe segmentation returned a null or empty result.");
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "AI Method 11 (processMethod12) failed.", e);
+            listener.onAiScanComplete(new ProcessingResult(null, 0));
+        } finally {
+            if (imageSegmenter != null) {
+                imageSegmenter.close();
+            }
+        }
+    }
+
+    // --- NEW AI METHOD 12: Pencil Sketch Person on Line Art Background ---
+    public static void processMethod13(Context context, Bitmap originalBitmap, int ksize, AiScanListener listener) {
+        ImageSegmenter imageSegmenter = null;
+        try {
+            // Step 1: Initialize MediaPipe to get the person mask
+            ImageSegmenterOptions.Builder optionsBuilder =
+                ImageSegmenterOptions.builder()
+                    .setBaseOptions(BaseOptions.builder().setModelAssetPath(MODEL_FILE).build())
+                    .setRunningMode(RunningMode.IMAGE)
+                    .setOutputConfidenceMasks(true);
+            ImageSegmenterOptions options = optionsBuilder.build();
+            imageSegmenter = ImageSegmenter.createFromOptions(context, options);
+            MPImage mpImage = new BitmapImageBuilder(originalBitmap).build();
+            ImageSegmenterResult segmenterResult = imageSegmenter.segment(mpImage);
+
+            if (segmenterResult != null && segmenterResult.confidenceMasks().isPresent()) {
+                try (MPImage mask = segmenterResult.confidenceMasks().get().get(0)) {
+                    // Step 2: Convert the AI mask to an OpenCV Mat
+                    ByteBuffer byteBuffer = ByteBufferExtractor.extract(mask);
+                    FloatBuffer confidenceMaskBuffer = byteBuffer.asFloatBuffer();
+                    confidenceMaskBuffer.rewind();
+                    Mat maskMat = new Mat(mask.getHeight(), mask.getWidth(), CvType.CV_32F);
+                    float[] floatArray = new float[confidenceMaskBuffer.remaining()];
+                    confidenceMaskBuffer.get(floatArray);
+                    maskMat.put(0, 0, floatArray);
+                    Mat mask8u = new Mat();
+                    maskMat.convertTo(mask8u, CvType.CV_8U, 255.0);
+                    Mat personMask = new Mat();
+                    Imgproc.threshold(mask8u, personMask, 128, 255, Imgproc.THRESH_BINARY);
+
+                    // --- START: Create the Line Art Background (Inspired by Method 0) ---
+                    Mat originalMatForLines = new Mat();
+                    Utils.bitmapToMat(originalBitmap, originalMatForLines);
+                    
+                    Mat grayForLines = new Mat();
+                    Imgproc.cvtColor(originalMatForLines, grayForLines, Imgproc.COLOR_RGBA2GRAY);
+                    Photo.fastNlMeansDenoising(grayForLines, grayForLines, 3, 7, 21);
+                    Imgproc.GaussianBlur(grayForLines, grayForLines, new Size(3, 3), 0);
+                    Mat detailLines = new Mat();
+                    Imgproc.Canny(grayForLines, detailLines, 50, 150);
+                    
+                    Mat lineArtBackground = new Mat(originalBitmap.getHeight(), originalBitmap.getWidth(), CvType.CV_8UC4, new Scalar(255, 255, 255, 255));
+                    lineArtBackground.setTo(new Scalar(0, 0, 0, 255), detailLines);
+                    // --- END: Line Art Background is in 'lineArtBackground' ---
+                    
+                    // --- START: Create the Pencil Sketch Person (Logic from Method 9) ---
+                    Mat originalMatForSketch = new Mat();
+                    Utils.bitmapToMat(originalBitmap, originalMatForSketch);
+                    Mat grayForSketch = new Mat();
+                    Imgproc.cvtColor(originalMatForSketch, grayForSketch, Imgproc.COLOR_RGBA2GRAY);
+                    
+                    Mat pencilSketchMat = createAdvancedPencilSketchMat(grayForSketch, ksize);
+                    Mat pencilSketchRgba = new Mat();
+                    Imgproc.cvtColor(pencilSketchMat, pencilSketchRgba, Imgproc.COLOR_GRAY2RGBA);
+                    // --- END: Pencil Sketch is in 'pencilSketchRgba' ---
+                    
+                    // Step 3: Resize the person mask to match image dimensions
+                    Mat resizedMask = new Mat();
+                    Imgproc.resize(personMask, resizedMask, lineArtBackground.size());
+                    
+                    // Step 4: Composite the pencil sketch person onto the line art background
+                    pencilSketchRgba.copyTo(lineArtBackground, resizedMask);
+
+                    // Step 5: Convert final result to Bitmap and notify listener
+                    Bitmap finalBitmap = Bitmap.createBitmap(lineArtBackground.cols(), lineArtBackground.rows(), Bitmap.Config.ARGB_8888);
+                    Utils.matToBitmap(lineArtBackground, finalBitmap);
+                    ProcessingResult result = new ProcessingResult(finalBitmap, 1);
+                    listener.onAiScanComplete(result);
+
+                    // Clean up all Mats
+                    maskMat.release();
+                    mask8u.release();
+                    personMask.release();
+                    resizedMask.release();
+                    originalMatForLines.release();
+                    grayForLines.release();
+                    detailLines.release();
+                    lineArtBackground.release();
+                    originalMatForSketch.release();
+                    grayForSketch.release();
+                    pencilSketchMat.release();
+                    pencilSketchRgba.release();
+                }
+            } else {
+                throw new Exception("MediaPipe segmentation returned a null or empty result.");
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "AI Method 12 (processMethod13) failed.", e);
+            listener.onAiScanComplete(new ProcessingResult(null, 0));
+        } finally {
+            if (imageSegmenter != null) {
+                imageSegmenter.close();
+            }
+        }
     }
 
 
@@ -753,6 +929,32 @@ public class DeepScanProcessor {
         one.release();
         topSub.release();
         return result;
+    }
+    
+    // --- NEW HELPER: Creates an Advanced Pencil Sketch Mat ---
+    private static Mat createAdvancedPencilSketchMat(Mat grayMat, int ksize) {
+        // The ksize must be an odd number for the kernel.
+        // Using the same logic as the existing Method 9 (processMethod11).
+        int kernelSize = (ksize * 2) + 1;
+        
+        Mat invertedGray = new Mat();
+        Core.bitwise_not(grayMat, invertedGray);
+
+        Mat blurred = new Mat();
+        Imgproc.GaussianBlur(invertedGray, blurred, new Size(kernelSize, kernelSize), 0);
+
+        Mat invertedBlurred = new Mat();
+        Core.bitwise_not(blurred, invertedBlurred);
+
+        Mat pencilSketch = new Mat();
+        Core.divide(grayMat, invertedBlurred, pencilSketch, 256.0);
+
+        // Release intermediate Mats
+        invertedGray.release();
+        blurred.release();
+        invertedBlurred.release();
+
+        return pencilSketch;
     }
 
     private static Mat getSimplifiedImage(Mat grayMat) {
