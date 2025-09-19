@@ -636,7 +636,7 @@ public class DeepScanProcessor {
         }
     }
 
-    // --- NEW AI METHOD 12: Pencil Sketch Person on Line Art Background ---
+    // --- CORRECTED AI METHOD 12: Pencil Sketch Person on "AI Smart Outline" Base ---
     public static void processMethod13(Context context, Bitmap originalBitmap, int ksize, AiScanListener listener) {
         ImageSegmenter imageSegmenter = null;
         try {
@@ -666,55 +666,61 @@ public class DeepScanProcessor {
                     Mat personMask = new Mat();
                     Imgproc.threshold(mask8u, personMask, 128, 255, Imgproc.THRESH_BINARY);
 
-                    // --- START: Create the Line Art Background (Inspired by Method 0) ---
-                    Mat originalMatForLines = new Mat();
-                    Utils.bitmapToMat(originalBitmap, originalMatForLines);
-                    
-                    Mat grayForLines = new Mat();
-                    Imgproc.cvtColor(originalMatForLines, grayForLines, Imgproc.COLOR_RGBA2GRAY);
-                    Photo.fastNlMeansDenoising(grayForLines, grayForLines, 3, 7, 21);
-                    Imgproc.GaussianBlur(grayForLines, grayForLines, new Size(3, 3), 0);
+                    // --- CORRECTED START: Create the "AI Smart Outline" Base Image (Logic from processMethod0) ---
+                    Mat originalMat = new Mat();
+                    Utils.bitmapToMat(originalBitmap, originalMat);
+                    Mat resizedMaskForBase = new Mat();
+                    Imgproc.resize(personMask, resizedMaskForBase, originalMat.size());
+                    Mat isolatedSubjectMat = new Mat();
+                    Core.bitwise_and(originalMat, originalMat, isolatedSubjectMat, resizedMaskForBase);
+                    Photo.fastNlMeansDenoisingColored(isolatedSubjectMat, isolatedSubjectMat, 3, 3, 7, 21);
+                    Mat grayIsolated = new Mat();
+                    Imgproc.cvtColor(isolatedSubjectMat, grayIsolated, Imgproc.COLOR_RGBA2GRAY);
+                    Imgproc.GaussianBlur(grayIsolated, grayIsolated, new Size(3, 3), 0);
                     Mat detailLines = new Mat();
-                    Imgproc.Canny(grayForLines, detailLines, 50, 150);
-                    
-                    Mat lineArtBackground = new Mat(originalBitmap.getHeight(), originalBitmap.getWidth(), CvType.CV_8UC4, new Scalar(255, 255, 255, 255));
-                    lineArtBackground.setTo(new Scalar(0, 0, 0, 255), detailLines);
-                    // --- END: Line Art Background is in 'lineArtBackground' ---
+                    Imgproc.Canny(grayIsolated, detailLines, 50, 150);
+                    List<MatOfPoint> contours = new ArrayList<>();
+                    Mat hierarchy = new Mat();
+                    Mat contoursMask = resizedMaskForBase.clone();
+                    Imgproc.findContours(contoursMask, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
+                    Mat lineArtBase = new Mat(originalBitmap.getHeight(), originalBitmap.getWidth(), CvType.CV_8UC4, new Scalar(255, 255, 255, 255));
+                    Imgproc.drawContours(lineArtBase, contours, -1, new Scalar(0, 0, 0, 255), 2);
+                    lineArtBase.setTo(new Scalar(0, 0, 0, 255), detailLines);
+                    // --- CORRECTED END: The base image is now correctly in 'lineArtBase' ---
                     
                     // --- START: Create the Pencil Sketch Person (Logic from Method 9) ---
-                    Mat originalMatForSketch = new Mat();
-                    Utils.bitmapToMat(originalBitmap, originalMatForSketch);
                     Mat grayForSketch = new Mat();
-                    Imgproc.cvtColor(originalMatForSketch, grayForSketch, Imgproc.COLOR_RGBA2GRAY);
-                    
+                    Imgproc.cvtColor(originalMat, grayForSketch, Imgproc.COLOR_RGBA2GRAY);
                     Mat pencilSketchMat = createAdvancedPencilSketchMat(grayForSketch, ksize);
                     Mat pencilSketchRgba = new Mat();
                     Imgproc.cvtColor(pencilSketchMat, pencilSketchRgba, Imgproc.COLOR_GRAY2RGBA);
                     // --- END: Pencil Sketch is in 'pencilSketchRgba' ---
                     
-                    // Step 3: Resize the person mask to match image dimensions
-                    Mat resizedMask = new Mat();
-                    Imgproc.resize(personMask, resizedMask, lineArtBackground.size());
-                    
-                    // Step 4: Composite the pencil sketch person onto the line art background
-                    pencilSketchRgba.copyTo(lineArtBackground, resizedMask);
+                    // Step 3: Composite the pencil sketch person onto the line art base
+                    // We can reuse the resized mask from the base creation step.
+                    pencilSketchRgba.copyTo(lineArtBase, resizedMaskForBase);
 
-                    // Step 5: Convert final result to Bitmap and notify listener
-                    Bitmap finalBitmap = Bitmap.createBitmap(lineArtBackground.cols(), lineArtBackground.rows(), Bitmap.Config.ARGB_8888);
-                    Utils.matToBitmap(lineArtBackground, finalBitmap);
-                    ProcessingResult result = new ProcessingResult(finalBitmap, 1);
+                    // Step 4: Convert final result to Bitmap and notify listener
+                    Bitmap finalBitmap = Bitmap.createBitmap(lineArtBase.cols(), lineArtBase.rows(), Bitmap.Config.ARGB_8888);
+                    Utils.matToBitmap(lineArtBase, finalBitmap);
+                    ProcessingResult result = new ProcessingResult(finalBitmap, contours.size());
                     listener.onAiScanComplete(result);
 
                     // Clean up all Mats
                     maskMat.release();
                     mask8u.release();
                     personMask.release();
-                    resizedMask.release();
-                    originalMatForLines.release();
-                    grayForLines.release();
+                    originalMat.release();
+                    resizedMaskForBase.release();
+                    isolatedSubjectMat.release();
+                    grayIsolated.release();
                     detailLines.release();
-                    lineArtBackground.release();
-                    originalMatForSketch.release();
+                    hierarchy.release();
+                    contoursMask.release();
+                    for (MatOfPoint contour : contours) {
+                        contour.release();
+                    }
+                    lineArtBase.release();
                     grayForSketch.release();
                     pencilSketchMat.release();
                     pencilSketchRgba.release();
