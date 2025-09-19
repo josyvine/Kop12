@@ -3,7 +3,7 @@ package com.kop.app;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
-import android.media.ThumbnailUtils;
+import android.media.ThumbnailUtils; 
 import android.os.Handler;
 import android.provider.MediaStore;
 import android.view.LayoutInflater;
