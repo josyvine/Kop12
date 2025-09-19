@@ -456,12 +456,7 @@ public class ProcessingActivity extends AppCompatActivity {
                 @Override
                 public void onScanComplete(DeepScanProcessor.ProcessingResult finalResult) {
                     updateMainDisplay(finalResult.resultBitmap);
-                    if (isVideoFile(inputFilePath)) {
-                        String outPath = new File(processedFramesDir, String.format("processed_%05d.png", frameIndex)).getAbsolutePath();
-                        try {
-                            ImageProcessor.saveBitmap(finalResult.resultBitmap, outPath);
-                        } catch (Exception e) { Log.e(TAG, "Failed to save processed frame.", e); }
-                    }
+                    // The auto-save block for videos has been removed as requested.
                     updateScanStatus("Scan Complete. Found " + finalResult.objectsFound + " objects.", -1, -1);
                     latch.countDown();
                 }
