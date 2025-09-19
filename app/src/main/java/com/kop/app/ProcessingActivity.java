@@ -71,6 +71,10 @@ public class ProcessingActivity extends AppCompatActivity {
     private Bitmap sourceBitmapForTuning; // Holds the original image for re-analysis
     private boolean isFirstFineTuneAnalysis = true;
 
+    // --- NEW UI ELEMENTS FOR METHOD 9 ---
+    private LinearLayout ksizeControlsContainer;
+    private SeekBar sliderKsize;
+
     // --- UI ELEMENTS FOR PROGRESS DISPLAY ---
     private LinearLayout scanStatusContainer;
     private TextView scanStatusTextView;
@@ -115,6 +119,10 @@ public class ProcessingActivity extends AppCompatActivity {
         sliderSharpness = findViewById(R.id.slider_sharpness);
         btnSave = findViewById(R.id.btn_save);
         switchAutomaticScan = findViewById(R.id.switch_automatic_scan);
+
+        // NEW: Initialize the ksize controller UI elements
+        ksizeControlsContainer = findViewById(R.id.ksize_controls_container);
+        sliderKsize = findViewById(R.id.slider_ksize);
 
         closeButton.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -218,6 +226,15 @@ public class ProcessingActivity extends AppCompatActivity {
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
                 selectedMethod = position;
+                
+                // NEW: Logic to show/hide the ksize controller for Method 9
+                boolean isAutomatic = switchAutomaticScan.isChecked();
+                // Spinner position 10 corresponds to Method 9
+                if (position == 10 && !isAutomatic) {
+                    ksizeControlsContainer.setVisibility(View.VISIBLE);
+                } else {
+                    ksizeControlsContainer.setVisibility(View.GONE);
+                }
             }
             @Override
             public void onNothingSelected(AdapterView<?> parent) {
@@ -255,10 +272,18 @@ public class ProcessingActivity extends AppCompatActivity {
             public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
                 if (isChecked) {
                     fineTuningControls.setVisibility(View.GONE);
+                    // NEW: Also hide ksize controller when switching to Automatic
+                    ksizeControlsContainer.setVisibility(View.GONE); 
                 } else {
                     // Do not show fine tuning for AI or Live Analysis methods
-                    if (!isFirstFineTuneAnalysis && selectedMethod > 2) {
-                        fineTuningControls.setVisibility(View.VISIBLE);
+                    if (!isFirstFineTuneAnalysis) {
+                        if (selectedMethod > 2 && selectedMethod != 10) { // Exclude new method 9
+                             fineTuningControls.setVisibility(View.VISIBLE);
+                        }
+                        // NEW: Show ksize controller if Method 9 is selected
+                        if (selectedMethod == 10) {
+                            ksizeControlsContainer.setVisibility(View.VISIBLE);
+                        }
                     }
                 }
             }
@@ -312,7 +337,13 @@ public class ProcessingActivity extends AppCompatActivity {
                         if (isFirstFineTuneAnalysis) {
                             sourceBitmapForTuning = decodeAndRotateBitmap(rawFrames[0].getAbsolutePath());
                         }
-                        performFineTuningAnalysis();
+                        
+                        // NEW: Check if Method 9 is selected for its special analysis path
+                        if (selectedMethod == 10) {
+                             performMethod9Analysis();
+                        } else {
+                             performFineTuningAnalysis();
+                        }
                     }
                 } catch (final Exception e) {
                     Log.e(TAG, "Analysis failed", e);
@@ -321,6 +352,46 @@ public class ProcessingActivity extends AppCompatActivity {
                 }
             }
         }).start();
+    }
+    
+    // NEW: Special analysis function for Method 9 to handle the ksize controller
+    private void performMethod9Analysis() {
+        if (sourceBitmapForTuning == null) {
+            showErrorDialog("Error", "No source image is loaded for tuning.", true);
+            return;
+        }
+        updateStatus("Analyzing...", true);
+
+        final int ksize = sliderKsize.getProgress();
+
+        DeepScanProcessor.ScanListenerWithKsize listener = new DeepScanProcessor.ScanListenerWithKsize() {
+            @Override
+            public void onScanProgress(int pass, int totalPasses, String status, Bitmap intermediateResult) {
+                // Method 9 is a single pass, so progress updates are not needed here
+            }
+            @Override
+            public void onScanComplete(final DeepScanProcessor.ProcessingResult finalResult) {
+                updateMainDisplay(finalResult.resultBitmap);
+
+                uiHandler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (isFirstFineTuneAnalysis) {
+                            if (!switchAutomaticScan.isChecked()) {
+                                ksizeControlsContainer.setVisibility(View.VISIBLE);
+                            }
+                            isFirstFineTuneAnalysis = false;
+                        }
+                        analysisControlsContainer.setVisibility(View.VISIBLE);
+                        btnSave.setVisibility(View.VISIBLE);
+                        updateStatus("Ready for fine-tuning. Adjust slider and Analyze.", false);
+                        updateProgress(0, 1);
+                        analyzeButton.setEnabled(true);
+                    }
+                });
+            }
+        };
+        DeepScanProcessor.processMethod11(sourceBitmapForTuning, ksize, listener);
     }
 
     private void processAllFramesAutomatically() throws Exception {
@@ -356,40 +427,64 @@ public class ProcessingActivity extends AppCompatActivity {
 
     private void beginStandardScan(Bitmap bitmap, final int frameIndex) throws InterruptedException {
         final CountDownLatch latch = new CountDownLatch(1);
-        DeepScanProcessor.ScanListener listener = new DeepScanProcessor.ScanListener() {
-            @Override
-            public void onScanProgress(final int pass, final int totalPasses, final String status, final Bitmap intermediateResult) {
-                updateScanStatus(status, pass, totalPasses);
-                updateMainDisplay(intermediateResult);
-            }
-            @Override
-            public void onScanComplete(final DeepScanProcessor.ProcessingResult finalResult) {
-                updateMainDisplay(finalResult.resultBitmap);
-
-                boolean isVideo = isVideoFile(inputFilePath);
-                if (isVideo) {
-                    String outPath = new File(processedFramesDir, String.format("processed_%05d.png", frameIndex)).getAbsolutePath();
-                    try {
-                        ImageProcessor.saveBitmap(finalResult.resultBitmap, outPath);
-                    } catch (Exception e) {
-                        Log.e(TAG, "Failed to save processed frame.", e);
-                    }
+        
+        // Check for the new Method 9
+        if (selectedMethod == 10) {
+            DeepScanProcessor.ScanListenerWithKsize listener = new DeepScanProcessor.ScanListenerWithKsize() {
+                @Override
+                public void onScanProgress(int pass, int totalPasses, String status, Bitmap intermediateResult) {
+                    // Not used for single-pass method
                 }
+                @Override
+                public void onScanComplete(DeepScanProcessor.ProcessingResult finalResult) {
+                    updateMainDisplay(finalResult.resultBitmap);
+                    if (isVideoFile(inputFilePath)) {
+                        String outPath = new File(processedFramesDir, String.format("processed_%05d.png", frameIndex)).getAbsolutePath();
+                        try {
+                            ImageProcessor.saveBitmap(finalResult.resultBitmap, outPath);
+                        } catch (Exception e) { Log.e(TAG, "Failed to save processed frame.", e); }
+                    }
+                    updateScanStatus("Scan Complete. Found " + finalResult.objectsFound + " objects.", -1, -1);
+                    latch.countDown();
+                }
+            };
+            // Use a default ksize for automatic scan, e.g., 21 (progress=10)
+            DeepScanProcessor.processMethod11(bitmap, 10, listener);
 
-                updateScanStatus("Scan Complete. Found " + finalResult.objectsFound + " objects.", -1, -1);
-                latch.countDown();
+        } else {
+            DeepScanProcessor.ScanListener listener = new DeepScanProcessor.ScanListener() {
+                @Override
+                public void onScanProgress(final int pass, final int totalPasses, final String status, final Bitmap intermediateResult) {
+                    updateScanStatus(status, pass, totalPasses);
+                    updateMainDisplay(intermediateResult);
+                }
+                @Override
+                public void onScanComplete(final DeepScanProcessor.ProcessingResult finalResult) {
+                    updateMainDisplay(finalResult.resultBitmap);
+                    boolean isVideo = isVideoFile(inputFilePath);
+                    if (isVideo) {
+                        String outPath = new File(processedFramesDir, String.format("processed_%05d.png", frameIndex)).getAbsolutePath();
+                        try {
+                            ImageProcessor.saveBitmap(finalResult.resultBitmap, outPath);
+                        } catch (Exception e) {
+                            Log.e(TAG, "Failed to save processed frame.", e);
+                        }
+                    }
+                    updateScanStatus("Scan Complete. Found " + finalResult.objectsFound + " objects.", -1, -1);
+                    latch.countDown();
+                }
+            };
+
+            // This switch maps the spinner position to the correct processing method in DeepScanProcessor
+            switch (selectedMethod) {
+                case 3: DeepScanProcessor.processMethod4(bitmap, listener); break; // Pos 3 -> Method 4
+                case 4: DeepScanProcessor.processMethod5(bitmap, listener); break; // Pos 4 -> Method 5
+                case 5: DeepScanProcessor.processMethod6(bitmap, listener); break; // Pos 5 -> Method 6
+                case 6: DeepScanProcessor.processMethod7(bitmap, listener); break; // Pos 6 -> Method 7
+                case 7: DeepScanProcessor.processMethod8(bitmap, listener); break; // Pos 7 -> Method 8
+                case 8: DeepScanProcessor.processMethod9(bitmap, listener); break; // Pos 8 -> Method 9
+                case 9: default: DeepScanProcessor.processMethod10(bitmap, listener); break; // Pos 9 -> Method 10
             }
-        };
-
-        // This switch maps the spinner position to the correct processing method in DeepScanProcessor
-        switch (selectedMethod) {
-            case 3: DeepScanProcessor.processMethod4(bitmap, listener); break; // Pos 3 -> Method 4
-            case 4: DeepScanProcessor.processMethod5(bitmap, listener); break; // Pos 4 -> Method 5
-            case 5: DeepScanProcessor.processMethod6(bitmap, listener); break; // Pos 5 -> Method 6
-            case 6: DeepScanProcessor.processMethod7(bitmap, listener); break; // Pos 6 -> Method 7
-            case 7: DeepScanProcessor.processMethod8(bitmap, listener); break; // Pos 7 -> Method 8
-            case 8: DeepScanProcessor.processMethod9(bitmap, listener); break; // Pos 8 -> Method 9
-            case 9: default: DeepScanProcessor.processMethod10(bitmap, listener); break; // Pos 9 -> Method 10
         }
 
         latch.await();
