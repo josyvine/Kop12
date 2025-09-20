@@ -63,16 +63,33 @@
                 android:layout_marginStart="8dp"/>
         </LinearLayout>
 
-        <EditText
-            android:id="@+id/et_search"
+        <!-- UPDATED: This section now includes a Spinner for filtering and the EditText for searching. -->
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:hint="Search files..."
-            android:textColor="@android:color/white"
-            android:textColorHint="#999999"
-            android:inputType="text"
+            android:orientation="horizontal"
             android:layout_marginTop="8dp"
-            android:backgroundTint="@android:color/white"/>
+            android:gravity="center_vertical">
+
+            <Spinner
+                android:id="@+id/spinner_filter"
+                android:layout_width="wrap_content"
+                android:layout_height="48dp"
+                android:background="@android:drawable/btn_dropdown"
+                android:spinnerMode="dropdown"/>
+
+            <EditText
+                android:id="@+id/et_search"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:hint="Search files..."
+                android:textColor="@android:color/white"
+                android:textColorHint="#999999"
+                android:inputType="text"
+                android:layout_marginStart="8dp"
+                android:backgroundTint="@android:color/white"/>
+        </LinearLayout>
 
     </LinearLayout>
 
