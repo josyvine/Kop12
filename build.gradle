@@ -18,8 +18,6 @@ allprojects {
         mavenCentral()
         // Jitpack is sometimes needed for other libraries.
         maven { url "https://jitpack.io" }
-        // THIS IS THE CRITICAL FIX YOU PROVIDED. IT MUST BE ADDED HERE.
-        maven { url "https://maven.pkg.github.com/tanersener/ffmpeg-kit" }
     }
 }
 
