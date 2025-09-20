@@ -221,49 +221,6 @@ public class ProcessingDialogFragment extends DialogFragment {
         }).start();
     }
 
-    private void beginAutomaticAiScan(final int methodIndex) {
-        if (sourceBitmapForTuning == null) {
-            showErrorDialog("Error", "Source image not found for AI scan.", true);
-            return;
-        }
-
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                DeepScanProcessor.AiScanListener listener = new DeepScanProcessor.AiScanListener() {
-                    @Override
-                    public void onAiScanComplete(final DeepScanProcessor.ProcessingResult finalResult) {
-                        uiHandler.post(new Runnable() {
-                            @Override
-                            public void run() {
-                                if (finalResult.resultBitmap == null) {
-                                    showErrorDialog("AI Analysis Failed", "The AI model could not process the image. Please try a different image or method.", false);
-                                    statusTextView.setText("AI Analysis Failed. Ready to try again.");
-                                } else {
-                                    updateMainDisplay(finalResult.resultBitmap);
-                                    statusTextView.setText("AI Analysis Complete. Save or choose another method.");
-                                    btnSave.setVisibility(View.VISIBLE);
-                                }
-                                progressBar.setVisibility(View.GONE);
-                                analysisControlsContainer.setVisibility(View.VISIBLE);
-                                analyzeButton.setEnabled(true);
-                                settingsButton.setEnabled(true);
-                            }
-                        });
-                    }
-                };
-                
-                // The spinner index for these methods is 0 and 1.
-                // We map them to the correct processor functions here.
-                if (methodIndex == 1) { // Method 0 (AI Smart Outline) is at index 1
-                    DeepScanProcessor.processMethod0(getContext(), sourceBitmapForTuning, listener);
-                } else { // Method 01 (AI Composite) is at index 0
-                    DeepScanProcessor.processMethod01(getContext(), sourceBitmapForTuning, listener);
-                }
-            }
-        }).start();
-    }
-
     private void setupAnalysisControls(boolean isVideo) {
         if (isVideo) {
             settingsButton.setVisibility(View.VISIBLE);
@@ -378,54 +335,11 @@ public class ProcessingDialogFragment extends DialogFragment {
             @Override
             public void run() {
                 try {
-                    if (switchAutomaticScan.isChecked() && isVideoFile(inputFilePath)) {
+                    // *** FIX #1: The main condition is now just checking the switch state. ***
+                    if (switchAutomaticScan.isChecked()) {
                         processAllFramesAutomatically();
                     } else {
-                        // Single frame processing logic
-                        if (selectedMethod == 0 || selectedMethod == 1) {
-                            uiHandler.post(new Runnable() {
-                                @Override
-                                public void run() {
-                                    statusTextView.setText("Performing AI Analysis...");
-                                    progressBar.setVisibility(View.VISIBLE);
-                                    progressBar.setIndeterminate(true);
-                                }
-                            });
-                            beginAutomaticAiScan(selectedMethod);
-                            return; // This is an async call, it will re-enable buttons in its callback
-                        }
-
-                        if (switchAutomaticScan.isChecked() && (selectedMethod >= 10 && selectedMethod <= 12)) {
-                            uiHandler.post(new Runnable() {
-                                @Override
-                                public void run() {
-                                    String methodName = "The selected method";
-                                    if (selectedMethod == 10) methodName = "Method 9";
-                                    if (selectedMethod == 11) methodName = "AI Method 11";
-                                    if (selectedMethod == 12) methodName = "AI Method 12";
-                                    Toast.makeText(getContext(), methodName + " requires Automatic Scan to be OFF.", Toast.LENGTH_LONG).show();
-                                    analysisControlsContainer.setVisibility(View.VISIBLE);
-                                    analyzeButton.setEnabled(true);
-                                    settingsButton.setEnabled(true);
-                                }
-                            });
-                            return;
-                        }
-                        
-                        if (isFirstFineTuneAnalysis) {
-                            sourceBitmapForTuning = decodeAndRotateBitmap(rawFrames[0].getAbsolutePath());
-                        }
-
-                        if (selectedMethod == 10) {
-                            performMethod9Analysis();
-                        } else if (selectedMethod == 11 || selectedMethod == 12) {
-                            performNewAiAnalysis(selectedMethod);
-                        } else if (selectedMethod == 2) {
-                            // Method 1 needs special handling for its live display
-                            beginMethod1LiveScan(sourceBitmapForTuning, 0);
-                        } else {
-                            performFineTuningAnalysis();
-                        }
+                        processSingleFrameManually();
                     }
                 } catch (final Exception e) {
                     Log.e(TAG, "Analysis failed", e);
@@ -434,6 +348,58 @@ public class ProcessingDialogFragment extends DialogFragment {
                 }
             }
         }).start();
+    }
+
+    private void processSingleFrameManually() throws Exception {
+        // This method handles all "manual" analysis where the user fine-tunes and saves.
+        if (selectedMethod == 0 || selectedMethod == 1) {
+            uiHandler.post(new Runnable() {
+                @Override
+                public void run() {
+                    statusTextView.setText("Performing AI Analysis...");
+                    progressBar.setVisibility(View.VISIBLE);
+                    progressBar.setIndeterminate(true);
+                }
+            });
+            // This is an async call, it will re-enable buttons in its own callback.
+            beginAutomaticAiScan(selectedMethod);
+            return;
+        }
+
+        // This check is for manual mode only now.
+        if (selectedMethod >= 10 && selectedMethod <= 12) {
+             if (switchAutomaticScan.isChecked()) {
+                uiHandler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        String methodName = "The selected method";
+                        if (selectedMethod == 10) methodName = "Method 9";
+                        if (selectedMethod == 11) methodName = "AI Method 11";
+                        if (selectedMethod == 12) methodName = "AI Method 12";
+                        Toast.makeText(getContext(), methodName + " requires Automatic Scan to be OFF for manual tuning.", Toast.LENGTH_LONG).show();
+                        analysisControlsContainer.setVisibility(View.VISIBLE);
+                        analyzeButton.setEnabled(true);
+                        settingsButton.setEnabled(true);
+                    }
+                });
+                return;
+            }
+        }
+
+        if (isFirstFineTuneAnalysis) {
+            sourceBitmapForTuning = decodeAndRotateBitmap(rawFrames[0].getAbsolutePath());
+        }
+
+        if (selectedMethod == 10) {
+            performMethod9Analysis();
+        } else if (selectedMethod == 11 || selectedMethod == 12) {
+            performNewAiAnalysis(selectedMethod);
+        } else if (selectedMethod == 2) {
+            // Method 1 needs special handling for its live display
+            beginMethod1LiveScan(sourceBitmapForTuning, 0);
+        } else {
+            performFineTuningAnalysis();
+        }
     }
 
     private void processAllFramesAutomatically() throws Exception {
@@ -455,8 +421,13 @@ public class ProcessingDialogFragment extends DialogFragment {
             Bitmap orientedBitmap = decodeAndRotateBitmap(rawFrames[frameIndex].getAbsolutePath());
             if (orientedBitmap == null) continue;
 
+            // *** FIX #2: The logic block now correctly handles all method types. ***
             if (selectedMethod == 0 || selectedMethod == 1) {
                 beginBlockingAiScan(orientedBitmap, frameIndex);
+            } else if (selectedMethod == 10 || selectedMethod == 11 || selectedMethod == 12) {
+                beginBlockingPencilOrNewAiScan(orientedBitmap, frameIndex);
+                // Add the requested 1-second delay for these fast methods
+                try { Thread.sleep(1000); } catch (InterruptedException e) {}
             } else if (selectedMethod == 2) {
                 beginMethod1LiveScan(orientedBitmap, frameIndex);
             } else {
@@ -476,6 +447,47 @@ public class ProcessingDialogFragment extends DialogFragment {
                 settingsButton.setEnabled(true);
             }
         });
+    }
+    
+    private void beginAutomaticAiScan(final int methodIndex) {
+        if (sourceBitmapForTuning == null) {
+            showErrorDialog("Error", "Source image not found for AI scan.", true);
+            return;
+        }
+
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                DeepScanProcessor.AiScanListener listener = new DeepScanProcessor.AiScanListener() {
+                    @Override
+                    public void onAiScanComplete(final DeepScanProcessor.ProcessingResult finalResult) {
+                        uiHandler.post(new Runnable() {
+                            @Override
+                            public void run() {
+                                if (finalResult.resultBitmap == null) {
+                                    showErrorDialog("AI Analysis Failed", "The AI model could not process the image. Please try a different image or method.", false);
+                                    statusTextView.setText("AI Analysis Failed. Ready to try again.");
+                                } else {
+                                    updateMainDisplay(finalResult.resultBitmap);
+                                    statusTextView.setText("AI Analysis Complete. Save or choose another method.");
+                                    btnSave.setVisibility(View.VISIBLE);
+                                }
+                                progressBar.setVisibility(View.GONE);
+                                analysisControlsContainer.setVisibility(View.VISIBLE);
+                                analyzeButton.setEnabled(true);
+                                settingsButton.setEnabled(true);
+                            }
+                        });
+                    }
+                };
+                
+                if (methodIndex == 1) { // Method 0 (AI Smart Outline) is at index 1
+                    DeepScanProcessor.processMethod0(getContext(), sourceBitmapForTuning, listener);
+                } else { // Method 01 (AI Composite) is at index 0
+                    DeepScanProcessor.processMethod01(getContext(), sourceBitmapForTuning, listener);
+                }
+            }
+        }).start();
     }
 
     private void beginBlockingAiScan(Bitmap bitmap, final int frameIndex) throws InterruptedException {
@@ -507,6 +519,54 @@ public class ProcessingDialogFragment extends DialogFragment {
         latch.await();
     }
 
+    private void beginBlockingPencilOrNewAiScan(Bitmap bitmap, final int frameIndex) throws InterruptedException {
+        final CountDownLatch latch = new CountDownLatch(1);
+        final int ksize = 10; // Default ksize for automatic mode, can be adjusted if needed
+
+        if (selectedMethod == 10) { // Method 9 (Pencil Sketch)
+            DeepScanProcessor.ScanListenerWithKsize listener = new DeepScanProcessor.ScanListenerWithKsize() {
+                @Override
+                public void onScanProgress(int pass, int totalPasses, String status, Bitmap intermediateResult) {}
+                @Override
+                public void onScanComplete(DeepScanProcessor.ProcessingResult finalResult) {
+                     if (finalResult != null && finalResult.resultBitmap != null) {
+                        updateMainDisplay(finalResult.resultBitmap);
+                        String outPath = new File(processedFramesDir, String.format("processed_%05d.png", frameIndex)).getAbsolutePath();
+                        try {
+                            ImageProcessor.saveBitmap(finalResult.resultBitmap, outPath);
+                        } catch (Exception e) {
+                            Log.e(TAG, "Failed to save processed pencil sketch frame.", e);
+                        }
+                    }
+                    latch.countDown();
+                }
+            };
+            DeepScanProcessor.processMethod11(bitmap, ksize, listener);
+        } else { // AI Methods 11 and 12
+            DeepScanProcessor.AiScanListener listener = new DeepScanProcessor.AiScanListener() {
+                @Override
+                public void onAiScanComplete(final DeepScanProcessor.ProcessingResult finalResult) {
+                    if (finalResult != null && finalResult.resultBitmap != null) {
+                        updateMainDisplay(finalResult.resultBitmap);
+                        String outPath = new File(processedFramesDir, String.format("processed_%05d.png", frameIndex)).getAbsolutePath();
+                        try {
+                            ImageProcessor.saveBitmap(finalResult.resultBitmap, outPath);
+                        } catch (Exception e) {
+                            Log.e(TAG, "Failed to save processed AI pencil frame.", e);
+                        }
+                    }
+                    latch.countDown();
+                }
+            };
+
+            if (selectedMethod == 11) {
+                DeepScanProcessor.processMethod12(getContext(), bitmap, ksize, listener);
+            } else if (selectedMethod == 12) {
+                DeepScanProcessor.processMethod13(getContext(), bitmap, ksize, listener);
+            }
+        }
+        latch.await();
+    }
 
     private void performNewAiAnalysis(final int methodToRun) {
         if (sourceBitmapForTuning == null) {
@@ -607,79 +667,41 @@ public class ProcessingDialogFragment extends DialogFragment {
     private void beginStandardScan(Bitmap bitmap, final int frameIndex) throws InterruptedException {
         final CountDownLatch latch = new CountDownLatch(1);
 
-        if (selectedMethod == 10) {
-            DeepScanProcessor.ScanListenerWithKsize listener = new DeepScanProcessor.ScanListenerWithKsize() {
-                @Override
-                public void onScanProgress(int pass, int totalPasses, String status, Bitmap intermediateResult) {
-                }
-                @Override
-                public void onScanComplete(DeepScanProcessor.ProcessingResult finalResult) {
-                    updateMainDisplay(finalResult.resultBitmap);
-                    updateScanStatus("Scan Complete. Found " + finalResult.objectsFound + " objects.", -1, -1);
-                    boolean isVideo = isVideoFile(inputFilePath);
-                    if (isVideo) {
-                        String outPath = new File(processedFramesDir, String.format("processed_%05d.png", frameIndex)).getAbsolutePath();
-                        try {
-                            ImageProcessor.saveBitmap(finalResult.resultBitmap, outPath);
-                        } catch (Exception e) {
-                            Log.e(TAG, "Failed to save processed frame.", e);
-                        }
-                    }
-                    latch.countDown();
-                }
-            };
-            DeepScanProcessor.processMethod11(bitmap, 10, listener);
-
-        } else {
-            DeepScanProcessor.ScanListener listener = new DeepScanProcessor.ScanListener() {
-                @Override
-                public void onScanProgress(final int pass, final int totalPasses, final String status, final Bitmap intermediateResult) {
-                    updateScanStatus(status, pass, totalPasses);
-                    updateMainDisplay(intermediateResult);
-                }
-                @Override
-                public void onScanComplete(final DeepScanProcessor.ProcessingResult finalResult) {
-                    updateMainDisplay(finalResult.resultBitmap);
-                    boolean isVideo = isVideoFile(inputFilePath);
-                    if (isVideo) {
-                        String outPath = new File(processedFramesDir, String.format("processed_%05d.png", frameIndex)).getAbsolutePath();
-                        try {
-                            ImageProcessor.saveBitmap(finalResult.resultBitmap, outPath);
-                        } catch (Exception e) {
-                            Log.e(TAG, "Failed to save processed frame.", e);
-                        }
-                    }
-                    updateScanStatus("Scan Complete. Found " + finalResult.objectsFound + " objects.", -1, -1);
-                    latch.countDown();
-                }
-            };
-
-            switch (selectedMethod) {
-                case 3: DeepScanProcessor.processMethod4(bitmap, listener); break;
-                case 4: DeepScanProcessor.processMethod5(bitmap, listener); break;
-                case 5: DeepScanProcessor.processMethod6(bitmap, listener); break;
-                case 6: DeepScanProcessor.processMethod7(bitmap, listener); break;
-                case 7: DeepScanProcessor.processMethod8(bitmap, listener); break;
-                case 8: DeepScanProcessor.processMethod9(bitmap, listener); break;
-                case 9: default: DeepScanProcessor.processMethod10(bitmap, listener); break;
+        DeepScanProcessor.ScanListener listener = new DeepScanProcessor.ScanListener() {
+            @Override
+            public void onScanProgress(final int pass, final int totalPasses, final String status, final Bitmap intermediateResult) {
+                updateScanStatus(status, pass, totalPasses);
+                updateMainDisplay(intermediateResult);
             }
+            @Override
+            public void onScanComplete(final DeepScanProcessor.ProcessingResult finalResult) {
+                updateMainDisplay(finalResult.resultBitmap);
+                
+                // This check now correctly determines if we should auto-save or not.
+                // In this flow, we are always in automatic mode.
+                String outPath = new File(processedFramesDir, String.format("processed_%05d.png", frameIndex)).getAbsolutePath();
+                try {
+                    ImageProcessor.saveBitmap(finalResult.resultBitmap, outPath);
+                } catch (Exception e) {
+                    Log.e(TAG, "Failed to save processed frame.", e);
+                }
+
+                updateScanStatus("Scan Complete. Found " + finalResult.objectsFound + " objects.", -1, -1);
+                latch.countDown();
+            }
+        };
+
+        switch (selectedMethod) {
+            case 3: DeepScanProcessor.processMethod4(bitmap, listener); break;
+            case 4: DeepScanProcessor.processMethod5(bitmap, listener); break;
+            case 5: DeepScanProcessor.processMethod6(bitmap, listener); break;
+            case 6: DeepScanProcessor.processMethod7(bitmap, listener); break;
+            case 7: DeepScanProcessor.processMethod8(bitmap, listener); break;
+            case 8: DeepScanProcessor.processMethod9(bitmap, listener); break;
+            case 9: default: DeepScanProcessor.processMethod10(bitmap, listener); break;
         }
 
         latch.await();
-        boolean isVideo = isVideoFile(inputFilePath);
-        if (!isVideo) {
-            uiHandler.post(new Runnable() {
-                @Override
-                public void run() {
-                    btnSave.setVisibility(View.VISIBLE);
-                    analysisControlsContainer.setVisibility(View.VISIBLE);
-                    analyzeButton.setEnabled(true);
-                    settingsButton.setEnabled(true);
-                }
-            });
-        }
-        try { Thread.sleep(2000); } catch (InterruptedException e) {}
-        hideScanStatus();
     }
 
     private void performFineTuningAnalysis() {
@@ -788,14 +810,11 @@ public class ProcessingDialogFragment extends DialogFragment {
             }
             @Override
             public void onScanComplete(final DeepScanProcessor.ProcessingResult finalResult) {
-                boolean isVideo = isVideoFile(inputFilePath);
-                if (isVideo) {
-                    String outPath = new File(processedFramesDir, String.format("processed_%05d.png", frameIndex)).getAbsolutePath();
-                    try {
-                        ImageProcessor.saveBitmap(finalResult.resultBitmap, outPath);
-                    } catch (Exception e) {
-                        Log.e(TAG, "Failed to save processed frame.", e);
-                    }
+                String outPath = new File(processedFramesDir, String.format("processed_%05d.png", frameIndex)).getAbsolutePath();
+                try {
+                    ImageProcessor.saveBitmap(finalResult.resultBitmap, outPath);
+                } catch (Exception e) {
+                    Log.e(TAG, "Failed to save processed frame.", e);
                 }
                 updateScanStatus("Scan Complete. Found " + finalResult.objectsFound + " objects.", -1, -1);
                 latch.countDown();
@@ -804,8 +823,8 @@ public class ProcessingDialogFragment extends DialogFragment {
         DeepScanProcessor.processMethod1(bitmap, listener);
         latch.await();
 
-        boolean isVideo = isVideoFile(inputFilePath);
-        if (!isVideo) {
+        // If we are in manual mode (not a video), re-enable controls.
+        if (!isVideoFile(inputFilePath)) {
             uiHandler.post(new Runnable() {
                 @Override
                 public void run() {
@@ -816,8 +835,6 @@ public class ProcessingDialogFragment extends DialogFragment {
                 }
             });
         }
-        try { Thread.sleep(2000); } catch (InterruptedException e) {}
-        hideScanStatus();
     }
 
     private void extractFramesForVideo(int fps) {
