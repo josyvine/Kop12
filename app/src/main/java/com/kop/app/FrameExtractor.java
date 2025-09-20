@@ -1,11 +1,8 @@
 package com.kop.app;
 
-import com.bihe0832.android.lib.ffmpeg.FFMpegTools;
-import com.bihe0832.android.lib.ffmpeg.callback.IFFMpegCallback;
+import com.bihe0832.android.lib.ffmpeg.FFmpeg;
 
 import java.io.File;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 public class FrameExtractor {
 
@@ -24,53 +21,20 @@ public class FrameExtractor {
 
         // This is the high-speed FFmpeg command.
         // -i [videoPath]       -> Sets the input video file.
+        // -y                   -> Overwrite output files without asking.
         // -vf fps=[fps]        -> Sets a video filter (-vf) to force the output frame rate to the desired fps.
         // [outDir]/frame...png -> Sets the output location and filename pattern.
         //                        %05d creates a 5-digit number (00001, 00002, etc.).
-        String command = String.format("-i \"%s\" -vf fps=%d \"%s/frame_%%05d.png\"", videoPath, fps, outDir);
+        String command = String.format("-i \"%s\" -y -vf fps=%d \"%s/frame_%%05d.png\"", videoPath, fps, outDir);
 
-        // This new library runs asynchronously and uses a callback.
-        // We use a CountDownLatch to wait for the command to finish.
-        final CountDownLatch latch = new CountDownLatch(1);
-        final AtomicBoolean success = new AtomicBoolean(false);
-        final StringBuilder logBuilder = new StringBuilder();
-
-        FFMpegTools.getInstance().execute(command, new IFFMpegCallback() {
-            @Override
-            public void onStart() {
-                // Command has started.
-            }
-
-            @Override
-            public void onProgress(String progress) {
-                // Not needed for this task.
-            }
-
-            @Override
-            public void onCancel() {
-                logBuilder.append("FFmpeg command was cancelled.");
-                latch.countDown();
-            }
-
-            @Override
-            public void onComplete() {
-                success.set(true);
-                latch.countDown();
-            }
-
-            @Override
-            public void onError(String message) {
-                logBuilder.append("FFmpeg command failed with error: ").append(message);
-                latch.countDown();
-            }
-        });
-
-        // Wait for the FFmpeg command to complete.
-        latch.await();
+        // This library uses a simple, direct `exec` command.
+        // It returns 0 for success, and a non-zero value for failure.
+        int returnCode = FFmpeg.getInstance().exec(command);
 
         // Check if the command was successful. If not, throw an exception.
-        if (!success.get()) {
-            throw new Exception("FFmpeg frame extraction failed. Log: " + logBuilder.toString());
+        if (returnCode != 0) {
+            // This library does not provide detailed logs on failure, so we include the return code.
+            throw new Exception("FFmpeg frame extraction failed with return code: " + returnCode);
         }
     }
 }
