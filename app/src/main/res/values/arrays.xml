@@ -30,4 +30,13 @@
         <item>AI Method 11 (Person Sketch)</item>
         <item>AI Method 12 (Line Art BG)</item>
     </string-array>
+
+    <!-- NEW: This array contains filter options for the media picker. -->
+    <string-array name="media_filter_options">
+        <item>Newest First</item>
+        <item>Oldest First</item>
+        <item>Largest First</item>
+        <item>Phone Storage Only</item>
+        <item>SD Card Only</item>
+    </string-array>
 </resources>
