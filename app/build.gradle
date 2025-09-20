@@ -7,7 +7,7 @@ repositories {
 }
 
 android {
-    compileSdkVersion 33 
+    compileSdkVersion 33
     buildToolsVersion "30.0.3"
 
     defaultConfig {
@@ -26,6 +26,14 @@ android {
         }
     }
 
+    // THIS BLOCK FIXES THE NATIVE LIBRARY CONFLICT (Failure #1)
+    packagingOptions {
+        pickFirst 'lib/arm64-v8a/libc++_shared.so'
+        pickFirst 'lib/armeabi-v7a/libc++_shared.so'
+        pickFirst 'lib/x86/libc++_shared.so'
+        pickFirst 'lib/x86_64/libc++_shared.so'
+    }
+
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
@@ -34,17 +42,6 @@ android {
     aaptOptions {
         noCompress "tflite"
     }
-
-    // THIS CONFLICTING BLOCK HAS BEEN REMOVED.
-    // It was forcing the build to ONLY look in the 'libs' folder for native code,
-    // which is why MediaPipe was failing. Removing it allows Gradle to find
-    // native libraries from ALL sources, including your dependencies.
-    //
-    // sourceSets {
-    //     main {
-    //         jniLibs.srcDirs = ['libs']
-    //     }
-    // }
 }
 
 dependencies {
@@ -62,6 +59,6 @@ dependencies {
 
     implementation 'com.google.mediapipe:tasks-vision:0.10.14'
 
-    // REPLACED with the exact library you provided. This will fix the build.
+    // Using the exact library you provided.
     implementation 'com.bihe0832.android:lib-ffmpeg-mobile-aaf:6.9.0'
 }
