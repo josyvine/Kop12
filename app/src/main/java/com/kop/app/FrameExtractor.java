@@ -1,7 +1,7 @@
 package com.kop.app;
 
 import com.bihe0832.android.lib.aaf.tools.AAFDataCallback;
-import com.bihe0832.android.lib.aaf.wrapper.AAFWrapper;
+import com.bihe0832.android.lib.aaf.tools.FFmpegTools;
 
 import java.io.File;
 import java.util.concurrent.CountDownLatch;
@@ -12,7 +12,7 @@ public class FrameExtractor {
     /**
      * Extracts frames from a video file at a specified frames-per-second rate using the high-performance FFmpeg library.
      * @param videoPath Absolute path to the video file.
-     * a* @param outDir    The directory where the extracted frames will be saved.
+     * @param outDir    The directory where the extracted frames will be saved.
      * @param fps       The desired number of frames to extract per second.
      * @throws Exception if there is an error during extraction.
      */
