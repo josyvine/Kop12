@@ -1,6 +1,5 @@
 apply plugin: 'com.android.application'
 
-// This block is required to find the new library.
 repositories {
     google()
     mavenCentral()
