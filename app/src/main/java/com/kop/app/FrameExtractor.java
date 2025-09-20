@@ -1,8 +1,10 @@
-package com.kop.app; 
+package com.kop.app;
 
-import com.bihe0832.android.lib.ffmpeg.FFmpeg;
+import com.bihe0832.android.lib.aaf.tools.FFmpegTools;
 
-import java.io.File; 
+import java.io.File;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class FrameExtractor {
 
@@ -27,14 +29,39 @@ public class FrameExtractor {
         //                        %05d creates a 5-digit number (00001, 00002, etc.).
         String command = String.format("-i \"%s\" -y -vf fps=%d \"%s/frame_%%05d.png\"", videoPath, fps, outDir);
 
-        // This library uses a simple, direct `exec` command.
-        // It returns 0 for success, and a non-zero value for failure.
-        int returnCode = FFmpeg.getInstance().exec(command);
+        // This library is asynchronous and uses a CountDownLatch to wait for completion.
+        final CountDownLatch latch = new CountDownLatch(1);
+        final AtomicInteger returnCode = new AtomicInteger(-1); // Use AtomicInteger to store result from callback
 
-        // Check if the command was successful. If not, throw an exception.
-        if (returnCode != 0) {
-            // This library does not provide detailed logs on failure, so we include the return code.
-            throw new Exception("FFmpeg frame extraction failed with return code: " + returnCode);
+        // The correct class is FFmpegTools. It does not use a callback interface.
+        // We pass lambdas for success and failure directly.
+        FFmpegTools.exec(command,
+            // onSuccess callback
+            new com.bihe0832.android.lib.aaf.tools.AAFDataCallback() {
+                @Override
+                public void onCallback(Object... o) {
+                    returnCode.set(0); // Set 0 for success
+                    latch.countDown();
+                }
+            },
+            // onFailure callback
+            new com.bihe0832.android.lib.aaf.tools.AAFDataCallback() {
+                @Override
+                public void onCallback(Object... o) {
+                    if (o.length > 0 && o[0] instanceof Integer) {
+                        returnCode.set((Integer) o[0]);
+                    }
+                    latch.countDown();
+                }
+            }
+        );
+
+        // Wait for the FFmpeg command to finish executing.
+        latch.await();
+
+        // Check if the command was successful. A return code of 0 means success.
+        if (returnCode.get() != 0) {
+            throw new Exception("FFmpeg frame extraction failed with return code: " + returnCode.get());
         }
     }
 }
