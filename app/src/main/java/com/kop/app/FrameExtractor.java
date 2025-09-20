@@ -1,5 +1,6 @@
 package com.kop.app;
 
+import com.bihe0832.android.lib.aaf.tools.AAFDataCallback;
 import com.bihe0832.android.lib.aaf.tools.FFmpegTools;
 
 import java.io.File;
@@ -29,34 +30,33 @@ public class FrameExtractor {
         //                        %05d creates a 5-digit number (00001, 00002, etc.).
         String command = String.format("-i \"%s\" -y -vf fps=%d \"%s/frame_%%05d.png\"", videoPath, fps, outDir);
 
-        // This library is asynchronous and uses a CountDownLatch to wait for completion.
+        // This library is asynchronous and uses callbacks. A CountDownLatch is used to wait for completion.
         final CountDownLatch latch = new CountDownLatch(1);
         final AtomicInteger returnCode = new AtomicInteger(-1); // Use AtomicInteger to store result from callback
 
-        // The correct class is FFmpegTools. It does not use a callback interface.
-        // We pass lambdas for success and failure directly.
+        // This is the correct class and method for the library you provided.
         FFmpegTools.exec(command,
             // onSuccess callback
-            new com.bihe0832.android.lib.aaf.tools.AAFDataCallback() {
+            new AAFDataCallback() {
                 @Override
-                public void onCallback(Object... o) {
+                public void onCallback(Object... args) {
                     returnCode.set(0); // Set 0 for success
                     latch.countDown();
                 }
             },
             // onFailure callback
-            new com.bihe0832.android.lib.aaf.tools.AAFDataCallback() {
+            new AAFDataCallback() {
                 @Override
-                public void onCallback(Object... o) {
-                    if (o.length > 0 && o[0] instanceof Integer) {
-                        returnCode.set((Integer) o[0]);
+                public void onCallback(Object... args) {
+                    if (args.length > 0 && args[0] instanceof Integer) {
+                        returnCode.set((Integer) args[0]);
                     }
                     latch.countDown();
                 }
             }
         );
 
-        // Wait for the FFmpeg command to finish executing.
+        // Wait here until the FFmpeg command finishes executing in the background.
         latch.await();
 
         // Check if the command was successful. A return code of 0 means success.
