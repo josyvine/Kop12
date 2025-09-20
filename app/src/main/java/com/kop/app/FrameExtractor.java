@@ -22,41 +22,46 @@ public class FrameExtractor {
             outputDir.mkdirs();
         }
 
-        // Build the FFmpeg command
+        // This is the high-speed FFmpeg command as a single string.
+        // -i [videoPath]       -> Sets the input video file.
+        // -y                   -> Overwrite output files without asking.
+        // -vf fps=[fps]        -> Sets a video filter (-vf) to force the output frame rate to the desired fps.
+        // [outDir]/frame...png -> Sets the output location and filename pattern.
+        //                        %05d creates a 5-digit number (00001, 00002, etc.).
         String command = String.format("-i \"%s\" -y -vf fps=%d \"%s/frame_%%05d.png\"", videoPath, fps, outDir);
 
-        // Use CountDownLatch to wait for asynchronous execution
+        // This library is asynchronous. We use a CountDownLatch to make our method wait for it to finish.
         final CountDownLatch latch = new CountDownLatch(1);
-        final AtomicInteger returnCode = new AtomicInteger(-1);
+        final AtomicInteger returnCode = new AtomicInteger(-1); // Use AtomicInteger to store result from callback
 
-        // Execute the FFmpeg command using the correct library
+        // THIS IS THE CORRECT IMPLEMENTATION USING FFmpegTools.exec, AS YOU INSTRUCTED.
         FFmpegTools.exec(command,
-            // onSuccess callback
-            new AAFDataCallback() {
-                @Override
-                public void onCallback(Object... args) {
-                    returnCode.set(0); // success
-                    latch.countDown();
-                }
-            },
-            // onFailure callback
-            new AAFDataCallback() {
-                @Override
-                public void onCallback(Object... args) {
-                    if (args.length > 0 && args[0] instanceof Integer) {
-                        returnCode.set((Integer) args[0]);
-                    } else {
-                        returnCode.set(-1);
+                // onSuccess callback
+                new AAFDataCallback() {
+                    @Override
+                    public void onCallback(Object... args) {
+                        returnCode.set(0); // Set 0 for success
+                        latch.countDown();
                     }
-                    latch.countDown();
+                },
+                // onFailure callback
+                new AAFDataCallback() {
+                    @Override
+                    public void onCallback(Object... args) {
+                        if (args.length > 0 && args[0] instanceof Integer) {
+                            returnCode.set((Integer) args[0]);
+                        } else {
+                            returnCode.set(-1); // General failure
+                        }
+                        latch.countDown();
+                    }
                 }
-            }
         );
 
-        // Wait until the command finishes
+        // Wait here until the latch is counted down by one of the callbacks.
         latch.await();
 
-        // Throw exception if failed
+        // Check if the command was successful. A return code of 0 means success.
         if (returnCode.get() != 0) {
             throw new Exception("FFmpeg frame extraction failed with return code: " + returnCode.get());
         }
