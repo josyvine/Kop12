@@ -1,8 +1,10 @@
 apply plugin: 'com.android.application'
 
+// This block is required to find the new library.
 repositories {
     google()
     mavenCentral()
+    maven { url 'https://jitpack.io' } // <-- ADDED THIS LINE AS YOU INSTRUCTED. THIS IS THE FIX.
 }
 
 android {
@@ -25,7 +27,7 @@ android {
         }
     }
 
-    // THIS BLOCK FIXES THE NATIVE LIBRARY CONFLICT (Failure #1)
+    // This block fixes the native library conflict.
     packagingOptions {
         pickFirst 'lib/arm64-v8a/libc++_shared.so'
         pickFirst 'lib/armeabi-v7a/libc++_shared.so'
