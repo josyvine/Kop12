@@ -22,46 +22,41 @@ public class FrameExtractor {
             outputDir.mkdirs();
         }
 
-        // This is the high-speed FFmpeg command as a single string.
-        // -i [videoPath]       -> Sets the input video file.
-        // -y                   -> Overwrite output files without asking.
-        // -vf fps=[fps]        -> Sets a video filter (-vf) to force the output frame rate to the desired fps.
-        // [outDir]/frame...png -> Sets the output location and filename pattern.
-        //                        %05d creates a 5-digit number (00001, 00002, etc.).
+        // Build the FFmpeg command
         String command = String.format("-i \"%s\" -y -vf fps=%d \"%s/frame_%%05d.png\"", videoPath, fps, outDir);
 
-        // This library is asynchronous. We use a CountDownLatch to make our method wait for it to finish.
+        // Use CountDownLatch to wait for asynchronous execution
         final CountDownLatch latch = new CountDownLatch(1);
-        final AtomicInteger returnCode = new AtomicInteger(-1); // Use AtomicInteger to store result from callback
+        final AtomicInteger returnCode = new AtomicInteger(-1);
 
-        // THIS IS THE REAL, CORRECT WAY TO EXECUTE A COMMAND WITH THIS LIBRARY.
-        AAFWrapper.exec(command,
-                // onSuccess callback
-                new AAFDataCallback() {
-                    @Override
-                    public void onCallback(Object... args) {
-                        returnCode.set(0); // Set 0 for success
-                        latch.countDown();
-                    }
-                },
-                // onFailure callback
-                new AAFDataCallback() {
-                    @Override
-                    public void onCallback(Object... args) {
-                        if (args.length > 0 && args[0] instanceof Integer) {
-                            returnCode.set((Integer) args[0]);
-                        } else {
-                            returnCode.set(-1); // General failure
-                        }
-                        latch.countDown();
-                    }
+        // Execute the FFmpeg command using the correct library
+        FFmpegTools.exec(command,
+            // onSuccess callback
+            new AAFDataCallback() {
+                @Override
+                public void onCallback(Object... args) {
+                    returnCode.set(0); // success
+                    latch.countDown();
                 }
+            },
+            // onFailure callback
+            new AAFDataCallback() {
+                @Override
+                public void onCallback(Object... args) {
+                    if (args.length > 0 && args[0] instanceof Integer) {
+                        returnCode.set((Integer) args[0]);
+                    } else {
+                        returnCode.set(-1);
+                    }
+                    latch.countDown();
+                }
+            }
         );
 
-        // Wait here until the latch is counted down by one of the callbacks.
+        // Wait until the command finishes
         latch.await();
 
-        // Check if the command was successful. A return code of 0 means success.
+        // Throw exception if failed
         if (returnCode.get() != 0) {
             throw new Exception("FFmpeg frame extraction failed with return code: " + returnCode.get());
         }
