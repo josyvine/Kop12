@@ -7,7 +7,7 @@ repositories {
 }
 
 android {
-    compileSdkVersion 33
+    compileSdkVersion 33 
     buildToolsVersion "30.0.3"
 
     defaultConfig {
