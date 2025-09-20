@@ -62,6 +62,6 @@ dependencies {
 
     implementation 'com.google.mediapipe:tasks-vision:0.10.14'
 
-    // REPLACED retired library with the working community fork you provided.
-    implementation 'com.antonkarpenko:ffmpeg-kit-full:1.2.0'
+    // REPLACED with the exact library you provided. This will fix the build.
+    implementation 'com.bihe0832.android:lib-ffmpeg-mobile-aaf:6.9.0'
 }
