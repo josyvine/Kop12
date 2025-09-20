@@ -34,7 +34,7 @@ public class FrameExtractor {
         final CountDownLatch latch = new CountDownLatch(1);
         final AtomicInteger returnCode = new AtomicInteger(-1); // Use AtomicInteger to store result from callback
 
-        // THIS IS THE CORRECT IMPLEMENTATION USING FFmpegTools.exec, AS YOU INSTRUCTED.
+        // This is the real, correct way to execute a command with this library.
         FFmpegTools.exec(command,
                 // onSuccess callback
                 new AAFDataCallback() {
