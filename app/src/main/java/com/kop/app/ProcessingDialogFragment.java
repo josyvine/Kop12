@@ -335,7 +335,6 @@ public class ProcessingDialogFragment extends DialogFragment {
             @Override
             public void run() {
                 try {
-                    // *** FIX #1: The main condition is now just checking the switch state. ***
                     if (switchAutomaticScan.isChecked()) {
                         processAllFramesAutomatically();
                     } else {
@@ -351,7 +350,6 @@ public class ProcessingDialogFragment extends DialogFragment {
     }
 
     private void processSingleFrameManually() throws Exception {
-        // This method handles all "manual" analysis where the user fine-tunes and saves.
         if (selectedMethod == 0 || selectedMethod == 1) {
             uiHandler.post(new Runnable() {
                 @Override
@@ -361,12 +359,10 @@ public class ProcessingDialogFragment extends DialogFragment {
                     progressBar.setIndeterminate(true);
                 }
             });
-            // This is an async call, it will re-enable buttons in its own callback.
             beginAutomaticAiScan(selectedMethod);
             return;
         }
 
-        // This check is for manual mode only now.
         if (selectedMethod >= 10 && selectedMethod <= 12) {
              if (switchAutomaticScan.isChecked()) {
                 uiHandler.post(new Runnable() {
@@ -395,7 +391,6 @@ public class ProcessingDialogFragment extends DialogFragment {
         } else if (selectedMethod == 11 || selectedMethod == 12) {
             performNewAiAnalysis(selectedMethod);
         } else if (selectedMethod == 2) {
-            // Method 1 needs special handling for its live display
             beginMethod1LiveScan(sourceBitmapForTuning, 0);
         } else {
             performFineTuningAnalysis();
@@ -421,12 +416,10 @@ public class ProcessingDialogFragment extends DialogFragment {
             Bitmap orientedBitmap = decodeAndRotateBitmap(rawFrames[frameIndex].getAbsolutePath());
             if (orientedBitmap == null) continue;
 
-            // *** FIX #2: The logic block now correctly handles all method types. ***
             if (selectedMethod == 0 || selectedMethod == 1) {
                 beginBlockingAiScan(orientedBitmap, frameIndex);
             } else if (selectedMethod == 10 || selectedMethod == 11 || selectedMethod == 12) {
                 beginBlockingPencilOrNewAiScan(orientedBitmap, frameIndex);
-                // Add the requested 1-second delay for these fast methods
                 try { Thread.sleep(1000); } catch (InterruptedException e) {}
             } else if (selectedMethod == 2) {
                 beginMethod1LiveScan(orientedBitmap, frameIndex);
@@ -440,8 +433,19 @@ public class ProcessingDialogFragment extends DialogFragment {
         uiHandler.post(new Runnable() {
             @Override
             public void run() {
-                showSuccessDialog("Processing Complete", "Your rotoscoped frames have been saved to:\n\n" + processedFramesDir);
-                statusTextView.setText("Processing Complete. Open settings to run again.");
+                // *** THE ONLY FIX IS HERE ***
+                // This block now checks if the processed media was a video or a single image.
+                if (isVideoFile(inputFilePath)) {
+                    // If it's a video, show the completion dialog and keep controls hidden.
+                    showSuccessDialog("Processing Complete", "Your rotoscoped frames have been saved to:\n\n" + processedFramesDir);
+                    statusTextView.setText("Processing Complete. Open settings to run again.");
+                } else {
+                    // If it's a single image, just update the status and show the controls again.
+                    statusTextView.setText("Automatic scan complete. Select another method to run again.");
+                    analysisControlsContainer.setVisibility(View.VISIBLE);
+                    btnSave.setVisibility(View.VISIBLE);
+                }
+                
                 progressBar.setVisibility(View.GONE);
                 analyzeButton.setEnabled(true);
                 settingsButton.setEnabled(true);
@@ -677,8 +681,6 @@ public class ProcessingDialogFragment extends DialogFragment {
             public void onScanComplete(final DeepScanProcessor.ProcessingResult finalResult) {
                 updateMainDisplay(finalResult.resultBitmap);
                 
-                // This check now correctly determines if we should auto-save or not.
-                // In this flow, we are always in automatic mode.
                 String outPath = new File(processedFramesDir, String.format("processed_%05d.png", frameIndex)).getAbsolutePath();
                 try {
                     ImageProcessor.saveBitmap(finalResult.resultBitmap, outPath);
@@ -823,7 +825,6 @@ public class ProcessingDialogFragment extends DialogFragment {
         DeepScanProcessor.processMethod1(bitmap, listener);
         latch.await();
 
-        // If we are in manual mode (not a video), re-enable controls.
         if (!isVideoFile(inputFilePath)) {
             uiHandler.post(new Runnable() {
                 @Override
