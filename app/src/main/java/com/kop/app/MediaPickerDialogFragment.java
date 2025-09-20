@@ -10,10 +10,13 @@ import android.text.TextWatcher;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.AdapterView;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.ProgressBar;
+import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -48,11 +51,16 @@ public class MediaPickerDialogFragment extends DialogFragment {
     private MediaPickerAdapter adapter;
     private Button phoneStorageButton, sdCardButton;
     private EditText searchEditText;
+    private Spinner filterSpinner;
 
     private File currentDirectory;
     private String mediaType;
     private OnMediaSelectedListener mediaSelectedListener;
+
     private List<MediaItem> allItemsInCurrentDir = new ArrayList<>();
+    private List<MediaItem> masterMediaList = new ArrayList<>(); // Holds all media files for filtering
+    private boolean isBrowsingFolders = false;
+
     private final Handler searchHandler = new Handler(Looper.getMainLooper());
     private Runnable searchRunnable;
 
@@ -95,16 +103,48 @@ public class MediaPickerDialogFragment extends DialogFragment {
         phoneStorageButton = view.findViewById(R.id.btn_phone_storage);
         sdCardButton = view.findViewById(R.id.btn_sd_card);
         searchEditText = view.findViewById(R.id.et_search);
+        filterSpinner = view.findViewById(R.id.spinner_filter);
         ImageButton closeButton = view.findViewById(R.id.btn_close_picker);
 
-        // FIX: Reference the constant directly from this class
         titleTextView.setText("Select " + (MEDIA_TYPE_VIDEO.equals(mediaType) ? "Video" : "Image"));
 
         setupRecyclerView();
+        setupControls();
 
+        // Start by loading all media files instead of a specific directory
+        loadAllMediaFiles();
+    }
+
+    public void setOnMediaSelectedListener(OnMediaSelectedListener listener) {
+        this.mediaSelectedListener = listener;
+    }
+
+    private void setupRecyclerView() {
+        adapter = new MediaPickerAdapter(getContext(), new ArrayList<MediaItem>(),
+            new MediaPickerAdapter.OnMediaSelectedListener() {
+                @Override
+                public void onMediaSelected(File file) {
+                    if (mediaSelectedListener != null) {
+                        mediaSelectedListener.onFileSelected(file.getAbsolutePath());
+                        dismiss(); // Close dialog on selection
+                    }
+                }
+            },
+            new MediaPickerAdapter.OnFolderClickedListener() {
+                @Override
+                public void onFolderClicked(File file) {
+                    navigateTo(file);
+                }
+            });
+        mediaGrid.setLayoutManager(new GridLayoutManager(getContext(), 3));
+        mediaGrid.setAdapter(adapter);
+    }
+
+    private void setupControls() {
         phoneStorageButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
+                isBrowsingFolders = true;
                 navigateTo(Environment.getExternalStorageDirectory());
             }
         });
@@ -114,6 +154,7 @@ public class MediaPickerDialogFragment extends DialogFragment {
             public void onClick(View v) {
                 File sdCard = getSdCardPath();
                 if (sdCard != null) {
+                    isBrowsingFolders = true;
                     navigateTo(sdCard);
                 } else {
                     Toast.makeText(getContext(), "SD Card not found.", Toast.LENGTH_SHORT).show();
@@ -121,6 +162,17 @@ public class MediaPickerDialogFragment extends DialogFragment {
             }
         });
 
+        titleTextView.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                // Allow clicking the title to go back to "All Media" view
+                if (isBrowsingFolders) {
+                    loadAllMediaFiles();
+                }
+            }
+        });
+
+        ImageButton closeButton = getView().findViewById(R.id.btn_close_picker);
         closeButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -141,48 +193,120 @@ public class MediaPickerDialogFragment extends DialogFragment {
                 searchRunnable = new Runnable() {
                     @Override
                     public void run() {
-                        filterMedia(s.toString());
+                        filterMediaByName(s.toString());
                     }
                 };
                 searchHandler.postDelayed(searchRunnable, 300);
             }
         });
 
-        navigateTo(Environment.getExternalStorageDirectory());
-    }
-
-    public void setOnMediaSelectedListener(OnMediaSelectedListener listener) {
-        this.mediaSelectedListener = listener;
-    }
-
-    private void setupRecyclerView() {
-        adapter = new MediaPickerAdapter(getContext(), new ArrayList<MediaItem>(),
-            new MediaPickerAdapter.OnMediaSelectedListener() {
-                @Override
-                public void onMediaSelected(File file) {
-                    if (mediaSelectedListener != null) {
-                        mediaSelectedListener.onFileSelected(file.getAbsolutePath());
-                    }
-                }
-            },
-            new MediaPickerAdapter.OnFolderClickedListener() {
-                @Override
-                public void onFolderClicked(File file) {
-                    navigateTo(file);
-                }
-            });
-        mediaGrid.setLayoutManager(new GridLayoutManager(getContext(), 3));
-        mediaGrid.setAdapter(adapter);
+        ArrayAdapter<CharSequence> filterAdapter = ArrayAdapter.createFromResource(getContext(),
+                R.array.media_filter_options, android.R.layout.simple_spinner_item);
+        filterAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        filterSpinner.setAdapter(filterAdapter);
+        filterSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                applyFilterAndSort();
+            }
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+            }
+        });
     }
 
     private void navigateTo(File directory) {
         if (directory == null) {
             return;
         }
-        this.currentDirectory = directory;
-        currentPathTextView.setText(directory.getAbsolutePath());
-        searchEditText.setText("");
+        updateUiForFolderBrowsing(directory);
         loadDirectoryContents(directory);
+    }
+
+    private void updateUiForAllMediaView() {
+        isBrowsingFolders = false;
+        filterSpinner.setVisibility(View.VISIBLE);
+        currentPathTextView.setVisibility(View.GONE);
+        String title = MEDIA_TYPE_IMAGE.equals(mediaType) ? "All Images" : "All Videos";
+        titleTextView.setText(title);
+    }
+
+    private void updateUiForFolderBrowsing(File directory) {
+        isBrowsingFolders = true;
+        filterSpinner.setVisibility(View.GONE);
+        currentPathTextView.setVisibility(View.VISIBLE);
+        currentPathTextView.setText(directory.getAbsolutePath());
+        String title = MEDIA_TYPE_IMAGE.equals(mediaType) ? "Select Image" : "Select Video";
+        titleTextView.setText(title);
+    }
+
+    private void loadAllMediaFiles() {
+        updateUiForAllMediaView();
+        loadingIndicator.setVisibility(View.VISIBLE);
+        mediaGrid.setVisibility(View.GONE);
+        emptyFolderTextView.setVisibility(View.GONE);
+        searchEditText.setText("");
+
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                masterMediaList.clear();
+                List<File> storageRoots = new ArrayList<>();
+                storageRoots.add(Environment.getExternalStorageDirectory());
+                File sdCard = getSdCardPath();
+                if (sdCard != null) {
+                    storageRoots.add(sdCard);
+                }
+
+                for (File root : storageRoots) {
+                    scanDirectoryForMedia(root, masterMediaList);
+                }
+
+                // Default sort: Newest first
+                Collections.sort(masterMediaList, new Comparator<MediaItem>() {
+                    @Override
+                    public int compare(MediaItem o1, MediaItem o2) {
+                        return Long.compare(o2.getFile().lastModified(), o1.getFile().lastModified());
+                    }
+                });
+
+                allItemsInCurrentDir.clear();
+                allItemsInCurrentDir.addAll(masterMediaList);
+
+                new Handler(Looper.getMainLooper()).post(new Runnable() {
+                    @Override
+                    public void run() {
+                        filterSpinner.setSelection(0, false); // Set to "Newest First" without triggering listener
+                        adapter.updateData(allItemsInCurrentDir);
+                        loadingIndicator.setVisibility(View.GONE);
+                        if (allItemsInCurrentDir.isEmpty()) {
+                            emptyFolderTextView.setVisibility(View.VISIBLE);
+                            mediaGrid.setVisibility(View.GONE);
+                        } else {
+                            emptyFolderTextView.setVisibility(View.GONE);
+                            mediaGrid.setVisibility(View.VISIBLE);
+                        }
+                    }
+                });
+            }
+        }).start();
+    }
+
+    private void scanDirectoryForMedia(File directory, List<MediaItem> mediaList) {
+        File[] files = directory.listFiles();
+        if (files != null) {
+            for (File file : files) {
+                if (file.isDirectory()) {
+                    if (!file.getName().startsWith(".")) { // Skip hidden directories
+                        scanDirectoryForMedia(file, mediaList);
+                    }
+                } else {
+                    if (isTargetMediaFile(file)) {
+                        mediaList.add(new MediaItem(file, MediaItem.ItemType.FILE));
+                    }
+                }
+            }
+        }
     }
 
     private void loadDirectoryContents(final File directory) {
@@ -201,7 +325,12 @@ public class MediaPickerDialogFragment extends DialogFragment {
                 }
 
                 if (files != null) {
-                    List<File> fileList = Arrays.asList(files);
+                    List<File> fileList = new ArrayList<>();
+                    for(File file : files) {
+                        if (!file.getName().startsWith(".")) { // Ignore hidden files
+                           fileList.add(file);
+                        }
+                    }
                     Collections.sort(fileList, new Comparator<File>() {
                         @Override
                         public int compare(File f1, File f2) {
@@ -234,7 +363,7 @@ public class MediaPickerDialogFragment extends DialogFragment {
                     public void run() {
                         adapter.updateData(items);
                         loadingIndicator.setVisibility(View.GONE);
-                        if (items.isEmpty()) {
+                        if (items.isEmpty() || (items.size() == 1 && items.get(0).getType() == MediaItem.ItemType.PARENT)) {
                             emptyFolderTextView.setVisibility(View.VISIBLE);
                             mediaGrid.setVisibility(View.GONE);
                         } else {
@@ -247,23 +376,94 @@ public class MediaPickerDialogFragment extends DialogFragment {
         }).start();
     }
 
-    private void filterMedia(String query) {
+    private void applyFilterAndSort() {
+        if (isBrowsingFolders || masterMediaList.isEmpty()) {
+            return;
+        }
+
+        int selectedPosition = filterSpinner.getSelectedItemPosition();
+        List<MediaItem> filteredList = new ArrayList<>(masterMediaList);
+
+        switch (selectedPosition) {
+            case 0: // Newest First
+                Collections.sort(filteredList, new Comparator<MediaItem>() {
+                    @Override
+                    public int compare(MediaItem o1, MediaItem o2) {
+                        return Long.compare(o2.getFile().lastModified(), o1.getFile().lastModified());
+                    }
+                });
+                break;
+            case 1: // Oldest First
+                Collections.sort(filteredList, new Comparator<MediaItem>() {
+                    @Override
+                    public int compare(MediaItem o1, MediaItem o2) {
+                        return Long.compare(o1.getFile().lastModified(), o2.getFile().lastModified());
+                    }
+                });
+                break;
+            case 2: // Largest First
+                Collections.sort(filteredList, new Comparator<MediaItem>() {
+                    @Override
+                    public int compare(MediaItem o1, MediaItem o2) {
+                        return Long.compare(o2.getFile().length(), o1.getFile().length());
+                    }
+                });
+                break;
+            case 3: // Phone Storage Only
+                String phonePath = Environment.getExternalStorageDirectory().getAbsolutePath();
+                List<MediaItem> phoneOnlyList = new ArrayList<>();
+                for (MediaItem item : filteredList) {
+                    if (item.getPath().startsWith(phonePath)) {
+                        phoneOnlyList.add(item);
+                    }
+                }
+                filteredList = phoneOnlyList;
+                break;
+            case 4: // SD Card Only
+                File sdCard = getSdCardPath();
+                if (sdCard != null) {
+                    String sdPath = sdCard.getAbsolutePath();
+                    List<MediaItem> sdOnlyList = new ArrayList<>();
+                    for (MediaItem item : filteredList) {
+                        if (item.getPath().startsWith(sdPath)) {
+                            sdOnlyList.add(item);
+                        }
+                    }
+                    filteredList = sdOnlyList;
+                } else {
+                    Toast.makeText(getContext(), "SD Card not found.", Toast.LENGTH_SHORT).show();
+                    filteredList.clear();
+                }
+                break;
+        }
+
+        allItemsInCurrentDir.clear();
+        allItemsInCurrentDir.addAll(filteredList);
+        filterMediaByName(searchEditText.getText().toString());
+    }
+
+    private void filterMediaByName(String query) {
         final String lowerCaseQuery = query.toLowerCase(Locale.US);
-        List<MediaItem> filteredList = new ArrayList<>();
+        List<MediaItem> finalList = new ArrayList<>();
 
         if (query.isEmpty()) {
-            filteredList.addAll(allItemsInCurrentDir);
+            finalList.addAll(allItemsInCurrentDir);
         } else {
             for (MediaItem item : allItemsInCurrentDir) {
+                // In folder view, don't filter out the parent ".." directory
+                if (item.getType() == MediaItem.ItemType.PARENT) {
+                    finalList.add(item);
+                    continue;
+                }
                 if (item.getName().toLowerCase(Locale.US).contains(lowerCaseQuery)) {
-                    filteredList.add(item);
+                    finalList.add(item);
                 }
             }
         }
 
-        adapter.updateData(filteredList);
+        adapter.updateData(finalList);
 
-        if (filteredList.isEmpty()) {
+        if (finalList.isEmpty()) {
             emptyFolderTextView.setVisibility(View.VISIBLE);
             mediaGrid.setVisibility(View.GONE);
         } else {
@@ -274,10 +474,8 @@ public class MediaPickerDialogFragment extends DialogFragment {
 
     private boolean isTargetMediaFile(File file) {
         String lowerCasePath = file.getName().toLowerCase(Locale.US);
-        // FIX: Reference the constant directly from this class
         if (MEDIA_TYPE_IMAGE.equals(mediaType)) {
             return lowerCasePath.endsWith(".jpg") || lowerCasePath.endsWith(".jpeg") || lowerCasePath.endsWith(".png") || lowerCasePath.endsWith(".webp");
-        // FIX: Reference the constant directly from this class
         } else if (MEDIA_TYPE_VIDEO.equals(mediaType)) {
             return lowerCasePath.endsWith(".mp4") || lowerCasePath.endsWith(".mov") || lowerCasePath.endsWith(".3gp") || lowerCasePath.endsWith(".mkv");
         }
@@ -289,6 +487,8 @@ public class MediaPickerDialogFragment extends DialogFragment {
         for (File dir : externalDirs) {
             if (dir != null && Environment.isExternalStorageRemovable(dir)) {
                 String path = dir.getAbsolutePath();
+                // Path is like /storage/XXXX-XXXX/Android/data/com.kop.app/files
+                // We want to get /storage/XXXX-XXXX
                 int androidDataIndex = path.indexOf("/Android/data");
                 if (androidDataIndex != -1) {
                     return new File(path.substring(0, androidDataIndex));
