@@ -1,13 +1,23 @@
 package com.kop.app;
 
-import com.bihe0832.android.lib.ffmpeg.FFmpeg;
+import android.graphics.Bitmap;
+import android.util.Log;
+
+import org.opencv.android.Utils;
+import org.opencv.core.Mat;
+import org.opencv.imgproc.Imgproc;
+import org.opencv.videoio.VideoCapture;
+import org.opencv.videoio.Videoio;
 
 import java.io.File;
+import java.io.FileOutputStream;
 
 public class FrameExtractor {
 
+    private static final String TAG = "FrameExtractorOpenCV";
+
     /**
-     * Extracts frames from a video file at a specified frames-per-second rate using the high-performance FFmpeg library.
+     * Extracts frames from a video file at a specified frames-per-second rate using the high-performance OpenCV library.
      * @param videoPath Absolute path to the video file.
      * @param outDir    The directory where the extracted frames will be saved.
      * @param fps       The desired number of frames to extract per second.
@@ -19,22 +29,75 @@ public class FrameExtractor {
             outputDir.mkdirs();
         }
 
-        // This is the high-speed FFmpeg command as a single string.
-        // -i [videoPath]       -> Sets the input video file.
-        // -y                   -> Overwrite output files without asking.
-        // -vf fps=[fps]        -> Sets a video filter (-vf) to force the output frame rate to the desired fps.
-        // [outDir]/frame...png -> Sets the output location and filename pattern.
-        //                        %05d creates a 5-digit number (00001, 00002, etc.).
-        String command = String.format("-i \"%s\" -y -vf fps=%d \"%s/frame_%%05d.png\"", videoPath, fps, outDir);
+        VideoCapture cap = new VideoCapture();
+        cap.open(videoPath);
 
-        // This is the real, correct, and simple way to execute a command with this library.
-        // The exec method is synchronous (it waits until it's done) and returns an integer.
-        int returnCode = FFmpeg.getInstance().exec(command);
+        if (!cap.isOpened()) {
+            throw new Exception("Error: Could not open video file with OpenCV: " + videoPath);
+        }
 
-        // Check if the command was successful. A return code of 0 means success.
-        if (returnCode != 0) {
-            // This library does not provide detailed logs on failure, so we include the return code.
-            throw new Exception("FFmpeg frame extraction failed with return code: " + returnCode);
+        Mat frame = new Mat();
+        double videoFps = cap.get(Videoio.CAP_PROP_FPS);
+        if (videoFps <= 0) {
+            // If FPS is not available, default to 30 to avoid division by zero.
+            videoFps = 30.0;
+            Log.w(TAG, "Could not get video FPS. Defaulting to 30.");
+        }
+
+        // Calculate how many frames to skip.
+        // For example, if video is 30 FPS and we want 10 FPS, we need to save every 3rd frame (30 / 10 = 3).
+        double frameInterval = videoFps / fps;
+        if (frameInterval < 1) {
+            frameInterval = 1; // Cannot skip less than one frame.
+        }
+
+        int frameCounter = 0;
+        int savedFrameIndex = 0;
+        double nextFrameToSave = 0.0;
+
+        // Loop through all frames in the video by reading them sequentially. This is very fast.
+        while (cap.read(frame)) {
+            if (frame.empty()) {
+                Log.w(TAG, "Encountered an empty frame.");
+                continue;
+            }
+
+            // Check if the current frame is one we need to save.
+            if (frameCounter >= nextFrameToSave) {
+                Bitmap bmp = null;
+                FileOutputStream out = null;
+                try {
+                    // Convert the frame (which OpenCV reads as BGR) to a standard RGBA Bitmap.
+                    Imgproc.cvtColor(frame, frame, Imgproc.COLOR_BGR2RGBA);
+                    bmp = Bitmap.createBitmap(frame.cols(), frame.rows(), Bitmap.Config.ARGB_8888);
+                    Utils.matToBitmap(frame, bmp);
+
+                    // Save the bitmap as a PNG file.
+                    String filename = String.format("%s/frame_%05d.png", outDir, savedFrameIndex++);
+                    out = new FileOutputStream(filename);
+                    bmp.compress(Bitmap.CompressFormat.PNG, 100, out);
+
+                    // Set the next frame number to save.
+                    nextFrameToSave += frameInterval;
+
+                } finally {
+                    if (bmp != null) {
+                        bmp.recycle();
+                    }
+                    if (out != null) {
+                        out.close();
+                    }
+                }
+            }
+            frameCounter++;
+        }
+
+        // Release all resources.
+        if (frame != null) {
+            frame.release();
+        }
+        if (cap != null) {
+            cap.release();
         }
     }
 }
