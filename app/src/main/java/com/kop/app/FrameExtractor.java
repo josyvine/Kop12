@@ -1,4 +1,4 @@
-package com.kop.app;
+package com.kop.app; 
 
 import com.bihe0832.android.lib.ffmpeg.FFmpeg;
 
