@@ -1,7 +1,8 @@
 package com.kop.app;
 
+import android.Manifest;
 import android.app.Dialog;
-import android.content.ContentValues;
+import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.ImageFormat;
@@ -9,18 +10,14 @@ import android.graphics.Matrix;
 import android.graphics.Rect;
 import android.graphics.YuvImage;
 import android.graphics.drawable.BitmapDrawable;
-import android.media.MediaRecorder;
-import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
-import android.provider.MediaStore;
 import android.util.Log;
 import android.util.Size;
 import android.view.LayoutInflater;
-import android.view.Surface;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.AdapterView;
@@ -62,6 +59,7 @@ import java.util.concurrent.Executors;
 public class CameraDialogFragment extends DialogFragment {
 
     public static final String TAG = "CameraDialogFragment";
+    private static final int AUDIO_PERMISSION_REQUEST_CODE = 102;
 
     // UI Views
     private PreviewView cameraPreview; // Invisible, for CameraX binding
@@ -87,9 +85,8 @@ public class CameraDialogFragment extends DialogFragment {
     private long recordingStartTime = 0;
 
     // Media Handling
-    private MediaRecorder mediaRecorder;
+    private VideoEncoder videoEncoder;
     private File videoOutputFile;
-
 
     public static CameraDialogFragment newInstance() {
         return new CameraDialogFragment();
@@ -197,7 +194,11 @@ public class CameraDialogFragment extends DialogFragment {
             @Override
             public boolean onLongClick(View v) {
                 if (!isRecording) {
-                    startRecording();
+                    if (checkAudioPermission()) {
+                        startRecording();
+                    } else {
+                        requestAudioPermission();
+                    }
                 }
                 return true;
             }
@@ -256,48 +257,44 @@ public class CameraDialogFragment extends DialogFragment {
             return;
         }
 
-        // Unbind all previous use cases
         cameraProvider.unbindAll();
 
-        // Preview use case (binds to the invisible 1dp view)
         Preview preview = new Preview.Builder().build();
         preview.setSurfaceProvider(cameraPreview.getSurfaceProvider());
 
-        // ImageAnalysis use case
         imageAnalysis = new ImageAnalysis.Builder()
                 .setTargetResolution(new Size(640, 480))
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .build();
-        
+
         imageAnalysis.setAnalyzer(cameraExecutor, new ImageAnalysis.Analyzer() {
             @Override
             public void analyze(@NonNull ImageProxy image) {
-                // This is the core of the real-time effect
                 try {
-                    Bitmap inputBitmap = imageProxyToBitmap(image);
+                    final Bitmap inputBitmap = imageProxyToBitmap(image);
                     if (inputBitmap == null) return;
-                    
-                    // --- Get current settings ---
+
                     final int currentMethod = selectedMethod;
                     final int currentKsize = ksize;
 
-                    // --- Process the bitmap ---
-                    // This is a blocking call, but it's on a background thread
                     processFrame(inputBitmap, currentMethod, currentKsize, new DeepScanProcessor.AiScanListener() {
                         @Override
                         public void onAiScanComplete(DeepScanProcessor.ProcessingResult finalResult) {
                             if (finalResult != null && finalResult.resultBitmap != null) {
                                 final Bitmap processedBitmap = finalResult.resultBitmap;
-                                // --- Display the result on the UI thread ---
-                                getActivity().runOnUiThread(new Runnable() {
-                                    @Override
-                                    public void run() {
-                                        processedDisplay.setImageBitmap(processedBitmap);
-                                        // If recording, the MediaRecorder is already using the Surface
-                                        // This is a simplified approach. A more robust solution would
-                                        // draw the bitmap onto the recorder's surface directly.
-                                    }
-                                });
+                                
+                                if (isRecording && videoEncoder != null) {
+                                    videoEncoder.encodeFrame(processedBitmap);
+                                }
+                                
+                                if (getActivity() != null) {
+                                    getActivity().runOnUiThread(new Runnable() {
+                                        @Override
+                                        public void run() {
+                                            processedDisplay.setImageBitmap(processedBitmap);
+                                        }
+                                    });
+                                }
                             }
                             inputBitmap.recycle();
                         }
@@ -315,7 +312,7 @@ public class CameraDialogFragment extends DialogFragment {
             Log.e(TAG, "Use case binding failed", e);
         }
     }
-    
+
     private void processFrame(Bitmap bitmap, int method, int ksizeVal, DeepScanProcessor.AiScanListener listener) {
         switch (method) {
             case 0: // Method 9 (Pencil Sketch)
@@ -336,7 +333,6 @@ public class CameraDialogFragment extends DialogFragment {
                 DeepScanProcessor.processMethod13(getContext(), bitmap, ksizeVal, listener);
                 break;
             default:
-                // Fallback to pencil sketch
                 DeepScanProcessor.processMethod11(bitmap, ksizeVal, new DeepScanProcessor.ScanListenerWithKsize() {
                      @Override
                     public void onScanProgress(int pass, int totalPasses, String status, Bitmap intermediateResult) {}
@@ -374,22 +370,26 @@ public class CameraDialogFragment extends DialogFragment {
 
                         ImageProcessor.saveBitmap(bitmapToSave, outFile.getAbsolutePath());
 
-                        getActivity().runOnUiThread(new Runnable() {
-                            @Override
-                            public void run() {
-                                Toast.makeText(getContext(), "Photo saved to " + outFile.getParent(), Toast.LENGTH_LONG).show();
-                                captureButton.setEnabled(true);
-                            }
-                        });
+                        if (getActivity() != null) {
+                            getActivity().runOnUiThread(new Runnable() {
+                                @Override
+                                public void run() {
+                                    Toast.makeText(getContext(), "Photo saved to " + outFile.getParent(), Toast.LENGTH_LONG).show();
+                                    captureButton.setEnabled(true);
+                                }
+                            });
+                        }
                     } catch (Exception e) {
                         Log.e(TAG, "Failed to save photo", e);
-                        getActivity().runOnUiThread(new Runnable() {
-                            @Override
-                            public void run() {
-                                Toast.makeText(getContext(), "Error saving photo.", Toast.LENGTH_SHORT).show();
-                                captureButton.setEnabled(true);
-                            }
-                        });
+                        if (getActivity() != null) {
+                            getActivity().runOnUiThread(new Runnable() {
+                                @Override
+                                public void run() {
+                                    Toast.makeText(getContext(), "Error saving photo.", Toast.LENGTH_SHORT).show();
+                                    captureButton.setEnabled(true);
+                                }
+                            });
+                        }
                     }
                 }
             }).start();
@@ -397,34 +397,49 @@ public class CameraDialogFragment extends DialogFragment {
     }
 
     private void startRecording() {
-        // NOTE: This is a simplified MediaRecorder implementation for demonstration.
-        // It records the raw camera feed, not the processed one, due to MediaRecorder's API limitations.
-        // A more advanced implementation would use MediaMuxer and encode the processed bitmaps manually.
-        Toast.makeText(getContext(), "Recording raw camera feed (for demo)", Toast.LENGTH_LONG).show();
-        
-        isRecording = true;
-        captureButton.setImageResource(R.drawable.ic_videocam);
-        settingsPanel.setVisibility(View.GONE);
-        settingsButton.setVisibility(View.GONE);
-        flipCameraButton.setVisibility(View.GONE);
+        try {
+            String timestamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date());
+            String fileName = "Kop_Live_Video_" + timestamp + ".mp4";
+            File projectDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "kop/Live_Captures");
+            if (!projectDir.exists()) projectDir.mkdirs();
+            videoOutputFile = new File(projectDir, fileName);
 
-        // Start timer
-        recordingStartTime = SystemClock.elapsedRealtime();
-        timerHandler.post(timerRunnable);
-        recordingTimer.setVisibility(View.VISIBLE);
+            // Using target resolution of the analyzer
+            videoEncoder = new VideoEncoder(640, 480, 2000000, videoOutputFile);
+            videoEncoder.start();
+            
+            isRecording = true;
+            captureButton.setImageResource(R.drawable.ic_videocam);
+            settingsPanel.setVisibility(View.GONE);
+            settingsButton.setVisibility(View.GONE);
+            flipCameraButton.setVisibility(View.GONE);
+
+            recordingStartTime = SystemClock.elapsedRealtime();
+            timerHandler.post(timerRunnable);
+            recordingTimer.setVisibility(View.VISIBLE);
+
+        } catch (IOException e) {
+            Log.e(TAG, "Failed to start recording", e);
+            Toast.makeText(getContext(), "Failed to start recording.", Toast.LENGTH_SHORT).show();
+            isRecording = false;
+        }
     }
 
     private void stopRecording() {
+        if (videoEncoder != null) {
+            videoEncoder.stop();
+            videoEncoder = null;
+        }
+
         isRecording = false;
         captureButton.setImageResource(R.drawable.ic_capture);
         settingsButton.setVisibility(View.VISIBLE);
         flipCameraButton.setVisibility(View.VISIBLE);
 
-        // Stop timer
         timerHandler.removeCallbacks(timerRunnable);
         recordingTimer.setVisibility(View.GONE);
         
-        Toast.makeText(getContext(), "Recording stopped.", Toast.LENGTH_SHORT).show();
+        Toast.makeText(getContext(), "Video saved to " + videoOutputFile.getParent(), Toast.LENGTH_LONG).show();
     }
     
     private Runnable timerRunnable = new Runnable() {
@@ -441,22 +456,30 @@ public class CameraDialogFragment extends DialogFragment {
 
 
     private Bitmap imageProxyToBitmap(ImageProxy image) {
-        ImageProxy.PlaneProxy planeProxy = image.getPlanes()[0];
-        ByteBuffer buffer = planeProxy.getBuffer();
-        byte[] bytes = new byte[buffer.remaining()];
-        buffer.get(bytes);
+        // This conversion path is faster than YUV->JPEG->Bitmap
+        ImageProxy.PlaneProxy[] planes = image.getPlanes();
+        ByteBuffer yBuffer = planes[0].getBuffer();
+        ByteBuffer uBuffer = planes[1].getBuffer();
+        ByteBuffer vBuffer = planes[2].getBuffer();
 
-        YuvImage yuvImage = new YuvImage(bytes, ImageFormat.NV21, image.getWidth(), image.getHeight(), null);
+        int ySize = yBuffer.remaining();
+        int uSize = uBuffer.remaining();
+        int vSize = vBuffer.remaining();
+
+        byte[] nv21 = new byte[ySize + uSize + vSize];
+        yBuffer.get(nv21, 0, ySize);
+        vBuffer.get(nv21, ySize, vSize);
+        uBuffer.get(nv21, ySize + vSize, uSize);
+        
+        YuvImage yuvImage = new YuvImage(nv21, ImageFormat.NV21, image.getWidth(), image.getHeight(), null);
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         yuvImage.compressToJpeg(new Rect(0, 0, image.getWidth(), image.getHeight()), 100, out);
         byte[] imageBytes = out.toByteArray();
         Bitmap bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.length);
 
-        // Apply rotation
         Matrix matrix = new Matrix();
         matrix.postRotate(image.getImageInfo().getRotationDegrees());
 
-        // Handle front camera mirroring
         if (cameraSelector == CameraSelector.DEFAULT_FRONT_CAMERA) {
              matrix.postScale(-1, 1, bitmap.getWidth() / 2f, bitmap.getHeight() / 2f);
         }
@@ -464,9 +487,32 @@ public class CameraDialogFragment extends DialogFragment {
         return Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, true);
     }
     
+    private boolean checkAudioPermission() {
+        return ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private void requestAudioPermission() {
+        requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, AUDIO_PERMISSION_REQUEST_CODE);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == AUDIO_PERMISSION_REQUEST_CODE) {
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                startRecording();
+            } else {
+                Toast.makeText(getContext(), "Audio permission is required to record video.", Toast.LENGTH_SHORT).show();
+            }
+        }
+    }
+    
     @Override
     public void onDestroy() {
         super.onDestroy();
+        if (isRecording) {
+            stopRecording();
+        }
         if (cameraExecutor != null) {
             cameraExecutor.shutdown();
         }
