@@ -2,19 +2,21 @@ package com.kop.app;
 
 import android.Manifest;
 import android.app.Dialog;
+import android.content.Context;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.graphics.ImageFormat;
-import android.graphics.Matrix;
-import android.graphics.Rect;
-import android.graphics.YuvImage;
 import android.graphics.drawable.BitmapDrawable;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
+import android.renderscript.Allocation;
+import android.renderscript.Element;
+import android.renderscript.RenderScript;
+import android.renderscript.ScriptIntrinsicYuvToRGB;
+import android.renderscript.Type;
 import android.util.Log;
 import android.util.Size;
 import android.view.LayoutInflater;
@@ -47,11 +49,8 @@ import com.google.common.util.concurrent.ListenableFuture;
 
 import org.opencv.android.Utils;
 import org.opencv.core.Core;
-import org.opencv.core.CvType;
 import org.opencv.core.Mat;
-import org.opencv.imgproc.Imgproc;
 
-import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -68,7 +67,7 @@ public class CameraDialogFragment extends DialogFragment {
     private static final int AUDIO_PERMISSION_REQUEST_CODE = 102;
 
     // UI Views
-    private PreviewView cameraPreview; // Invisible, for CameraX binding
+    private PreviewView cameraPreview;
     private ImageView processedDisplay;
     private ImageButton settingsButton, closeButton, flipCameraButton, captureButton, lockOrientationButton;
     private LinearLayout settingsPanel;
@@ -84,7 +83,7 @@ public class CameraDialogFragment extends DialogFragment {
     private ImageAnalysis imageAnalysis;
 
     // State management
-    private int selectedMethod = 0; // Corresponds to spinner index
+    private int selectedMethod = 0;
     private int ksize = 50;
     private boolean isRecording = false;
     private Handler timerHandler = new Handler(Looper.getMainLooper());
@@ -93,6 +92,12 @@ public class CameraDialogFragment extends DialogFragment {
     // Media Handling
     private VideoEncoder videoEncoder;
     private File videoOutputFile;
+    
+    // RenderScript components for correct YUV to RGB conversion
+    private RenderScript renderScript;
+    private ScriptIntrinsicYuvToRGB yuvToRgbScript;
+    private Allocation yuvAllocation, rgbAllocation;
+    private byte[] yuvByteArray;
 
     public static CameraDialogFragment newInstance() {
         return new CameraDialogFragment();
@@ -103,6 +108,9 @@ public class CameraDialogFragment extends DialogFragment {
         super.onCreate(savedInstanceState);
         setStyle(DialogFragment.STYLE_NORMAL, android.R.style.Theme_Black_NoTitleBar_Fullscreen);
         cameraExecutor = Executors.newSingleThreadExecutor();
+        // Initialize RenderScript
+        renderScript = RenderScript.create(requireContext());
+        yuvToRgbScript = ScriptIntrinsicYuvToRGB.create(renderScript, Element.U8_4(renderScript));
     }
 
     @Nullable
@@ -141,12 +149,6 @@ public class CameraDialogFragment extends DialogFragment {
         selectedMethod = 0;
         ksize = 50;
 
-        // The camera_method_options array is not provided in the original file, so this is correct.
-        // I have restored the commented-out block as it was in the file you provided.
-        // ArrayAdapter<CharSequence> adapter = ArrayAdapter.createFromResource(getContext(),
-        //         R.array.camera_method_options, android.R.layout.simple_spinner_item);
-        // adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-        // methodSpinner.setAdapter(adapter);
         ArrayAdapter<CharSequence> adapter = ArrayAdapter.createFromResource(getContext(),
                 R.array.camera_method_options, android.R.layout.simple_spinner_item);
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
@@ -273,11 +275,27 @@ public class CameraDialogFragment extends DialogFragment {
 
         Preview preview = new Preview.Builder().build();
         preview.setSurfaceProvider(cameraPreview.getSurfaceProvider());
+        
+        Size targetResolution = new Size(640, 480);
+        
+        // Prepare RenderScript allocations based on the target resolution
+        Type.Builder yuvTypeBuilder = new Type.Builder(renderScript, Element.U8(renderScript)).setYuvFormat(ImageFormat.YUV_420_888);
+        yuvTypeBuilder.setX(targetResolution.getWidth());
+        yuvTypeBuilder.setY(targetResolution.getHeight());
+        yuvAllocation = Allocation.createTyped(renderScript, yuvTypeBuilder.create(), Allocation.USAGE_SCRIPT);
+
+        Type.Builder rgbTypeBuilder = new Type.Builder(renderScript, Element.RGBA_8888(renderScript));
+        rgbTypeBuilder.setX(targetResolution.getWidth());
+        rgbTypeBuilder.setY(targetResolution.getHeight());
+        rgbAllocation = Allocation.createTyped(renderScript, rgbTypeBuilder.create(), Allocation.USAGE_SCRIPT);
+
+        int yuvByteCount = targetResolution.getWidth() * targetResolution.getHeight() * ImageFormat.getBitsPerPixel(ImageFormat.YUV_420_888) / 8;
+        yuvByteArray = new byte[yuvByteCount];
 
         imageAnalysis = new ImageAnalysis.Builder()
-                .setTargetResolution(new Size(640, 480))
+                .setTargetResolution(targetResolution)
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888) // Ensure we get YUV
+                .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
                 .build();
 
         imageAnalysis.setAnalyzer(cameraExecutor, new ImageAnalysis.Analyzer() {
@@ -286,8 +304,7 @@ public class CameraDialogFragment extends DialogFragment {
                 try {
                     final Bitmap inputBitmap = imageProxyToBitmap(image);
                     if (inputBitmap == null) {
-                        image.close(); // Make sure to close the image even if conversion fails
-                        return;
+                        return; // Conversion failed, skip frame
                     }
 
                     final int currentMethod = selectedMethod;
@@ -313,6 +330,7 @@ public class CameraDialogFragment extends DialogFragment {
                                     });
                                 }
                             }
+                            // The original bitmap from the camera is no longer needed after processing
                             inputBitmap.recycle();
                         }
                     });
@@ -381,7 +399,9 @@ public class CameraDialogFragment extends DialogFragment {
                         String timestamp = new SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.US).format(new Date());
                         String fileName = "Kop_Live_" + timestamp + ".png";
                         File projectDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "kop/Live_Captures");
-                        if (!projectDir.exists()) projectDir.mkdirs();
+                        if (!projectDir.exists()) {
+                            projectDir.mkdirs();
+                        }
                         
                         File outFile = new File(projectDir, fileName);
 
@@ -418,10 +438,11 @@ public class CameraDialogFragment extends DialogFragment {
             String timestamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date());
             String fileName = "Kop_Live_Video_" + timestamp + ".mp4";
             File projectDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "kop/Live_Captures");
-            if (!projectDir.exists()) projectDir.mkdirs();
+            if (!projectDir.exists()) {
+                projectDir.mkdirs();
+            }
             videoOutputFile = new File(projectDir, fileName);
 
-            // Using target resolution of the analyzer
             videoEncoder = new VideoEncoder(640, 480, 2000000, videoOutputFile);
             videoEncoder.start();
             
@@ -470,73 +491,77 @@ public class CameraDialogFragment extends DialogFragment {
             timerHandler.postDelayed(this, 500);
         }
     };
-
-    // --- START OF THE CORRECTED BLOCK (BASED ON YOUR ORIGINAL FILE) ---
+    
     private Bitmap imageProxyToBitmap(ImageProxy image) {
-        // This is the version from the file you sent, which will be corrected.
-        if (image.getFormat() != ImageFormat.YUV_420_888) {
-            Log.e(TAG, "Unsupported image format: " + image.getFormat());
-            return null;
+        if (yuvAllocation == null) {
+            return null; // RenderScript not ready
+        }
+    
+        // Copy YUV data from ImageProxy planes to a single byte array
+        ImageProxy.PlaneProxy yPlane = image.getPlanes()[0];
+        ImageProxy.PlaneProxy uPlane = image.getPlanes()[1];
+        ImageProxy.PlaneProxy vPlane = image.getPlanes()[2];
+
+        ByteBuffer yBuffer = yPlane.getBuffer();
+        ByteBuffer uBuffer = uPlane.getBuffer();
+        ByteBuffer vBuffer = vPlane.getBuffer();
+
+        yBuffer.get(yuvByteArray, 0, yBuffer.remaining());
+
+        int uOffset = image.getWidth() * image.getHeight();
+        int vOffset = uOffset + 1;
+        
+        int uPixelStride = uPlane.getPixelStride();
+        int vPixelStride = vPlane.getPixelStride();
+
+        // This handles both planar (I420) and semi-planar (NV21) formats
+        for (int i = 0; i < image.getHeight() / 2; ++i) {
+            for (int j = 0; j < image.getWidth() / 2; ++j) {
+                int uIndex = i * uPlane.getRowStride() + j * uPixelStride;
+                int vIndex = i * vPlane.getRowStride() + j * vPixelStride;
+                
+                yuvByteArray[uOffset] = uBuffer.get(uIndex);
+                yuvByteArray[vOffset] = vBuffer.get(vIndex);
+
+                uOffset += 2;
+                vOffset += 2;
+            }
         }
 
-        // --- THE FIX IS HERE. We correctly access the Y, U, and V planes ---
-        ImageProxy.PlaneProxy[] planes = image.getPlanes();
-        ByteBuffer yBuffer = planes[0].getBuffer();
-        ByteBuffer uBuffer = planes[1].getBuffer();
-        ByteBuffer vBuffer = planes[2].getBuffer();
+        yuvAllocation.copyFrom(yuvByteArray);
+        yuvToRgbScript.setInput(yuvAllocation);
+        yuvToRgbScript.forEach(rgbAllocation);
 
-        int ySize = yBuffer.remaining();
-        int uSize = uBuffer.remaining();
-        int vSize = vBuffer.remaining();
-
-        byte[] nv21 = new byte[ySize + uSize + vSize];
-        yBuffer.get(nv21, 0, ySize);
-        vBuffer.get(nv21, ySize, vSize);
-        uBuffer.get(nv21, ySize + vSize, uSize);
-
-        // Create the YUV Mat using the combined NV21 data
-        Mat yuvMat = new Mat(image.getHeight() + image.getHeight() / 2, image.getWidth(), CvType.CV_8UC1);
-        yuvMat.put(0, 0, nv21);
-
-        // Convert YUV (specifically NV21 format) to RGBA using OpenCV
+        Bitmap outputBitmap = Bitmap.createBitmap(image.getWidth(), image.getHeight(), Bitmap.Config.ARGB_8888);
+        rgbAllocation.copyTo(outputBitmap);
+        
+        // --- Apply rotation and flip using OpenCV on the correctly converted bitmap ---
         Mat rgbaMat = new Mat();
-        Imgproc.cvtColor(yuvMat, rgbaMat, Imgproc.COLOR_YUV2RGBA_NV21);
+        Utils.bitmapToMat(outputBitmap, rgbaMat);
+        outputBitmap.recycle(); // Done with the initial bitmap
 
-        // Rotate and flip the image correctly
-        int rotationDegrees = image.getImageInfo().getRotationDegrees();
-        if (rotationDegrees != 0) {
+        int rotation = image.getImageInfo().getRotationDegrees();
+        if (rotation != 0) {
             int openCVRotationCode = -1;
-            if (rotationDegrees == 90) openCVRotationCode = Core.ROTATE_90_CLOCKWISE;
-            if (rotationDegrees == 180) openCVRotationCode = Core.ROTATE_180;
-            if (rotationDegrees == 270) openCVRotationCode = Core.ROTATE_90_COUNTERCLOCKWISE;
-            
+            if (rotation == 90) openCVRotationCode = Core.ROTATE_90_CLOCKWISE;
+            if (rotation == 180) openCVRotationCode = Core.ROTATE_180;
+            if (rotation == 270) openCVRotationCode = Core.ROTATE_90_COUNTERCLOCKWISE;
             if (openCVRotationCode != -1) {
                 Core.rotate(rgbaMat, rgbaMat, openCVRotationCode);
             }
         }
         
         if (cameraSelector == CameraSelector.DEFAULT_FRONT_CAMERA) {
-            Core.flip(rgbaMat, rgbaMat, 1); // Flip horizontally for front camera
+            Core.flip(rgbaMat, rgbaMat, 1);
         }
-
-        Bitmap bitmap = Bitmap.createBitmap(rgbaMat.cols(), rgbaMat.rows(), Bitmap.Config.ARGB_8888);
-        Utils.matToBitmap(rgbaMat, bitmap);
-
-        // Release the OpenCV Mats to prevent memory leaks
-        yuvMat.release();
+        
+        Bitmap finalBitmap = Bitmap.createBitmap(rgbaMat.cols(), rgbaMat.rows(), Bitmap.Config.ARGB_8888);
+        Utils.matToBitmap(rgbaMat, finalBitmap);
         rgbaMat.release();
 
-        return bitmap;
+        return finalBitmap;
     }
-    
-    private byte[] getBytesFromBuffer(ByteBuffer buffer) {
-        // This is the version from the file you sent.
-        byte[] bytes = new byte[buffer.remaining()];
-        buffer.get(bytes);
-        return bytes;
-    }
-    // --- END OF THE CORRECTED BLOCK ---
-    
+
     private boolean checkAudioPermission() {
         return ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED;
     }
@@ -566,6 +591,12 @@ public class CameraDialogFragment extends DialogFragment {
         if (cameraExecutor != null) {
             cameraExecutor.shutdown();
         }
+        if (renderScript != null) {
+            renderScript.destroy();
+            yuvAllocation.destroy();
+            rgbAllocation.destroy();
+            yuvToRgbScript.destroy();
+        }
     }
 
     @Override
@@ -573,9 +604,7 @@ public class CameraDialogFragment extends DialogFragment {
         super.onStart();
         Dialog dialog = getDialog();
         if (dialog != null) {
-            int width = ViewGroup.LayoutParams.MATCH_PARENT;
-            int height = ViewGroup.LayoutParams.MATCH_PARENT;
-            dialog.getWindow().setLayout(width, height);
+            dialog.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
         }
     }
 }
