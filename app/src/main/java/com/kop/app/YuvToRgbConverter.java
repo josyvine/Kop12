@@ -26,7 +26,9 @@ public class YuvToRgbConverter {
         script = ScriptIntrinsicYuvToRGB.create(rs, Element.U8_4(rs));
     }
 
-    public synchronized void yuvToRgb(ImageProxy image, Bitmap output) {
+    // --- FIX START: The method now RETURNS a new Bitmap instead of modifying one you provide ---
+    public synchronized Bitmap yuvToRgb(ImageProxy image) {
+    // --- FIX END ---
         if (image.getFormat() != ImageFormat.YUV_420_888) {
             throw new IllegalArgumentException("Invalid image format");
         }
@@ -43,7 +45,6 @@ public class YuvToRgbConverter {
                 out.destroy();
             }
 
-            // The yuvBytes array needs to be sized for the unpadded image data.
             int yuvByteCount = width * height * ImageFormat.getBitsPerPixel(ImageFormat.YUV_420_888) / 8;
             yuvBytes = new byte[yuvByteCount];
             Type.Builder yuvType = new Type.Builder(rs, Element.U8(rs)).setX(yuvByteCount);
@@ -52,11 +53,6 @@ public class YuvToRgbConverter {
             Type.Builder rgbaType = new Type.Builder(rs, Element.RGBA_8888(rs)).setX(width).setY(height);
             out = Allocation.createTyped(rs, rgbaType.create(), Allocation.USAGE_SCRIPT);
         }
-
-        // *** START OF FINAL CRASH FIX ***
-        // This is a robust implementation to convert a YUV_420_888 ImageProxy to a flattened NV21 byte array.
-        // It handles memory padding (strides) by copying each plane's data row by row, which is
-        // necessary for compatibility across different Android devices.
 
         ImageProxy.PlaneProxy[] planes = image.getPlanes();
         ByteBuffer yBuffer = planes[0].getBuffer();
@@ -67,9 +63,6 @@ public class YuvToRgbConverter {
         int uvRowStride = planes[1].getRowStride();
         int uvPixelStride = planes[1].getPixelStride();
 
-        // 1. Copy the Y (Luminance) plane
-        // We need to copy `width` bytes from each row, but the buffer's `rowStride`
-        // might be larger than `width` due to padding.
         int yuvIndex = 0;
         for (int y = 0; y < height; y++) {
             yBuffer.position(y * yRowStride);
@@ -77,38 +70,34 @@ public class YuvToRgbConverter {
             yuvIndex += width;
         }
 
-        // 2. Copy the U (Chrominance) and V (Chrominance) planes
-        // YUV_420_888 has U/V planes subsampled by 2. We need to interleave them
-        // into the `yuvBytes` array in V, U order (NV21 format) for RenderScript.
         int chromaHeight = height / 2;
         int chromaWidth = width / 2;
-        int uvStartIndex = width * height; // Start of the UV data in the yuvBytes array
+        int uvStartIndex = width * height; 
 
         for (int y = 0; y < chromaHeight; y++) {
             for (int x = 0; x < chromaWidth; x++) {
-                int uPixelOffset = y * uvRowStride + x * uvPixelStride;
-                int vPixelOffset = y * uvRowStride + x * uvPixelStride;
+                int uPixelOffset = y * uvRowstride + x * uvPixelStride;
+                int vPixelOffset = y * uvRowstride + x * uvPixelStride;
 
-                // The destination index for this V,U pair in the flat array.
                 int destPixelIndex = uvStartIndex + y * width + x * 2;
                 
-                // Safety check to avoid writing out of bounds
                 if (destPixelIndex + 1 < yuvBytes.length) {
-                    // Place V value. Read from the V buffer at its calculated offset.
                     vBuffer.position(vPixelOffset);
                     yuvBytes[destPixelIndex] = vBuffer.get();
-                    
-                    // Place U value. Read from the U buffer at its calculated offset.
                     uBuffer.position(uPixelOffset);
                     yuvBytes[destPixelIndex + 1] = uBuffer.get();
                 }
             }
         }
-        // *** END OF FINAL CRASH FIX ***
         
         in.copyFrom(yuvBytes);
         script.setInput(in);
         script.forEach(out);
-        out.copyTo(output);
+        
+        // --- FIX START: Create a new bitmap with the correct size and return it ---
+        Bitmap outputBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        out.copyTo(outputBitmap);
+        return outputBitmap;
+        // --- FIX END ---
     }
 }
