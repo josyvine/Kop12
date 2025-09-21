@@ -1,4 +1,4 @@
-package com.kop.app; 
+package com.kop.app;
 
 import android.Manifest;
 import android.app.Dialog;
@@ -86,9 +86,9 @@ public class CameraDialogFragment extends DialogFragment {
     private VideoEncoder videoEncoder;
     private File videoOutputFile;
     
-    // --- THIS IS THE NEW, OFFICIAL CONVERTER ---
+    // The official, correct converter and a reusable bitmap
     private YuvToRgbConverter yuvToRgbConverter;
-    private Bitmap inputBitmap; // Reusable bitmap for conversion
+    private Bitmap inputBitmap; 
 
     public static CameraDialogFragment newInstance() {
         return new CameraDialogFragment();
@@ -267,50 +267,51 @@ public class CameraDialogFragment extends DialogFragment {
         imageAnalysis = new ImageAnalysis.Builder()
                 .setTargetResolution(targetResolution)
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
                 .build();
 
         imageAnalysis.setAnalyzer(cameraExecutor, new ImageAnalysis.Analyzer() {
             @Override
             public void analyze(@NonNull ImageProxy image) {
-                // Use the official converter. It will not crash.
-                yuvToRgbConverter.yuvToRgb(image, inputBitmap);
+                try {
+                    // Use the official converter. It will not crash.
+                    yuvToRgbConverter.yuvToRgb(image, inputBitmap);
 
-                // --- After this point, inputBitmap is a perfect, uncorrupted image ---
+                    // --- After this point, inputBitmap is a perfect, uncorrupted image ---
 
-                // Create a correctly rotated and flipped version for processing
-                Bitmap rotatedBitmap = rotateAndFlipBitmap(inputBitmap, image.getImageInfo().getRotationDegrees());
+                    // Create a correctly rotated and flipped version for processing
+                    Bitmap rotatedBitmap = rotateAndFlipBitmap(inputBitmap, image.getImageInfo().getRotationDegrees());
 
-                final int currentMethod = selectedMethod;
-                final int currentKsize = ksize;
+                    final int currentMethod = selectedMethod;
+                    final int currentKsize = ksize;
 
-                processFrame(rotatedBitmap, currentMethod, currentKsize, new DeepScanProcessor.AiScanListener() {
-                    @Override
-                    public void onAiScanComplete(DeepScanProcessor.ProcessingResult finalResult) {
-                        if (finalResult != null && finalResult.resultBitmap != null) {
-                            final Bitmap processedBitmap = finalResult.resultBitmap;
-                            
-                            if (isRecording && videoEncoder != null) {
-                                Bitmap bitmapForEncoder = processedBitmap.copy(processedBitmap.getConfig(), false);
-                                videoEncoder.encodeFrame(bitmapForEncoder);
+                    processFrame(rotatedBitmap, currentMethod, currentKsize, new DeepScanProcessor.AiScanListener() {
+                        @Override
+                        public void onAiScanComplete(DeepScanProcessor.ProcessingResult finalResult) {
+                            if (finalResult != null && finalResult.resultBitmap != null) {
+                                final Bitmap processedBitmap = finalResult.resultBitmap;
+                                
+                                if (isRecording && videoEncoder != null) {
+                                    Bitmap bitmapForEncoder = processedBitmap.copy(processedBitmap.getConfig(), false);
+                                    videoEncoder.encodeFrame(bitmapForEncoder);
+                                }
+                                
+                                if (getActivity() != null) {
+                                    getActivity().runOnUiThread(new Runnable() {
+                                        @Override
+                                        public void run() {
+                                            processedDisplay.setImageBitmap(processedBitmap);
+                                        }
+                                    });
+                                }
                             }
-                            
-                            if (getActivity() != null) {
-                                getActivity().runOnUiThread(new Runnable() {
-                                    @Override
-                                    public void run() {
-                                        processedDisplay.setImageBitmap(processedBitmap);
-                                    }
-                                });
-                            }
+                            // Rotated bitmap was a temporary copy, so it must be recycled.
+                            rotatedBitmap.recycle();
                         }
-                        // Rotated bitmap was a temporary copy, so it must be recycled.
-                        rotatedBitmap.recycle();
-                    }
-                });
-                
-                // We are done with this frame.
-                image.close();
+                    });
+                } finally {
+                    // We are done with this frame.
+                    image.close();
+                }
             }
         });
 
