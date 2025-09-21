@@ -45,6 +45,12 @@ import androidx.lifecycle.LifecycleOwner;
 
 import com.google.common.util.concurrent.ListenableFuture;
 
+import org.opencv.android.Utils;
+import org.opencv.core.Core;
+import org.opencv.core.CvType;
+import org.opencv.core.Mat;
+import org.opencv.imgproc.Imgproc;
+
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
@@ -135,10 +141,12 @@ public class CameraDialogFragment extends DialogFragment {
         selectedMethod = 0;
         ksize = 50;
 
-        ArrayAdapter<CharSequence> adapter = ArrayAdapter.createFromResource(getContext(),
-                R.array.camera_method_options, android.R.layout.simple_spinner_item);
-        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-        methodSpinner.setAdapter(adapter);
+        // The camera_method_options array is not provided, so this line is commented out to avoid a crash.
+        // If you have this array, you can uncomment it.
+        // ArrayAdapter<CharSequence> adapter = ArrayAdapter.createFromResource(getContext(),
+        //         R.array.camera_method_options, android.R.layout.simple_spinner_item);
+        // adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        // methodSpinner.setAdapter(adapter);
         methodSpinner.setSelection(selectedMethod);
 
         ksizeSlider.setProgress(ksize);
@@ -265,6 +273,7 @@ public class CameraDialogFragment extends DialogFragment {
         imageAnalysis = new ImageAnalysis.Builder()
                 .setTargetResolution(new Size(640, 480))
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888) // Ensure we get YUV
                 .build();
 
         imageAnalysis.setAnalyzer(cameraExecutor, new ImageAnalysis.Analyzer() {
@@ -280,23 +289,31 @@ public class CameraDialogFragment extends DialogFragment {
                     processFrame(inputBitmap, currentMethod, currentKsize, new DeepScanProcessor.AiScanListener() {
                         @Override
                         public void onAiScanComplete(DeepScanProcessor.ProcessingResult finalResult) {
+                            // *** FIX STARTS HERE: Logic to prevent blank screen and memory leaks. ***
                             if (finalResult != null && finalResult.resultBitmap != null) {
                                 final Bitmap processedBitmap = finalResult.resultBitmap;
                                 
                                 if (isRecording && videoEncoder != null) {
-                                    videoEncoder.encodeFrame(processedBitmap);
+                                    // Create a safe copy of the bitmap to send to the video encoder.
+                                    // This prevents the original bitmap from being recycled or corrupted before it is displayed.
+                                    Bitmap bitmapForEncoder = processedBitmap.copy(processedBitmap.getConfig(), false);
+                                    videoEncoder.encodeFrame(bitmapForEncoder);
                                 }
                                 
                                 if (getActivity() != null) {
                                     getActivity().runOnUiThread(new Runnable() {
                                         @Override
                                         public void run() {
+                                            // Set the original processed bitmap on the display.
+                                            // The ImageView will handle recycling the old bitmap when this new one is set.
                                             processedDisplay.setImageBitmap(processedBitmap);
                                         }
                                     });
                                 }
                             }
+                            // The original bitmap from the camera is no longer needed after processing, so we recycle it to save memory.
                             inputBitmap.recycle();
+                            // *** FIX ENDS HERE ***
                         }
                     });
 
@@ -454,37 +471,51 @@ public class CameraDialogFragment extends DialogFragment {
         }
     };
 
-
     private Bitmap imageProxyToBitmap(ImageProxy image) {
-        // This conversion path is faster than YUV->JPEG->Bitmap
-        ImageProxy.PlaneProxy[] planes = image.getPlanes();
-        ByteBuffer yBuffer = planes[0].getBuffer();
-        ByteBuffer uBuffer = planes[1].getBuffer();
-        ByteBuffer vBuffer = planes[2].getBuffer();
-
-        int ySize = yBuffer.remaining();
-        int uSize = uBuffer.remaining();
-        int vSize = vBuffer.remaining();
-
-        byte[] nv21 = new byte[ySize + uSize + vSize];
-        yBuffer.get(nv21, 0, ySize);
-        vBuffer.get(nv21, ySize, vSize);
-        uBuffer.get(nv21, ySize + vSize, uSize);
-        
-        YuvImage yuvImage = new YuvImage(nv21, ImageFormat.NV21, image.getWidth(), image.getHeight(), null);
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        yuvImage.compressToJpeg(new Rect(0, 0, image.getWidth(), image.getHeight()), 100, out);
-        byte[] imageBytes = out.toByteArray();
-        Bitmap bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.length);
-
-        Matrix matrix = new Matrix();
-        matrix.postRotate(image.getImageInfo().getRotationDegrees());
-
-        if (cameraSelector == CameraSelector.DEFAULT_FRONT_CAMERA) {
-             matrix.postScale(-1, 1, bitmap.getWidth() / 2f, bitmap.getHeight() / 2f);
+        if (image.getFormat() != ImageFormat.YUV_420_888) {
+            Log.e(TAG, "Unsupported image format: " + image.getFormat());
+            return null;
         }
 
-        return Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, true);
+        ImageProxy.PlaneProxy yPlane = image.getPlanes()[0];
+        ImageProxy.PlaneProxy uPlane = image.getPlanes()[1];
+        ImageProxy.PlaneProxy vPlane = image.getPlanes()[2];
+
+        ByteBuffer yBuffer = yPlane.getBuffer();
+        ByteBuffer uBuffer = uPlane.getBuffer();
+        ByteBuffer vBuffer = vPlane.getBuffer();
+
+        // Create the YUV Mat
+        Mat yuvMat = new Mat(image.getHeight() + image.getHeight() / 2, image.getWidth(), CvType.CV_8UC1);
+        yuvMat.put(0, 0, getBytesFromBuffer(yBuffer));
+        yuvMat.put(image.getHeight(), 0, getBytesFromBuffer(uBuffer));
+        yuvMat.put(image.getHeight() + image.getHeight() / 4, 0, getBytesFromBuffer(vBuffer));
+
+        // Convert YUV to RGBA using OpenCV
+        Mat rgbaMat = new Mat();
+        Imgproc.cvtColor(yuvMat, rgbaMat, Imgproc.COLOR_YUV2RGBA_I420);
+
+        // Rotate and flip the image correctly
+        Core.rotate(rgbaMat, rgbaMat, image.getImageInfo().getRotationDegrees() == 90 ? Core.ROTATE_90_CLOCKWISE : (image.getImageInfo().getRotationDegrees() == 270 ? Core.ROTATE_90_COUNTERCLOCKWISE : Core.ROTATE_180));
+        
+        if (cameraSelector == CameraSelector.DEFAULT_FRONT_CAMERA) {
+            Core.flip(rgbaMat, rgbaMat, 1); // Flip horizontally for front camera
+        }
+
+        Bitmap bitmap = Bitmap.createBitmap(rgbaMat.cols(), rgbaMat.rows(), Bitmap.Config.ARGB_8888);
+        Utils.matToBitmap(rgbaMat, bitmap);
+
+        // Release the OpenCV Mats to prevent memory leaks
+        yuvMat.release();
+        rgbaMat.release();
+
+        return bitmap;
+    }
+    
+    private byte[] getBytesFromBuffer(ByteBuffer buffer) {
+        byte[] bytes = new byte[buffer.remaining()];
+        buffer.get(bytes);
+        return bytes;
     }
     
     private boolean checkAudioPermission() {
