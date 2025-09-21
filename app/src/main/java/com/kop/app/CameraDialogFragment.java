@@ -86,9 +86,10 @@ public class CameraDialogFragment extends DialogFragment {
     private VideoEncoder videoEncoder;
     private File videoOutputFile;
     
-    // The official, correct converter and a reusable bitmap
+    // The official, correct converter
     private YuvToRgbConverter yuvToRgbConverter;
-    private Bitmap inputBitmap; 
+    // --- FIX: The reusable bitmap is no longer needed here, as the converter now creates it. ---
+    // private Bitmap inputBitmap; 
 
     public static CameraDialogFragment newInstance() {
         return new CameraDialogFragment();
@@ -99,7 +100,6 @@ public class CameraDialogFragment extends DialogFragment {
         super.onCreate(savedInstanceState);
         setStyle(DialogFragment.STYLE_NORMAL, android.R.style.Theme_Black_NoTitleBar_Fullscreen);
         cameraExecutor = Executors.newSingleThreadExecutor();
-        // Initialize the official converter
         yuvToRgbConverter = new YuvToRgbConverter(requireContext());
     }
 
@@ -261,8 +261,8 @@ public class CameraDialogFragment extends DialogFragment {
         
         Size targetResolution = new Size(640, 480);
 
-        // Prepare the reusable bitmap for the converter
-        inputBitmap = Bitmap.createBitmap(targetResolution.getWidth(), targetResolution.getHeight(), Bitmap.Config.ARGB_8888);
+        // --- FIX: Remove the creation of the fixed-size bitmap ---
+        // inputBitmap = Bitmap.createBitmap(targetResolution.getWidth(), targetResolution.getHeight(), Bitmap.Config.ARGB_8888);
 
         imageAnalysis = new ImageAnalysis.Builder()
                 .setTargetResolution(targetResolution)
@@ -272,19 +272,28 @@ public class CameraDialogFragment extends DialogFragment {
         imageAnalysis.setAnalyzer(cameraExecutor, new ImageAnalysis.Analyzer() {
             @Override
             public void analyze(@NonNull ImageProxy image) {
+                Bitmap inputBitmap = null;
+                Bitmap rotatedBitmap = null;
+
                 try {
-                    // Use the official converter. It will not crash.
-                    yuvToRgbConverter.yuvToRgb(image, inputBitmap);
+                    // --- FIX START: Get a new, correctly-sized bitmap from the converter ---
+                    inputBitmap = yuvToRgbConverter.yuvToRgb(image);
+                    if (inputBitmap == null) {
+                        return; // If conversion fails, stop processing this frame.
+                    }
+                    // --- FIX END ---
 
                     // --- After this point, inputBitmap is a perfect, uncorrupted image ---
 
                     // Create a correctly rotated and flipped version for processing
-                    Bitmap rotatedBitmap = rotateAndFlipBitmap(inputBitmap, image.getImageInfo().getRotationDegrees());
+                    rotatedBitmap = rotateAndFlipBitmap(inputBitmap, image.getImageInfo().getRotationDegrees());
 
                     final int currentMethod = selectedMethod;
                     final int currentKsize = ksize;
+                    
+                    final Bitmap finalRotatedBitmap = rotatedBitmap; // Make it final for the inner class
 
-                    processFrame(rotatedBitmap, currentMethod, currentKsize, new DeepScanProcessor.AiScanListener() {
+                    processFrame(finalRotatedBitmap, currentMethod, currentKsize, new DeepScanProcessor.AiScanListener() {
                         @Override
                         public void onAiScanComplete(DeepScanProcessor.ProcessingResult finalResult) {
                             if (finalResult != null && finalResult.resultBitmap != null) {
@@ -305,10 +314,17 @@ public class CameraDialogFragment extends DialogFragment {
                                 }
                             }
                             // Rotated bitmap was a temporary copy, so it must be recycled.
-                            rotatedBitmap.recycle();
+                            if (finalRotatedBitmap != null) {
+                                finalRotatedBitmap.recycle();
+                            }
                         }
                     });
                 } finally {
+                    // --- FIX START: We must now recycle the bitmap we received from the converter ---
+                    if (inputBitmap != null) {
+                        inputBitmap.recycle();
+                    }
+                    // --- FIX END ---
                     // We are done with this frame.
                     image.close();
                 }
