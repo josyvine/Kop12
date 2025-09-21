@@ -25,6 +25,7 @@ public class MainActivity extends AppCompatActivity {
 
     private static final String TAG = "MainActivity";
     private static final int PERMISSION_REQUEST_CODE = 100;
+    private static final int CAMERA_PERMISSION_REQUEST_CODE = 101; // New code for camera
     private WebView webView;
 
     private MediaPickerDialogFragment mediaPickerDialog;
@@ -69,6 +70,20 @@ public class MainActivity extends AppCompatActivity {
                         showMediaTypeChooserDialog();
                     } else {
                         requestPermissions();
+                    }
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void startCamera() {
+            new Handler(Looper.getMainLooper()).post(new Runnable() {
+                @Override
+                public void run() {
+                    if (checkCameraPermission()) {
+                        launchCameraDialog();
+                    } else {
+                        requestCameraPermission();
                     }
                 }
             });
@@ -150,6 +165,11 @@ public class MainActivity extends AppCompatActivity {
         processingDialog.show(getSupportFragmentManager(), ProcessingDialogFragment.TAG);
     }
 
+    private void launchCameraDialog() {
+        CameraDialogFragment cameraDialog = CameraDialogFragment.newInstance();
+        cameraDialog.show(getSupportFragmentManager(), "CameraDialogFragment");
+    }
+
 
     private void showToast(final String message) {
         runOnUiThread(new Runnable() {
@@ -175,6 +195,20 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    private boolean checkCameraPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            return checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED;
+        }
+        return true;
+    }
+
+    private void requestCameraPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            requestPermissions(new String[]{Manifest.permission.CAMERA}, CAMERA_PERMISSION_REQUEST_CODE);
+        }
+    }
+
+
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
@@ -183,6 +217,12 @@ public class MainActivity extends AppCompatActivity {
                 showMediaTypeChooserDialog();
             } else {
                 Toast.makeText(this, "Storage permission is required to select files.", Toast.LENGTH_SHORT).show();
+            }
+        } else if (requestCode == CAMERA_PERMISSION_REQUEST_CODE) {
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                launchCameraDialog();
+            } else {
+                Toast.makeText(this, "Camera permission is required to use this feature.", Toast.LENGTH_SHORT).show();
             }
         }
     }
