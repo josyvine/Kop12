@@ -1,4 +1,4 @@
-package com.kop.app; 
+package com.kop.app;
 
 import android.content.Context;
 import android.graphics.Bitmap;
@@ -26,14 +26,11 @@ public class YuvToRgbConverter {
         script = ScriptIntrinsicYuvToRGB.create(rs, Element.U8_4(rs));
     }
 
-    // --- FIX START: The method now RETURNS a new Bitmap instead of modifying one you provide ---
     public synchronized Bitmap yuvToRgb(ImageProxy image) {
-    // --- FIX END ---
         if (image.getFormat() != ImageFormat.YUV_420_888) {
             throw new IllegalArgumentException("Invalid image format");
         }
 
-        // Re-create allocations if the image size changes
         if (in == null || image.getWidth() != width || image.getHeight() != height) {
             width = image.getWidth();
             height = image.getHeight();
@@ -76,8 +73,9 @@ public class YuvToRgbConverter {
 
         for (int y = 0; y < chromaHeight; y++) {
             for (int x = 0; x < chromaWidth; x++) {
-                int uPixelOffset = y * uvRowstride + x * uvPixelStride;
-                int vPixelOffset = y * uvRowstride + x * uvPixelStride;
+                // *** THIS IS THE FIX. THE VARIABLE IS NOW CORRECTLY SPELLED 'uvRowStride' ***
+                int uPixelOffset = y * uvRowStride + x * uvPixelStride;
+                int vPixelOffset = y * uvRowStride + x * uvPixelStride;
 
                 int destPixelIndex = uvStartIndex + y * width + x * 2;
                 
@@ -94,10 +92,8 @@ public class YuvToRgbConverter {
         script.setInput(in);
         script.forEach(out);
         
-        // --- FIX START: Create a new bitmap with the correct size and return it ---
         Bitmap outputBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
         out.copyTo(outputBitmap);
         return outputBitmap;
-        // --- FIX END ---
     }
 }
