@@ -46,10 +46,11 @@ dependencies {
 
     implementation 'com.google.mediapipe:tasks-vision:0.10.14'
 
-    // NEW DEPENDENCIES FOR CAMERAX
     implementation "androidx.camera:camera-core:1.2.3"
     implementation "androidx.camera:camera-camera2:1.2.3"
     implementation "androidx.camera:camera-lifecycle:1.2.3"
     implementation "androidx.camera:camera-view:1.2.3"
-}
 
+    // *** THIS IS THE NEW, REQUIRED LIBRARY FOR THE FIX ***
+    implementation "androidx.camera:camera-extensions:1.2.3"
+}
