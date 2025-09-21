@@ -39,4 +39,11 @@
         <item>Phone Storage Only</item>
         <item>SD Card Only</item>
     </string-array>
+
+    <!-- NEW: This array contains the method options for the real-time camera. -->
+    <string-array name="camera_method_options">
+        <item>Method 9 (Pencil Sketch)</item>
+        <item>AI Method 11 (Person Sketch)</item>
+        <item>AI Method 12 (Line Art BG)</item>
+    </string-array>
 </resources>
