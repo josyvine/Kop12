@@ -1,6 +1,6 @@
 package com.kop.app;
 
-import android.graphics.Bitmap; 
+import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Matrix;
 import android.media.AudioFormat;
@@ -237,7 +237,8 @@ public class VideoEncoder {
                     outputBufferIndex = videoEncoder.dequeueOutputBuffer(videoBufferInfo, 0);
                 }
 
-                if (outputBufferIndex == MediaFormat.INFO_OUTPUT_FORMAT_CHANGED) {
+                // *** THIS IS THE FIX ***
+                if (outputBufferIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
                     if (videoTrackIndex < 0) {
                          videoTrackIndex = muxer.addTrack(videoEncoder.getOutputFormat());
                          tryStartMuxer();
@@ -259,7 +260,8 @@ public class VideoEncoder {
                     outputBufferIndex = audioEncoder.dequeueOutputBuffer(audioBufferInfo, 0);
                 }
 
-                if (outputBufferIndex == MediaFormat.INFO_OUTPUT_FORMAT_CHANGED) {
+                // *** THIS IS THE FIX ***
+                if (outputBufferIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
                      if (audioTrackIndex < 0) {
                         audioTrackIndex = muxer.addTrack(audioEncoder.getOutputFormat());
                         tryStartMuxer();
