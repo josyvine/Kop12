@@ -43,6 +43,7 @@ public class YuvToRgbConverter {
                 out.destroy();
             }
 
+            // The yuvBytes array needs to be sized for the unpadded image data.
             int yuvByteCount = width * height * ImageFormat.getBitsPerPixel(ImageFormat.YUV_420_888) / 8;
             yuvBytes = new byte[yuvByteCount];
             Type.Builder yuvType = new Type.Builder(rs, Element.U8(rs)).setX(yuvByteCount);
@@ -52,32 +53,58 @@ public class YuvToRgbConverter {
             out = Allocation.createTyped(rs, rgbaType.create(), Allocation.USAGE_SCRIPT);
         }
 
-        // *** START OF CRASH FIX ***
-        // The original logic for copying YUV data from the camera was incorrect. It did not
-        // account for memory padding (strides), which caused an ArrayIndexOutOfBoundsException
-        // on many devices. The logic below is a robust replacement that correctly copies the
-        // Y, U, and V image planes into a single byte array for RenderScript processing.
+        // *** START OF FINAL CRASH FIX ***
+        // This is a robust implementation to convert a YUV_420_888 ImageProxy to a flattened NV21 byte array.
+        // It handles memory padding (strides) by copying each plane's data row by row, which is
+        // necessary for compatibility across different Android devices.
 
         ImageProxy.PlaneProxy[] planes = image.getPlanes();
-        ByteBuffer yPlane = planes[0].getBuffer();
-        ByteBuffer uPlane = planes[1].getBuffer();
-        ByteBuffer vPlane = planes[2].getBuffer();
+        ByteBuffer yBuffer = planes[0].getBuffer();
+        ByteBuffer uBuffer = planes[1].getBuffer();
+        ByteBuffer vBuffer = planes[2].getBuffer();
 
-        // Rewind the buffers to their start
-        yPlane.rewind();
-        uPlane.rewind();
-        vPlane.rewind();
+        int yRowStride = planes[0].getRowStride();
+        int uvRowStride = planes[1].getRowStride();
+        int uvPixelStride = planes[1].getPixelStride();
 
-        // Copy Y plane data
-        int yPlaneSize = yPlane.remaining();
-        yPlane.get(yuvBytes, 0, yPlaneSize);
+        // 1. Copy the Y (Luminance) plane
+        // We need to copy `width` bytes from each row, but the buffer's `rowStride`
+        // might be larger than `width` due to padding.
+        int yuvIndex = 0;
+        for (int y = 0; y < height; y++) {
+            yBuffer.position(y * yRowStride);
+            yBuffer.get(yuvBytes, yuvIndex, width);
+            yuvIndex += width;
+        }
 
-        // Copy U and V plane data. For YUV_420_888, the U and V planes are interleaved.
-        // The V plane's buffer is guaranteed to have the complete VU interleaved data.
-        int vPlaneSize = vPlane.remaining();
-        vPlane.get(yuvBytes, yPlaneSize, vPlaneSize);
-        
-        // *** END OF CRASH FIX ***
+        // 2. Copy the U (Chrominance) and V (Chrominance) planes
+        // YUV_420_888 has U/V planes subsampled by 2. We need to interleave them
+        // into the `yuvBytes` array in V, U order (NV21 format) for RenderScript.
+        int chromaHeight = height / 2;
+        int chromaWidth = width / 2;
+        int uvStartIndex = width * height; // Start of the UV data in the yuvBytes array
+
+        for (int y = 0; y < chromaHeight; y++) {
+            for (int x = 0; x < chromaWidth; x++) {
+                int uPixelOffset = y * uvRowStride + x * uvPixelStride;
+                int vPixelOffset = y * uvRowStride + x * uvPixelStride;
+
+                // The destination index for this V,U pair in the flat array.
+                int destPixelIndex = uvStartIndex + y * width + x * 2;
+                
+                // Safety check to avoid writing out of bounds
+                if (destPixelIndex + 1 < yuvBytes.length) {
+                    // Place V value. Read from the V buffer at its calculated offset.
+                    vBuffer.position(vPixelOffset);
+                    yuvBytes[destPixelIndex] = vBuffer.get();
+                    
+                    // Place U value. Read from the U buffer at its calculated offset.
+                    uBuffer.position(uPixelOffset);
+                    yuvBytes[destPixelIndex + 1] = uBuffer.get();
+                }
+            }
+        }
+        // *** END OF FINAL CRASH FIX ***
         
         in.copyFrom(yuvBytes);
         script.setInput(in);
