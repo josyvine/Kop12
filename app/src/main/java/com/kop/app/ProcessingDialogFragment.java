@@ -74,7 +74,6 @@ public class ProcessingDialogFragment extends DialogFragment {
     private LinearLayout fineTuningControls;
     private SeekBar sliderDepth, sliderSharpness;
     private Button btnSave;
-    private Switch switchAutomaticScan;
     private Bitmap sourceBitmapForTuning;
     private boolean isFirstFineTuneAnalysis = true;
 
@@ -86,6 +85,10 @@ public class ProcessingDialogFragment extends DialogFragment {
     private ProgressBar scanProgressBar;
 
     private OnDialogClosedListener closeListener;
+
+    private SeekBar sliderAnalysisMode;
+    private final Handler livePreviewHandler = new Handler(Looper.getMainLooper());
+    private Runnable livePreviewRunnable;
 
     public interface OnDialogClosedListener {
         void onDialogClosed();
@@ -160,10 +163,11 @@ public class ProcessingDialogFragment extends DialogFragment {
         sliderDepth = view.findViewById(R.id.slider_depth);
         sliderSharpness = view.findViewById(R.id.slider_sharpness);
         btnSave = view.findViewById(R.id.btn_save);
-        switchAutomaticScan = view.findViewById(R.id.switch_automatic_scan);
 
         ksizeControlsContainer = view.findViewById(R.id.ksize_controls_container);
         sliderKsize = view.findViewById(R.id.slider_ksize);
+        
+        sliderAnalysisMode = view.findViewById(R.id.slider_analysis_mode);
 
         closeButton.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -196,6 +200,10 @@ public class ProcessingDialogFragment extends DialogFragment {
                         extractFramesForVideo(12);
                     } else {
                         rawFrames = extractOrCopyFrames(inputFilePath);
+                        // Hide mode slider for single images
+                        if (getView() != null) {
+                            getView().findViewById(R.id.analysis_mode_container).setVisibility(View.GONE);
+                        }
                     }
 
                     if (rawFrames != null && rawFrames.length > 0) {
@@ -240,12 +248,12 @@ public class ProcessingDialogFragment extends DialogFragment {
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
                 selectedMethod = position;
-                updateControlsVisibility();
+                updateUiForMode(sliderAnalysisMode.getProgress());
             }
             @Override
             public void onNothingSelected(AdapterView<?> parent) {
                 selectedMethod = 0;
-                updateControlsVisibility();
+                updateUiForMode(sliderAnalysisMode.getProgress());
             }
         });
 
@@ -274,12 +282,42 @@ public class ProcessingDialogFragment extends DialogFragment {
             });
         }
 
-        switchAutomaticScan.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+        sliderAnalysisMode.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
-            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
-                updateControlsVisibility();
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                if(fromUser) {
+                    updateUiForMode(progress);
+                }
             }
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) {}
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) {}
         });
+
+        SeekBar.OnSeekBarChangeListener livePreviewListener = new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                if (fromUser && sliderAnalysisMode.getProgress() == 1) { // Mode is Live Preview
+                    livePreviewHandler.removeCallbacks(livePreviewRunnable);
+                    livePreviewRunnable = new Runnable() {
+                        @Override
+                        public void run() {
+                            performLivePreviewAnalysis();
+                        }
+                    };
+                    livePreviewHandler.postDelayed(livePreviewRunnable, 200); // 200ms delay
+                }
+            }
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) {}
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) {}
+        };
+        sliderKsize.setOnSeekBarChangeListener(livePreviewListener);
+        sliderDepth.setOnSeekBarChangeListener(livePreviewListener);
+        sliderSharpness.setOnSeekBarChangeListener(livePreviewListener);
+
 
         analyzeButton.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -295,28 +333,65 @@ public class ProcessingDialogFragment extends DialogFragment {
             }
         });
     }
-    
-    private void updateControlsVisibility() {
-        boolean isAutomatic = switchAutomaticScan.isChecked();
 
-        // Hide all special controls by default
-        fineTuningControls.setVisibility(View.GONE);
-        ksizeControlsContainer.setVisibility(View.GONE);
+    private void updateUiForMode(int mode) {
+        boolean needsDepthSharpness = selectedMethod >= 3 && selectedMethod <= 9;
+        boolean needsKsize = selectedMethod >= 10 && selectedMethod <= 12;
 
-        if (!isAutomatic) { // Manual mode is enabled, show controls based on method
-            boolean needsDepthSharpness = selectedMethod > 2 && selectedMethod < 10;
-            boolean needsKsize = selectedMethod >= 10 && selectedMethod <= 12;
-
-            if (needsDepthSharpness) {
-                fineTuningControls.setVisibility(View.VISIBLE);
-            } else if (needsKsize) {
-                fineTuningControls.setVisibility(View.VISIBLE);
-                ksizeControlsContainer.setVisibility(View.VISIBLE);
-            }
+        switch(mode) {
+            case 0: // Standard Auto
+                fineTuningControls.setVisibility(View.GONE);
+                ksizeControlsContainer.setVisibility(View.GONE);
+                analyzeButton.setText("Analyze");
+                break;
+            case 1: // Live Preview & Tune
+                if (needsDepthSharpness) {
+                    fineTuningControls.setVisibility(View.VISIBLE);
+                    ksizeControlsContainer.setVisibility(View.GONE);
+                } else if (needsKsize) {
+                    fineTuningControls.setVisibility(View.VISIBLE);
+                    ksizeControlsContainer.setVisibility(View.VISIBLE);
+                } else {
+                    fineTuningControls.setVisibility(View.GONE);
+                    ksizeControlsContainer.setVisibility(View.GONE);
+                }
+                analyzeButton.setText("Analyze");
+                performLivePreviewAnalysis(); // Show initial preview
+                break;
+            case 2: // Apply Tuned Settings to Video
+                if (needsDepthSharpness) {
+                    fineTuningControls.setVisibility(View.VISIBLE);
+                    ksizeControlsContainer.setVisibility(View.GONE);
+                } else if (needsKsize) {
+                    fineTuningControls.setVisibility(View.VISIBLE);
+                    ksizeControlsContainer.setVisibility(View.VISIBLE);
+                } else {
+                    fineTuningControls.setVisibility(View.GONE);
+                    ksizeControlsContainer.setVisibility(View.GONE);
+                }
+                analyzeButton.setText("Apply to Video");
+                break;
         }
-        // If automatic is checked, all special controls remain hidden.
     }
 
+    private void performLivePreviewAnalysis() {
+        if (sourceBitmapForTuning == null) {
+            return; // Not ready yet
+        }
+
+        boolean isLegacyMethod = selectedMethod >= 3 && selectedMethod <= 9;
+        boolean isPencilMethod = selectedMethod == 10;
+        boolean isAiPencilMethod = selectedMethod == 11 || selectedMethod == 12;
+
+        if (isLegacyMethod) {
+            performFineTuningAnalysis();
+        } else if (isPencilMethod) {
+            performMethod9Analysis();
+        } else if (isAiPencilMethod) {
+            performNewAiAnalysis(selectedMethod);
+        }
+    }
+    
     private void beginAnalysis() {
         analyzeButton.setEnabled(false);
         settingsButton.setEnabled(false);
@@ -335,9 +410,23 @@ public class ProcessingDialogFragment extends DialogFragment {
             @Override
             public void run() {
                 try {
-                    if (switchAutomaticScan.isChecked()) {
-                        processAllFramesAutomatically();
-                    } else {
+                    int mode = sliderAnalysisMode.getProgress();
+                    if (isVideoFile(inputFilePath)) {
+                        switch (mode) {
+                            case 0: // Standard Auto
+                                processAllFramesAutomatically(10, 2, 50); // Default values
+                                break;
+                            case 1: // Live Preview (single frame analysis)
+                                processSingleFrameManually();
+                                break;
+                            case 2: // Apply to Video
+                                int ksize = sliderKsize.getProgress();
+                                int depth = sliderDepth.getProgress();
+                                int sharpness = sliderSharpness.getProgress();
+                                processAllFramesAutomatically(ksize, depth, sharpness);
+                                break;
+                        }
+                    } else { // It's a single image
                         processSingleFrameManually();
                     }
                 } catch (final Exception e) {
@@ -363,25 +452,6 @@ public class ProcessingDialogFragment extends DialogFragment {
             return;
         }
 
-        if (selectedMethod >= 10 && selectedMethod <= 12) {
-             if (switchAutomaticScan.isChecked()) {
-                uiHandler.post(new Runnable() {
-                    @Override
-                    public void run() {
-                        String methodName = "The selected method";
-                        if (selectedMethod == 10) methodName = "Method 9";
-                        if (selectedMethod == 11) methodName = "AI Method 11";
-                        if (selectedMethod == 12) methodName = "AI Method 12";
-                        Toast.makeText(getContext(), methodName + " requires Automatic Scan to be OFF for manual tuning.", Toast.LENGTH_LONG).show();
-                        analysisControlsContainer.setVisibility(View.VISIBLE);
-                        analyzeButton.setEnabled(true);
-                        settingsButton.setEnabled(true);
-                    }
-                });
-                return;
-            }
-        }
-
         if (isFirstFineTuneAnalysis) {
             sourceBitmapForTuning = decodeAndRotateBitmap(rawFrames[0].getAbsolutePath());
         }
@@ -397,7 +467,7 @@ public class ProcessingDialogFragment extends DialogFragment {
         }
     }
 
-    private void processAllFramesAutomatically() throws Exception {
+    private void processAllFramesAutomatically(final int ksize, final int depth, final int sharpness) throws Exception {
         final int totalFrames = rawFrames.length;
         uiHandler.post(new Runnable() {
             @Override
@@ -418,13 +488,43 @@ public class ProcessingDialogFragment extends DialogFragment {
 
             if (selectedMethod == 0 || selectedMethod == 1) {
                 beginBlockingAiScan(orientedBitmap, frameIndex);
-            } else if (selectedMethod == 10 || selectedMethod == 11 || selectedMethod == 12) {
-                beginBlockingPencilOrNewAiScan(orientedBitmap, frameIndex);
-                try { Thread.sleep(1000); } catch (InterruptedException e) {}
+            } else if (selectedMethod >= 10 && selectedMethod <= 12) {
+                beginBlockingPencilOrNewAiScan(orientedBitmap, frameIndex, ksize);
             } else if (selectedMethod == 2) {
                 beginMethod1LiveScan(orientedBitmap, frameIndex);
-            } else {
-                beginStandardScan(orientedBitmap, frameIndex);
+            } else { // Methods 3 through 9
+                final CountDownLatch latch = new CountDownLatch(1);
+                int logicalMethod = 0;
+                switch(selectedMethod) {
+                    case 3: logicalMethod = 2; break;
+                    case 4: logicalMethod = 3; break;
+                    case 5: logicalMethod = 4; break;
+                    case 6: logicalMethod = 5; break;
+                    case 7: logicalMethod = 6; break;
+                    case 8: logicalMethod = 7; break;
+                    case 9: logicalMethod = 8; break;
+                }
+                final int finalLogicalMethod = logicalMethod;
+
+                DeepScanProcessor.ScanListener listener = new DeepScanProcessor.ScanListener() {
+                    @Override
+                    public void onScanProgress(int pass, int totalPasses, String status, Bitmap intermediateResult) {}
+                    @Override
+                    public void onScanComplete(DeepScanProcessor.ProcessingResult finalResult) {
+                        if (finalResult != null && finalResult.resultBitmap != null) {
+                            updateMainDisplay(finalResult.resultBitmap);
+                            String outPath = new File(processedFramesDir, String.format("processed_%05d.png", frameIndex)).getAbsolutePath();
+                            try {
+                                ImageProcessor.saveBitmap(finalResult.resultBitmap, outPath);
+                            } catch (Exception e) {
+                                Log.e(TAG, "Failed to save processed tuned frame.", e);
+                            }
+                        }
+                        latch.countDown();
+                    }
+                };
+                DeepScanProcessor.processWithFineTuning(orientedBitmap, finalLogicalMethod, depth, sharpness, listener);
+                latch.await();
             }
 
             orientedBitmap.recycle();
@@ -519,9 +619,8 @@ public class ProcessingDialogFragment extends DialogFragment {
         latch.await();
     }
 
-    private void beginBlockingPencilOrNewAiScan(Bitmap bitmap, final int frameIndex) throws InterruptedException {
+    private void beginBlockingPencilOrNewAiScan(Bitmap bitmap, final int frameIndex, final int ksize) throws InterruptedException {
         final CountDownLatch latch = new CountDownLatch(1);
-        final int ksize = 10; // Default ksize for automatic mode, can be adjusted if needed
 
         if (selectedMethod == 10) { // Method 9 (Pencil Sketch)
             DeepScanProcessor.ScanListenerWithKsize listener = new DeepScanProcessor.ScanListenerWithKsize() {
@@ -611,7 +710,7 @@ public class ProcessingDialogFragment extends DialogFragment {
                                 analyzeButton.setEnabled(true);
                                 settingsButton.setEnabled(true);
                                 btnSave.setVisibility(View.VISIBLE);
-                                updateControlsVisibility();
+                                updateUiForMode(sliderAnalysisMode.getProgress());
                             }
                         });
                     }
@@ -656,7 +755,7 @@ public class ProcessingDialogFragment extends DialogFragment {
                         updateProgress(0, 1);
                         analyzeButton.setEnabled(true);
                         settingsButton.setEnabled(true);
-                        updateControlsVisibility();
+                        updateUiForMode(sliderAnalysisMode.getProgress());
                     }
                 });
             }
@@ -742,7 +841,7 @@ public class ProcessingDialogFragment extends DialogFragment {
                         updateProgress(0, 1);
                         analyzeButton.setEnabled(true);
                         settingsButton.setEnabled(true);
-                        updateControlsVisibility();
+                        updateUiForMode(sliderAnalysisMode.getProgress());
                     }
                 });
             }
