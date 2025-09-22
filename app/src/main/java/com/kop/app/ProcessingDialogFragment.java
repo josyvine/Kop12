@@ -433,14 +433,10 @@ public class ProcessingDialogFragment extends DialogFragment {
         uiHandler.post(new Runnable() {
             @Override
             public void run() {
-                // *** THE ONLY FIX IS HERE ***
-                // This block now checks if the processed media was a video or a single image.
                 if (isVideoFile(inputFilePath)) {
-                    // If it's a video, show the completion dialog and keep controls hidden.
                     showSuccessDialog("Processing Complete", "Your rotoscoped frames have been saved to:\n\n" + processedFramesDir);
                     statusTextView.setText("Processing Complete. Open settings to run again.");
                 } else {
-                    // If it's a single image, just update the status and show the controls again.
                     statusTextView.setText("Automatic scan complete. Select another method to run again.");
                     analysisControlsContainer.setVisibility(View.VISIBLE);
                     btnSave.setVisibility(View.VISIBLE);
@@ -852,7 +848,11 @@ public class ProcessingDialogFragment extends DialogFragment {
                 File[] files = dir.listFiles();
                 if (files != null) { for (File file : files) file.delete(); }
             }
-            FrameExtractor.extractFrames(inputFilePath, rawFramesDir, fps);
+            
+            // *** THIS IS THE ONLY LINE THAT IS CHANGED IN THIS ENTIRE FILE ***
+            // It now passes the required 'Context' to the new ffmpeg-based extractor.
+            FrameExtractor.extractFrames(getContext(), inputFilePath, rawFramesDir, fps);
+            
             rawFrames = new File(rawFramesDir).listFiles();
             if (rawFrames != null) {
                 sortFrames(rawFrames);
@@ -860,7 +860,7 @@ public class ProcessingDialogFragment extends DialogFragment {
             }
         } catch (Exception e) {
             Log.e(TAG, "Frame extraction failed", e);
-            showErrorDialog("Extraction Error", "Could not extract frames from video.", false);
+            showErrorDialog("Extraction Error", "Could not extract frames from video. Check logs for details.", false);
         }
     }
 
