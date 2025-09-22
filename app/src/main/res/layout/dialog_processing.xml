@@ -119,13 +119,41 @@
                         android:spinnerMode="dropdown"/>
                 </LinearLayout>
 
+                <!-- THIS IS THE NEW CONTROL FOR IMAGES -->
+                <LinearLayout
+                    android:id="@+id/image_mode_container"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center"
+                    android:layout_marginTop="12dp"
+                    android:visibility="gone"
+                    tools:visibility="visible">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Automatic Scan:"
+                        android:textColor="@android:color/white"
+                        android:layout_marginEnd="8dp"/>
+
+                    <Switch
+                        android:id="@+id/switch_automatic_scan"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:checked="true"/>
+                </LinearLayout>
+
+                <!-- THIS IS THE EXISTING CONTROL FOR VIDEOS -->
                 <LinearLayout
                     android:id="@+id/analysis_mode_container"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
                     android:layout_marginTop="12dp"
-                    android:paddingHorizontal="16dp">
+                    android:paddingHorizontal="16dp"
+                    android:visibility="gone"
+                    tools:visibility="visible">
 
                     <RelativeLayout
                         android:layout_width="match_parent"
@@ -149,6 +177,7 @@
                             android:textSize="12sp"/>
 
                         <TextView
+                            android:id="@+id/tv_apply_to_video_label"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_alignParentEnd="true"
