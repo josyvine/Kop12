@@ -135,6 +135,9 @@ public class ProcessingDialogFragment extends DialogFragment {
     @Override
     public void onDismiss(@NonNull DialogInterface dialog) {
         super.onDismiss(dialog);
+        // --- NEW LOGIC ---
+        // Final safety net: clean up any remaining temporary files when the dialog is closed.
+        cleanupRawFiles();
         if (closeListener != null) {
             closeListener.onDialogClosed();
         }
@@ -530,6 +533,10 @@ public class ProcessingDialogFragment extends DialogFragment {
             orientedBitmap.recycle();
         }
 
+        // --- NEW LOGIC ---
+        // Once all frames are processed successfully, clean up the raw frames directory.
+        cleanupRawFiles();
+
         uiHandler.post(new Runnable() {
             @Override
             public void run() {
@@ -537,6 +544,8 @@ public class ProcessingDialogFragment extends DialogFragment {
                     showSuccessDialog("Processing Complete", "Your rotoscoped frames have been saved to:\n\n" + processedFramesDir);
                     statusTextView.setText("Processing Complete. Open settings to run again.");
                 } else {
+                    // This block is for single images, but automatic processing for them is handled differently.
+                    // This logic remains as a fallback.
                     statusTextView.setText("Automatic scan complete. Select another method to run again.");
                     analysisControlsContainer.setVisibility(View.VISIBLE);
                     btnSave.setVisibility(View.VISIBLE);
@@ -866,6 +875,10 @@ public class ProcessingDialogFragment extends DialogFragment {
                         File outFile = new File(processedFramesDir, fileName);
 
                         ImageProcessor.saveBitmap(bitmapToSave, outFile.getAbsolutePath());
+                        
+                        // --- NEW LOGIC ---
+                        // After successfully saving the image, clean up the temporary raw file.
+                        cleanupRawFiles();
 
                         uiHandler.post(new Runnable() {
                             @Override
@@ -948,8 +961,6 @@ public class ProcessingDialogFragment extends DialogFragment {
                 if (files != null) { for (File file : files) file.delete(); }
             }
             
-            // *** THIS IS THE ONLY LINE THAT IS CHANGED IN THIS ENTIRE FILE ***
-            // It now passes the required 'Context' to the new ffmpeg-based extractor.
             FrameExtractor.extractFrames(getContext(), inputFilePath, rawFramesDir, fps);
             
             rawFrames = new File(rawFramesDir).listFiles();
@@ -964,18 +975,44 @@ public class ProcessingDialogFragment extends DialogFragment {
     }
 
     private void prepareDirectories() {
-        String timestamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date());
-        File projectDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "kop/Project_" + timestamp);
-        if (!projectDir.exists()) projectDir.mkdirs();
-        rawFramesDir = new File(projectDir, "raw_frames").getAbsolutePath();
-        processedFramesDir = new File(projectDir, "processed_frames").getAbsolutePath();
-        new File(rawFramesDir).mkdirs();
-        new File(processedFramesDir).mkdirs();
+        // --- NEW LOGIC ---
+        // This method now handles directory creation differently for images vs videos.
+        boolean isVideo = isVideoFile(inputFilePath);
+
+        if (isVideo) {
+            // For videos, create a unique timestamped project folder. This logic is unchanged.
+            String timestamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date());
+            File projectDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "kop/Project_" + timestamp);
+            if (!projectDir.exists()) {
+                projectDir.mkdirs();
+            }
+            rawFramesDir = new File(projectDir, "raw_frames").getAbsolutePath();
+            processedFramesDir = new File(projectDir, "processed_frames").getAbsolutePath();
+            new File(rawFramesDir).mkdirs();
+            new File(processedFramesDir).mkdirs();
+        } else {
+            // For single images, use a shared, permanent folder for processed images.
+            File permanentOutputDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "kop/Processed_Images");
+            if (!permanentOutputDir.exists()) {
+                permanentOutputDir.mkdirs();
+            }
+            processedFramesDir = permanentOutputDir.getAbsolutePath();
+
+            // For the temporary raw image, use the app's private cache directory so it's hidden from the user.
+            File tempDir = new File(getContext().getCacheDir(), "temp_image_processing");
+            if (!tempDir.exists()) {
+                tempDir.mkdirs();
+            }
+            rawFramesDir = tempDir.getAbsolutePath();
+        }
     }
 
     private File[] extractOrCopyFrames(String path) throws Exception {
-        copyFile(new File(path), new File(rawFramesDir, "frame_00000.png"));
-        return new File(rawFramesDir).listFiles();
+        // This method is now only called for single images.
+        // It copies the source image to the temporary cache directory.
+        File destFile = new File(rawFramesDir, "raw_frame.png");
+        copyFile(new File(path), destFile);
+        return new File[]{destFile};
     }
 
     private void sortFrames(File[] frames) {
@@ -1160,6 +1197,28 @@ public class ProcessingDialogFragment extends DialogFragment {
                 out.write(buf, 0, len);
             }
         }
+    }
+
+    // --- NEW LOGIC ---
+    // This is the new cleanup method. It's safe to call even if the directory doesn't exist.
+    private void cleanupRawFiles() {
+        if (rawFramesDir != null && !rawFramesDir.isEmpty()) {
+            File dir = new File(rawFramesDir);
+            if (dir.exists()) {
+                deleteRecursive(dir);
+            }
+        }
+    }
+
+    // --- NEW LOGIC ---
+    // Helper method to delete a directory and all its contents.
+    private void deleteRecursive(File fileOrDirectory) {
+        if (fileOrDirectory.isDirectory()) {
+            for (File child : fileOrDirectory.listFiles()) {
+                deleteRecursive(child);
+            }
+        }
+        fileOrDirectory.delete();
     }
     
     @Override
