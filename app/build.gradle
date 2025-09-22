@@ -53,4 +53,4 @@ dependencies {
 
     // *** THIS IS THE NEW, REQUIRED LIBRARY FOR THE FIX ***
     implementation "androidx.camera:camera-extensions:1.2.3"
-}
+} 
