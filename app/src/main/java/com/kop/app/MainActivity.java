@@ -13,6 +13,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.Log;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
@@ -20,6 +21,11 @@ import android.webkit.WebViewClient;
 import android.widget.Toast;
 
 import org.opencv.android.OpenCVLoader;
+
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -35,6 +41,16 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
 
         OpenCVLoader.initDebug();
+
+        // This new code block will run in the background to copy the ffmpeg binary
+        // from your project's assets folder to a place where the app can execute it.
+        // This only runs once when the app is first installed or updated.
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                setupFFmpeg();
+            }
+        }).start();
 
         setContentView(R.layout.activity_main);
 
@@ -52,6 +68,46 @@ public class MainActivity extends AppCompatActivity {
         webView.setBackgroundColor(0x00000000);
         webView.setWebViewClient(new WebViewClient());
         webView.addJavascriptInterface(new WebAppInterface(this), "Android");
+    }
+
+    /**
+     * Copies the ffmpeg binary from the assets folder to the app's private
+     * files directory and makes it executable.
+     */
+    private void setupFFmpeg() {
+        File ffmpegFile = new File(getFilesDir(), "ffmpeg");
+        if (ffmpegFile.exists()) {
+            Log.d(TAG, "ffmpeg executable already exists.");
+            // If it exists, ensure it is executable, as permissions can be lost.
+            if (!ffmpegFile.canExecute()) {
+                ffmpegFile.setExecutable(true);
+            }
+            return;
+        }
+
+        try {
+            // The path here must match the path in your assets folder exactly.
+            String ffmpegAssetPath = "arm64-v8a/ffmpeg";
+            
+            try (InputStream in = getAssets().open(ffmpegAssetPath);
+                 FileOutputStream out = new FileOutputStream(ffmpegFile)) {
+
+                byte[] buffer = new byte[4096];
+                int read;
+                while ((read = in.read(buffer)) != -1) {
+                    out.write(buffer, 0, read);
+                }
+            }
+
+            if (!ffmpegFile.setExecutable(true)) {
+                Log.e(TAG, "Failed to set ffmpeg as executable.");
+            } else {
+                Log.d(TAG, "ffmpeg executable has been copied and set as executable.");
+            }
+
+        } catch (IOException e) {
+            Log.e(TAG, "Failed to copy ffmpeg executable. Make sure the file exists at: app/src/main/assets/" + "arm64-v8a/ffmpeg", e);
+        }
     }
 
     public class WebAppInterface {
