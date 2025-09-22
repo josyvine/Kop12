@@ -49,6 +49,8 @@ import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.CountDownLatch;
+import java.util.ArrayList;
+
 
 public class ProcessingDialogFragment extends DialogFragment {
 
@@ -272,7 +274,24 @@ public class ProcessingDialogFragment extends DialogFragment {
                 @Override
                 public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
                     String selectedFpsStr = parent.getItemAtPosition(position).toString();
-                    int selectedFps = Integer.parseInt(selectedFpsStr.replace(" FPS", ""));
+                    final int selectedFps = Integer.parseInt(selectedFpsStr.replace(" FPS", ""));
+
+                    // --- NEW LOGIC: Disable UI to prevent race condition ---
+                    uiHandler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            analyzeButton.setEnabled(false);
+                            settingsButton.setEnabled(false);
+                            // Clear the film strip visually while new frames are being extracted.
+                            if (filmStripAdapter != null) {
+                                filmStripAdapter.updateData(new ArrayList<File>());
+                            }
+                            statusTextView.setText("Extracting " + selectedFps + " FPS...");
+                            progressBar.setVisibility(View.VISIBLE);
+                            progressBar.setIndeterminate(true);
+                        }
+                    });
+
                     new Thread(new Runnable() {
                         @Override
                         public void run() {
@@ -948,28 +967,50 @@ public class ProcessingDialogFragment extends DialogFragment {
 
     private void extractFramesForVideo(int fps) {
         try {
-            updateStatus("Extracting " + fps + " FPS...", true);
-            uiHandler.post(new Runnable() {
-                @Override
-                public void run() {
-                    progressBar.setVisibility(View.VISIBLE);
-                }
-            });
+            // This method is always called from a background thread.
             File dir = new File(rawFramesDir);
-            if(dir.exists()) {
-                File[] files = dir.listFiles();
-                if (files != null) { for (File file : files) file.delete(); }
+            if (dir.exists()) {
+                deleteRecursive(dir);
+                dir.mkdirs();
             }
             
             FrameExtractor.extractFrames(getContext(), inputFilePath, rawFramesDir, fps);
             
             rawFrames = new File(rawFramesDir).listFiles();
-            if (rawFrames != null) {
-                sortFrames(rawFrames);
-                setupFilmStrip(Arrays.asList(rawFrames));
-            }
+
+            // --- NEW LOGIC: All UI updates are posted back to the main thread together ---
+            uiHandler.post(new Runnable() {
+                @Override
+                public void run() {
+                    if (rawFrames != null && rawFrames.length > 0) {
+                        sortFrames(rawFrames);
+                        setupFilmStrip(Arrays.asList(rawFrames));
+                        statusTextView.setText("Ready to analyze.");
+                    } else {
+                        setupFilmStrip(new ArrayList<File>());
+                        statusTextView.setText("Extraction failed: No frames found.");
+                    }
+                    // Re-enable UI now that the task is complete
+                    progressBar.setVisibility(View.GONE);
+                    progressBar.setIndeterminate(false);
+                    analyzeButton.setEnabled(true);
+                    settingsButton.setEnabled(true);
+                }
+            });
+
         } catch (Exception e) {
             Log.e(TAG, "Frame extraction failed", e);
+            // --- NEW LOGIC: Ensure UI is re-enabled even if an error occurs ---
+            uiHandler.post(new Runnable() {
+                @Override
+                public void run() {
+                    statusTextView.setText("Frame extraction failed.");
+                    progressBar.setVisibility(View.GONE);
+                    progressBar.setIndeterminate(false);
+                    analyzeButton.setEnabled(true);
+                    settingsButton.setEnabled(true);
+                }
+            });
             showErrorDialog("Extraction Error", "Could not extract frames from video. Check logs for details.", false);
         }
     }
@@ -1034,10 +1075,14 @@ public class ProcessingDialogFragment extends DialogFragment {
             @Override
             public void run() {
                 if (frames != null && !frames.isEmpty()) {
-                    filmStripAdapter = new FilmStripAdapter(getContext(), frames);
-                    LinearLayoutManager layoutManager = new LinearLayoutManager(getContext(), LinearLayoutManager.HORIZONTAL, false);
-                    filmStripRecyclerView.setLayoutManager(layoutManager);
-                    filmStripRecyclerView.setAdapter(filmStripAdapter);
+                    if (filmStripAdapter == null) {
+                        filmStripAdapter = new FilmStripAdapter(getContext(), frames);
+                        LinearLayoutManager layoutManager = new LinearLayoutManager(getContext(), LinearLayoutManager.HORIZONTAL, false);
+                        filmStripRecyclerView.setLayoutManager(layoutManager);
+                        filmStripRecyclerView.setAdapter(filmStripAdapter);
+                    } else {
+                        filmStripAdapter.updateData(frames);
+                    }
                     filmStripRecyclerView.setVisibility(View.VISIBLE);
                 } else {
                     filmStripRecyclerView.setVisibility(View.GONE);
@@ -1214,8 +1259,11 @@ public class ProcessingDialogFragment extends DialogFragment {
     // Helper method to delete a directory and all its contents.
     private void deleteRecursive(File fileOrDirectory) {
         if (fileOrDirectory.isDirectory()) {
-            for (File child : fileOrDirectory.listFiles()) {
-                deleteRecursive(child);
+            File[] children = fileOrDirectory.listFiles();
+            if (children != null) {
+                for (File child : children) {
+                    deleteRecursive(child);
+                }
             }
         }
         fileOrDirectory.delete();
