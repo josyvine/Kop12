@@ -71,6 +71,12 @@ public class FilmStripAdapter extends RecyclerView.Adapter<FilmStripAdapter.Fram
         }
     }
 
+    public void updateData(List<File> newFrameFiles) {
+        this.frameFiles = newFrameFiles;
+        this.currentPosition = -1; // Reset highlight when data changes
+        notifyDataSetChanged();
+    }
+
     public static class FrameViewHolder extends RecyclerView.ViewHolder {
         ImageView thumbnail;
         ImageView highlight;
