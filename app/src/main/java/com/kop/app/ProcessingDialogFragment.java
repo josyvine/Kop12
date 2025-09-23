@@ -1,6 +1,6 @@
 package com.kop.app;
 
-import android.app.Dialog;
+import android.app.Dialog; 
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.SharedPreferences;
