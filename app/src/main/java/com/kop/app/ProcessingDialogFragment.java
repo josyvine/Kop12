@@ -483,6 +483,10 @@ public class ProcessingDialogFragment extends DialogFragment {
     }
 
     private void beginAnalysis() {
+        // --- FIX: Cancel any pending live preview runnables to prevent the race condition ---
+        livePreviewHandler.removeCallbacksAndMessages(null);
+        // --- END FIX ---
+
         setUiEnabled(false);
         analysisControlsContainer.setVisibility(View.GONE);
         btnSave.setVisibility(View.GONE);
