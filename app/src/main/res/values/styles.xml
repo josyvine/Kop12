@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>  
+<resources>
     <!-- 
       FIX: The parent theme is now the base AppCompat theme (which is dark by default)
       instead of the specific Light theme. This will match the HTML UI.
