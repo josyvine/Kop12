@@ -448,6 +448,9 @@ public class ProcessingDialogFragment extends DialogFragment {
         switchAutomaticScan.setEnabled(isEnabled);
     }
 
+    // --- LOGIC RESTORED ---
+    // This method correctly shows or hides the manual tuning sliders for images
+    // based on the "Automatic Scan" switch.
     private void updateUiForImageMode(boolean isAutomatic) {
         boolean needsDepthSharpness = selectedMethod >= 3 && selectedMethod <= 9;
         boolean needsKsize = selectedMethod >= 10 && selectedMethod <= 12;
@@ -527,8 +530,9 @@ public class ProcessingDialogFragment extends DialogFragment {
         }
     }
 
-    // --- FIX START: THIS ENTIRE METHOD IS REPLACED WITH THE VERSION FROM YOUR OLDER, WORKING FILE ---
-    // This restores the correct logic for dispatching analysis for both images and videos.
+    // --- LOGIC RESTORED ---
+    // This is the entry point when the "Analyze" button is clicked. The logic
+    // to differentiate between automatic and manual modes for images is restored from the older file.
     private void beginAnalysis() {
         livePreviewHandler.removeCallbacksAndMessages(null);
 
@@ -546,6 +550,7 @@ public class ProcessingDialogFragment extends DialogFragment {
             @Override
             public void run() {
                 try {
+                    // Logic for video files (unchanged)
                     if (isVideoFile(inputFilePath)) {
                         int mode = sliderAnalysisMode.getProgress();
                         int ksize = sliderKsize.getProgress();
@@ -558,11 +563,13 @@ public class ProcessingDialogFragment extends DialogFragment {
                             processAllFrames(ksize, depth, sharpness);
                         }
                     } else { // It's a single image
+                        // RESTORED LOGIC: Check the switch to decide which path to take.
                         if (switchAutomaticScan.isChecked()) {
-                            // Run with default values for the 5-pass analyzer
+                            // Automatic Mode: Run the multi-pass analyzer.
+                            // Default values are passed but not used by the 5-pass scan.
                             processAllFrames(10, 2, 50);
                         } else {
-                            // Run a single pass with tuned values
+                            // Manual Mode: Run a single pass with the user's tuned slider values.
                             processSingleFrameManually();
                         }
                     }
@@ -574,8 +581,10 @@ public class ProcessingDialogFragment extends DialogFragment {
             }
         }).start();
     }
-    // --- FIX END ---
 
+    // --- LOGIC RESTORED ---
+    // This handles the "manual" path for a single image, triggering a live preview
+    // with the current slider settings.
     private void processSingleFrameManually() {
         if (isFirstFineTuneAnalysis) {
             try {
@@ -594,10 +603,9 @@ public class ProcessingDialogFragment extends DialogFragment {
         performLivePreviewAnalysis();
     }
 
-
-    // --- FIX START: THIS ENTIRE METHOD IS REPLACED WITH THE VERSION FROM YOUR OLDER, WORKING FILE... ---
-    // --- ... AND THEN YOUR NEW AI LOGIC IS CAREFULLY RE-INSERTED. ---
-    // This guarantees the old logic for methods 3-9 is preserved while the new logic for methods 11-12 also works.
+    // --- LOGIC MERGED ---
+    // This is the main processing loop. The logic for handling methods 2-8 is restored
+    // from the older file, while the new AI logic for methods 11-12 is preserved.
     private void processAllFrames(final int ksize, final int depth, final int sharpness) throws Exception {
         final int totalFrames = rawFrames.length;
         goldStandardBitmap = null; // Reset before each full run
@@ -621,10 +629,10 @@ public class ProcessingDialogFragment extends DialogFragment {
                 Bitmap orientedBitmap = decodeAndRotateBitmap(rawFrames[frameIndex].getAbsolutePath());
                 if (orientedBitmap == null) continue;
 
-                if (selectedMethod <= 1) {
+                if (selectedMethod <= 1) { // Old AI Methods
                     beginBlockingAiScan(orientedBitmap, frameIndex);
-                } else if (selectedMethod >= 10 && selectedMethod <= 12) {
-                    // --- YOUR NEW AI LOGIC IS INSERTED HERE ---
+                } else if (selectedMethod >= 10 && selectedMethod <= 12) { // Pencil / New AI Methods
+                    // This block contains the NEW AI logic which is preserved
                     if (switchEnableAi.isChecked() && (selectedMethod == 11 || selectedMethod == 12)) {
                         int frameKsize = ksize;
 
@@ -637,6 +645,7 @@ public class ProcessingDialogFragment extends DialogFragment {
                                 Log.e(TAG, "Draft bitmap for frame " + frameIndex + " is null. Skipping AI check.");
                                 continue;
                             }
+
                             String apiKey = sharedPreferences.getString("GEMINI_API_KEY", "");
                             CorrectedKsize params = GeminiAiHelper.getCorrectedKsize(
                                     apiKey,
@@ -645,6 +654,7 @@ public class ProcessingDialogFragment extends DialogFragment {
                                     draftBitmap,
                                     frameKsize
                             );
+
                             if (params.wasCorrected) {
                                 draftBitmap.recycle();
                                 Bitmap finalBitmap = getAiPencilScanAsBitmap(orientedBitmap, params.ksize);
@@ -654,19 +664,20 @@ public class ProcessingDialogFragment extends DialogFragment {
                             }
                         }
                     } else {
+                        // Standard processing for Method 10 or if new AI is off
                         beginBlockingPencilOrNewAiScan(orientedBitmap, frameIndex, ksize);
                     }
-                    // --- END OF YOUR NEW AI LOGIC ---
-                } else if (selectedMethod == 2) {
+                } else if (selectedMethod == 2) { // Live Analysis Method
                     beginMethod1LiveScan(orientedBitmap, frameIndex);
-                } else {
-                    // --- THIS IS THE OLD, CORRECT LOGIC FOR THE 5-PASS SCAN (METHODS 3-9) ---
+                } else { // THIS IS THE RESTORED LOGIC FOR METHODS 3-9
                     boolean isVideoStandardAuto = isVideoFile(inputFilePath) && sliderAnalysisMode.getProgress() == 0;
                     boolean isImageAutoScan = !isVideoFile(inputFilePath) && switchAutomaticScan.isChecked();
 
+                    // For an image, if automatic scan is on, it will run the 5-pass scan.
                     if (isVideoStandardAuto || isImageAutoScan) {
                         beginStandardScan(orientedBitmap, frameIndex);
                     } else {
+                        // For a video with tuned settings, or an image in manual mode.
                         beginTunedScan(orientedBitmap, frameIndex, depth, sharpness);
                     }
                 }
@@ -678,7 +689,6 @@ public class ProcessingDialogFragment extends DialogFragment {
                 goldStandardBitmap = null;
             }
         }
-
 
         cleanupRawFiles();
 
@@ -698,7 +708,6 @@ public class ProcessingDialogFragment extends DialogFragment {
             }
         });
     }
-    // --- FIX END ---
 
     private void beginAutomaticAiScan(final int methodIndex) {
         if (sourceBitmapForTuning == null) {
@@ -854,6 +863,8 @@ public class ProcessingDialogFragment extends DialogFragment {
         }).start();
     }
 
+    // --- LOGIC RESTORED ---
+    // This method performs the automatic 5-pass scan. It is called when the switch is ON.
     private void beginStandardScan(Bitmap bitmap, final int frameIndex) throws InterruptedException {
         final CountDownLatch latch = new CountDownLatch(1);
 
@@ -891,6 +902,8 @@ public class ProcessingDialogFragment extends DialogFragment {
         latch.await();
     }
 
+    // --- LOGIC RESTORED ---
+    // This method performs the manual, single-pass scan based on slider values.
     private void performFineTuningAnalysis() {
         if (sourceBitmapForTuning == null) {
             return;
@@ -936,6 +949,8 @@ public class ProcessingDialogFragment extends DialogFragment {
         DeepScanProcessor.processWithFineTuning(sourceBitmapForTuning, finalLogicalMethod, depth, sharpness, listener);
     }
 
+    // --- LOGIC RESTORED ---
+    // This method applies the manually tuned slider settings to a single frame during batch processing.
     private void beginTunedScan(Bitmap bitmap, final int frameIndex, int depth, int sharpness) throws InterruptedException {
         final CountDownLatch latch = new CountDownLatch(1);
         int logicalMethod = 0;
@@ -1345,22 +1360,28 @@ public class ProcessingDialogFragment extends DialogFragment {
      * This handles saving the API key and managing the visibility of UI components.
      */
     private void setupAiControls() {
-        btnSaveApiKey.setOnClickListener(v -> {
-            String apiKey = etGeminiApiKey.getText().toString().trim();
-            if (!apiKey.isEmpty()) {
-                sharedPreferences.edit().putString("GEMINI_API_KEY", apiKey).apply();
-                Toast.makeText(getContext(), "API Key Saved", Toast.LENGTH_SHORT).show();
-                updateAiUiState();
-            } else {
-                Toast.makeText(getContext(), "API Key cannot be empty", Toast.LENGTH_SHORT).show();
+        btnSaveApiKey.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                String apiKey = etGeminiApiKey.getText().toString().trim();
+                if (!apiKey.isEmpty()) {
+                    sharedPreferences.edit().putString("GEMINI_API_KEY", apiKey).apply();
+                    Toast.makeText(getContext(), "API Key Saved", Toast.LENGTH_SHORT).show();
+                    updateAiUiState();
+                } else {
+                    Toast.makeText(getContext(), "API Key cannot be empty", Toast.LENGTH_SHORT).show();
+                }
             }
         });
 
-        btnUpdateApiKey.setOnClickListener(v -> {
-            // Show the input box again to allow the user to enter a new key.
-            etGeminiApiKey.setVisibility(View.VISIBLE);
-            btnSaveApiKey.setVisibility(View.VISIBLE);
-            btnUpdateApiKey.setVisibility(View.GONE);
+        btnUpdateApiKey.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                // Show the input box again to allow the user to enter a new key.
+                etGeminiApiKey.setVisibility(View.VISIBLE);
+                btnSaveApiKey.setVisibility(View.VISIBLE);
+                btnUpdateApiKey.setVisibility(View.GONE);
+            }
         });
 
         // Set the initial state of the UI based on whether a key is already saved.
