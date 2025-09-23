@@ -55,10 +55,7 @@ dependencies {
     implementation "androidx.camera:camera-extensions:1.2.3"
 
     // *** START OF ADDED LIBRARIES FOR AI FEATURE ***
-
-    // *** THIS IS THE CRITICAL FIX for the XML resource errors ***
-    // This library provides Material Design components like TextInputLayout and the themes.
-    implementation 'com.google.android.material:material:1.4.0'
+    // NOTE: The 'com.google.android.material' library has been REMOVED as requested.
 
     // For making network requests to the Gemini API
     implementation 'com.squareup.okhttp3:okhttp:4.9.3'
