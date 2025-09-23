@@ -2,7 +2,7 @@ apply plugin: 'com.android.application'
 
 android {
     compileSdkVersion 33
-    buildToolsVersion "30.0.3" 
+    buildToolsVersion "30.0.3"
 
     defaultConfig {
         applicationId "com.kop.app"
@@ -53,4 +53,11 @@ dependencies {
 
     // *** THIS IS THE NEW, REQUIRED LIBRARY FOR THE FIX ***
     implementation "androidx.camera:camera-extensions:1.2.3"
-} 
+    
+    // *** START OF ADDED LIBRARIES FOR AI FEATURE ***
+    // For making network requests to the Gemini API
+    implementation 'com.squareup.okhttp3:okhttp:4.9.3'
+    // For parsing JSON data from the Gemini API response
+    implementation 'com.google.code.gson:gson:2.8.9'
+    // *** END OF ADDED LIBRARIES FOR AI FEATURE ***
+}
