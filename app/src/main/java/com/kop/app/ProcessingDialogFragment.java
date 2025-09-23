@@ -1,4 +1,4 @@
-package com.kop.app; 
+package com.kop.app;
 
 import android.app.Dialog;
 import android.content.Context;
@@ -622,7 +622,7 @@ public class ProcessingDialogFragment extends DialogFragment {
                     beginBlockingAiScan(orientedBitmap, frameIndex);
                 } else if (selectedMethod >= 10 && selectedMethod <= 12) {
                     // --- START OF NEW AI LOGIC PATH ---
-                    // Check if AI is enabled AND the method is one of the compatible ones
+                    // Check if AI is on AND the method is one of the compatible ones
                     if (switchEnableAi.isChecked() && (selectedMethod == 11 || selectedMethod == 12)) {
                         // PATH A: AI IS ON - Use the new, separate AI-assisted logic
                         int frameKsize = ksize; // Start with the user's selected ksize
@@ -635,6 +635,10 @@ public class ProcessingDialogFragment extends DialogFragment {
                             // Subsequent frames: run the AI check
                             // 1. Create a "draft" with the user's settings
                             Bitmap draftBitmap = getAiPencilScanAsBitmap(orientedBitmap, frameKsize);
+                            if (draftBitmap == null) { // Safety check
+                                Log.e(TAG, "Draft bitmap for frame " + frameIndex + " is null. Skipping AI check.");
+                                continue;
+                            }
 
                             // 2. Call the AI Helper for analysis
                             String apiKey = sharedPreferences.getString("GEMINI_API_KEY", "");
