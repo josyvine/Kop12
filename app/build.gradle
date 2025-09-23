@@ -53,8 +53,13 @@ dependencies {
 
     // *** THIS IS THE NEW, REQUIRED LIBRARY FOR THE FIX ***
     implementation "androidx.camera:camera-extensions:1.2.3"
-    
+
     // *** START OF ADDED LIBRARIES FOR AI FEATURE ***
+
+    // *** THIS IS THE CRITICAL FIX for the XML resource errors ***
+    // This library provides Material Design components like TextInputLayout and the themes.
+    implementation 'com.google.android.material:material:1.4.0'
+
     // For making network requests to the Gemini API
     implementation 'com.squareup.okhttp3:okhttp:4.9.3'
     // For parsing JSON data from the Gemini API response
