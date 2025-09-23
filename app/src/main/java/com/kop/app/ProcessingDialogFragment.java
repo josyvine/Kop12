@@ -555,10 +555,13 @@ public class ProcessingDialogFragment extends DialogFragment {
                         } else {
                             processAllFrames(ksize, depth, sharpness);
                         }
-                    } else {
+                    } else { // This is for a single image
                         if (switchAutomaticScan.isChecked()) {
+                            // This is the "Automatic Scan" path for single images.
+                            // The values passed here are defaults for the 5-pass scan.
                             processAllFrames(10, 2, 50);
                         } else {
+                            // This is the "Manual Tuning" path for single images.
                             processSingleFrameManually();
                         }
                     }
@@ -616,26 +619,19 @@ public class ProcessingDialogFragment extends DialogFragment {
                 if (selectedMethod <= 1) {
                     beginBlockingAiScan(orientedBitmap, frameIndex);
                 } else if (selectedMethod >= 10 && selectedMethod <= 12) {
-                    // --- START OF NEW AI LOGIC PATH ---
-                    // Check if AI is on AND the method is one of the compatible ones
+                    // This block handles Methods 10, 11, and 12
                     if (switchEnableAi.isChecked() && (selectedMethod == 11 || selectedMethod == 12)) {
-                        // PATH A: AI IS ON - Use the new, separate AI-assisted logic
-                        int frameKsize = ksize; // Start with the user's selected ksize
+                        int frameKsize = ksize;
 
                         if (frameIndex == 0) {
-                            // First frame: create the Gold Standard and save it
                             goldStandardBitmap = getAiPencilScanAsBitmap(orientedBitmap, frameKsize);
                             saveProcessedFrame(goldStandardBitmap, frameIndex);
                         } else {
-                            // Subsequent frames: run the AI check
-                            // 1. Create a "draft" with the user's settings
                             Bitmap draftBitmap = getAiPencilScanAsBitmap(orientedBitmap, frameKsize);
-                            if (draftBitmap == null) { // Safety check
+                            if (draftBitmap == null) {
                                 Log.e(TAG, "Draft bitmap for frame " + frameIndex + " is null. Skipping AI check.");
                                 continue;
                             }
-
-                            // 2. Call the AI Helper for analysis
                             String apiKey = sharedPreferences.getString("GEMINI_API_KEY", "");
                             CorrectedKsize params = GeminiAiHelper.getCorrectedKsize(
                                     apiKey,
@@ -644,40 +640,41 @@ public class ProcessingDialogFragment extends DialogFragment {
                                     draftBitmap,
                                     frameKsize
                             );
-
-                            // 3. Decide which version to save
                             if (params.wasCorrected) {
-                                // If AI corrected, re-process with the new ksize and save
-                                draftBitmap.recycle(); // Clean up the old draft
+                                draftBitmap.recycle();
                                 Bitmap finalBitmap = getAiPencilScanAsBitmap(orientedBitmap, params.ksize);
                                 saveProcessedFrame(finalBitmap, frameIndex);
                             } else {
-                                // If AI said it was good, just save the draft
                                 saveProcessedFrame(draftBitmap, frameIndex);
                             }
                         }
                     } else {
-                        // PATH B: AI IS OFF OR METHOD IS 10 (not compatible)
-                        // RUN YOUR ORIGINAL, UNALTERED CODE.
                         beginBlockingPencilOrNewAiScan(orientedBitmap, frameIndex, ksize);
                     }
-                    // --- END OF NEW AI LOGIC PATH ---
                 } else if (selectedMethod == 2) {
                     beginMethod1LiveScan(orientedBitmap, frameIndex);
                 } else {
+                    // --- RESTORED LOGIC ---
+                    // This block handles methods 3 through 9, which use the 5-pass analyzer or tuned scan.
+                    // It correctly distinguishes between automatic and manual/tuned modes for both images and videos.
                     boolean isVideoStandardAuto = isVideoFile(inputFilePath) && sliderAnalysisMode.getProgress() == 0;
                     boolean isImageAutoScan = !isVideoFile(inputFilePath) && switchAutomaticScan.isChecked();
 
                     if (isVideoStandardAuto || isImageAutoScan) {
+                        // This path is taken for a single image with "Automatic Scan" enabled.
+                        // It runs the 5-pass analysis.
                         beginStandardScan(orientedBitmap, frameIndex);
                     } else {
+                        // This path is taken for "Apply to Video" with tuned settings,
+                        // or for a single image in manual tuning mode (which is handled by processSingleFrameManually,
+                        // but this is the correct fallback).
                         beginTunedScan(orientedBitmap, frameIndex, depth, sharpness);
                     }
+                    // --- END OF RESTORED LOGIC ---
                 }
                 orientedBitmap.recycle();
             }
         } finally {
-            // IMPORTANT: Clean up the gold standard bitmap after the loop finishes to prevent memory leaks
             if (goldStandardBitmap != null) {
                 goldStandardBitmap.recycle();
                 goldStandardBitmap = null;
