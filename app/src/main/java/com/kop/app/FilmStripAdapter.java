@@ -7,7 +7,7 @@ import android.graphics.Color;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.ImageView; 
+import android.widget.ImageView;
 
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
@@ -71,11 +71,13 @@ public class FilmStripAdapter extends RecyclerView.Adapter<FilmStripAdapter.Fram
         }
     }
 
+    // --- FIX: This is the corrected updateData method from your second file set ---
     public void updateData(List<File> newFrameFiles) {
         this.frameFiles = newFrameFiles;
         this.currentPosition = -1; // Reset highlight when data changes
         notifyDataSetChanged();
     }
+    // --- FIX END ---
 
     public static class FrameViewHolder extends RecyclerView.ViewHolder {
         ImageView thumbnail;
