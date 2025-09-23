@@ -1,4 +1,4 @@
-package com.kop.app; 
+package com.kop.app;
 
 import android.content.Context;
 import android.graphics.Bitmap;
@@ -55,8 +55,7 @@ public class DeepScanProcessor {
         void onScanProgress(int pass, int totalPasses, String status, Bitmap intermediateResult);
         void onScanComplete(ProcessingResult finalResult);
     }
-    
-    // NEW INTERFACE for Method 9 to pass the ksize value
+
     public interface ScanListenerWithKsize {
         void onScanProgress(int pass, int totalPasses, String status, Bitmap intermediateResult);
         void onScanComplete(ProcessingResult finalResult);
@@ -69,11 +68,10 @@ public class DeepScanProcessor {
         void onScanComplete(ProcessingResult finalResult);
     }
 
-    // --- REBUILT AS REQUESTED: Method 01 (AI Composite) - Line art person on raw background ---
+    // --- Method 01 (AI Composite) ---
     public static void processMethod01(Context context, Bitmap originalBitmap, AiScanListener listener) {
         ImageSegmenter imageSegmenter = null;
         try {
-            // Step 1: Initialize the MediaPipe Image Segmenter
             ImageSegmenterOptions.Builder optionsBuilder =
                 ImageSegmenterOptions.builder()
                     .setBaseOptions(BaseOptions.builder().setModelAssetPath(MODEL_FILE).build())
@@ -86,7 +84,6 @@ public class DeepScanProcessor {
 
             if (segmenterResult != null && segmenterResult.confidenceMasks().isPresent()) {
                 try (MPImage mask = segmenterResult.confidenceMasks().get().get(0)) {
-                    // Convert the AI mask to an OpenCV Mat
                     ByteBuffer byteBuffer = ByteBufferExtractor.extract(mask);
                     FloatBuffer confidenceMaskBuffer = byteBuffer.asFloatBuffer();
                     confidenceMaskBuffer.rewind();
@@ -99,7 +96,6 @@ public class DeepScanProcessor {
                     Mat thresholdMat = new Mat();
                     Imgproc.threshold(mask8u, thresholdMat, 128, 255, Imgproc.THRESH_BINARY);
 
-                    // --- START: Generate line art for the person ONLY using the logic from Method 0 ---
                     Mat originalMat = new Mat();
                     Utils.bitmapToMat(originalBitmap, originalMat);
                     Mat resizedMask = new Mat();
@@ -115,7 +111,6 @@ public class DeepScanProcessor {
 
                     List<MatOfPoint> contours = new ArrayList<>();
                     Mat hierarchy = new Mat();
-                    // Use a copy of resizedMask for findContours as it can be modified by the function
                     Mat contoursMask = resizedMask.clone();
                     Imgproc.findContours(contoursMask, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
                     contoursMask.release();
@@ -123,24 +118,20 @@ public class DeepScanProcessor {
                     Mat personLineArt = new Mat(originalBitmap.getHeight(), originalBitmap.getWidth(), CvType.CV_8UC4, new Scalar(255, 255, 255, 255));
                     Imgproc.drawContours(personLineArt, contours, -1, new Scalar(0, 0, 0, 255), 2);
                     personLineArt.setTo(new Scalar(0, 0, 0, 255), detailLines);
-                    // --- END: Line art of person is now in 'personLineArt' ---
 
-                    // --- START: Composite the line art onto the original raw background ---
                     Mat finalComposite = new Mat();
                     Utils.bitmapToMat(originalBitmap, finalComposite);
                     if (finalComposite.channels() == 3) {
                         Imgproc.cvtColor(finalComposite, finalComposite, Imgproc.COLOR_RGB2RGBA);
                     }
-                    
+
                     personLineArt.copyTo(finalComposite, resizedMask);
-                    // --- END: Composite ---
 
                     Bitmap finalBitmap = Bitmap.createBitmap(finalComposite.cols(), finalComposite.rows(), Bitmap.Config.ARGB_8888);
                     Utils.matToBitmap(finalComposite, finalBitmap);
                     ProcessingResult result = new ProcessingResult(finalBitmap, contours.size());
                     listener.onAiScanComplete(result);
 
-                    // Clean up all OpenCV Mats
                     maskMat.release();
                     mask8u.release();
                     thresholdMat.release();
@@ -169,12 +160,10 @@ public class DeepScanProcessor {
         }
     }
 
-
-    // --- Method 0 is "AI-Powered Detail Scan" (RESTORED to your original logic with one small fix) ---
+    // --- Method 0 (AI Smart Outline) ---
     public static void processMethod0(Context context, Bitmap originalBitmap, AiScanListener listener) {
         ImageSegmenter imageSegmenter = null;
         try {
-            // Step 1: Initialize the MediaPipe Image Segmenter
             ImageSegmenterOptions.Builder optionsBuilder =
                 ImageSegmenterOptions.builder()
                     .setBaseOptions(BaseOptions.builder().setModelAssetPath(MODEL_FILE).build())
@@ -186,70 +175,54 @@ public class DeepScanProcessor {
 
             MPImage mpImage = new BitmapImageBuilder(originalBitmap).build();
 
-            // Step 2: Run AI Segmentation to get the mask
             ImageSegmenterResult segmenterResult = imageSegmenter.segment(mpImage);
 
             if (segmenterResult != null && segmenterResult.confidenceMasks().isPresent()) {
                 try (MPImage mask = segmenterResult.confidenceMasks().get().get(0)) {
 
-                    // Convert the AI mask to an OpenCV Mat
                     ByteBuffer byteBuffer = ByteBufferExtractor.extract(mask);
                     FloatBuffer confidenceMaskBuffer = byteBuffer.asFloatBuffer();
                     confidenceMaskBuffer.rewind();
-                    int maskWidth = mask.getWidth();
-                    int maskHeight = mask.getHeight();
-                    Mat maskMat = new Mat(maskHeight, maskWidth, CvType.CV_32F);
+                    Mat maskMat = new Mat(mask.getHeight(), mask.getWidth(), CvType.CV_32F);
                     float[] floatArray = new float[confidenceMaskBuffer.remaining()];
                     confidenceMaskBuffer.get(floatArray);
                     maskMat.put(0, 0, floatArray);
                     Mat mask8u = new Mat();
                     maskMat.convertTo(mask8u, CvType.CV_8U, 255.0);
-                    Mat thresholdMat = new Mat(); // This is our final AI silhouette mask
+                    Mat thresholdMat = new Mat();
                     Imgproc.threshold(mask8u, thresholdMat, 128, 255, Imgproc.THRESH_BINARY);
 
-                    // --- START OF LOGIC FOR DETAIL SCAN ---
-
-                    // Step 3: Isolate the subject from the original image using the AI mask
                     Mat originalMat = new Mat();
                     Utils.bitmapToMat(originalBitmap, originalMat);
                     Mat resizedMask = new Mat();
-                    Imgproc.resize(thresholdMat, resizedMask, originalMat.size()); // Ensure mask and image are same size
+                    Imgproc.resize(thresholdMat, resizedMask, originalMat.size());
                     Mat isolatedSubjectMat = new Mat();
                     Core.bitwise_and(originalMat, originalMat, isolatedSubjectMat, resizedMask);
-                    
-                    // GENTLE FIX: Add denoising here to reduce patches and darkness before processing.
+
                     Photo.fastNlMeansDenoisingColored(isolatedSubjectMat, isolatedSubjectMat, 3, 3, 7, 21);
 
-                    // Step 4: Find all internal details on the isolated subject
                     Mat grayIsolated = new Mat();
                     Imgproc.cvtColor(isolatedSubjectMat, grayIsolated, Imgproc.COLOR_RGBA2GRAY);
-                    Imgproc.GaussianBlur(grayIsolated, grayIsolated, new Size(3, 3), 0); // Denoise for cleaner lines
+                    Imgproc.GaussianBlur(grayIsolated, grayIsolated, new Size(3, 3), 0);
                     Mat detailLines = new Mat();
-                    Imgproc.Canny(grayIsolated, detailLines, 50, 150); // Canny edge detection finds all lines
+                    Imgproc.Canny(grayIsolated, detailLines, 50, 150);
 
-                    // Step 5: Find the strong outer outline from the AI mask
                     List<MatOfPoint> contours = new ArrayList<>();
                     Mat hierarchy = new Mat();
-                    // Use a copy of resizedMask for findContours as it can be modified by the function
                     Mat contoursMask = resizedMask.clone();
                     Imgproc.findContours(contoursMask, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
                     contoursMask.release();
 
-                    // Step 6: Combine the outer outline and internal details
                     Mat finalDrawing = new Mat(originalBitmap.getHeight(), originalBitmap.getWidth(), CvType.CV_8UC4, new Scalar(255, 255, 255, 255));
-                    Imgproc.drawContours(finalDrawing, contours, -1, new Scalar(0, 0, 0, 255), 2); // Draw the strong outline
-                    finalDrawing.setTo(new Scalar(0, 0, 0, 255), detailLines); // Paint the internal details on top
+                    Imgproc.drawContours(finalDrawing, contours, -1, new Scalar(0, 0, 0, 255), 2);
+                    finalDrawing.setTo(new Scalar(0, 0, 0, 255), detailLines);
 
-                    // --- END OF LOGIC ---
-
-                    // Convert the final result to a Bitmap
                     Bitmap finalBitmap = Bitmap.createBitmap(finalDrawing.cols(), finalDrawing.rows(), Bitmap.Config.ARGB_8888);
                     Utils.matToBitmap(finalDrawing, finalBitmap);
 
                     ProcessingResult result = new ProcessingResult(finalBitmap, contours.size());
                     listener.onAiScanComplete(result);
 
-                    // Clean up all OpenCV Mats to prevent memory leaks
                     maskMat.release();
                     mask8u.release();
                     thresholdMat.release();
@@ -278,8 +251,7 @@ public class DeepScanProcessor {
         }
     }
 
-
-    // --- Method 1: The "Utmost Best" - Live Foundational Analysis (UNCHANGED) ---
+    // --- Method 1 (Live Analysis) ---
     public static void processMethod1(Bitmap originalBitmap, LiveScanListener listener) {
         Mat originalMat = new Mat();
         Utils.bitmapToMat(originalBitmap, originalMat);
@@ -315,7 +287,8 @@ public class DeepScanProcessor {
         finalLines.release();
     }
 
-    // --- Method 4: "Segmented Detail" (Now Method 2 in UI) ---
+    // --- FIX START: The original 5-pass analyzer methods are RESTORED here ---
+
     public static void processMethod4(Bitmap originalBitmap, ScanListener listener) {
         Mat originalMat = new Mat();
         Utils.bitmapToMat(originalBitmap, originalMat);
@@ -353,7 +326,6 @@ public class DeepScanProcessor {
         originalMat.release(); grayMat.release(); bgrMat.release(); cannyForSeeds.release(); markers.release(); boundaries.release(); detailLines.release();
     }
 
-    // --- Method 5: "Pencil Sketch" (Now Method 3 in UI) ---
     public static void processMethod5(Bitmap originalBitmap, ScanListener listener) {
         Mat originalMat = new Mat();
         Utils.bitmapToMat(originalBitmap, originalMat);
@@ -372,7 +344,6 @@ public class DeepScanProcessor {
         try { Thread.sleep(2500); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
         Mat sharpLines = getMethod8Lines(grayMat);
 
-        // CRASH FIX: Get the object count from the valid single-channel 'sharpLines' Mat.
         int objectCount = countContours(sharpLines.clone());
 
         listener.onScanProgress(3, 4, "Pass 3/4: Combining Shading & Lines...", createBitmapFromMask(sketch, originalMat.size()));
@@ -383,19 +354,19 @@ public class DeepScanProcessor {
 
         listener.onScanProgress(4, 4, "Pass 4/4: Finalizing Artwork...", createBitmapFromMask(sketch, originalMat.size()));
         try { Thread.sleep(2500); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+
         Mat finalSketch = new Mat();
         Imgproc.cvtColor(sketch, finalSketch, Imgproc.COLOR_GRAY2BGRA);
 
         Bitmap finalBitmap = Bitmap.createBitmap(finalSketch.cols(), finalSketch.rows(), Bitmap.Config.ARGB_8888);
         Utils.matToBitmap(finalSketch, finalBitmap);
-        // CRASH FIX: Manually create the result with the correct count and the final bitmap.
+
         ProcessingResult finalResult = new ProcessingResult(finalBitmap, objectCount);
         listener.onScanComplete(finalResult);
 
         originalMat.release(); grayMat.release(); inverted.release(); blurred.release(); sketch.release(); sharpLines.release(); invertedLines.release(); finalSketch.release();
     }
 
-    // --- Method 6: "Selective Detail" (Now Method 4 in UI) ---
     public static void processMethod6(Bitmap originalBitmap, ScanListener listener) {
         Mat originalMat = new Mat();
         Utils.bitmapToMat(originalBitmap, originalMat);
@@ -424,7 +395,6 @@ public class DeepScanProcessor {
         originalMat.release(); grayMat.release(); simplifiedMat.release(); structuralLines.release(); detailLines.release(); maskedDetails.release(); structureMask.release();
     }
 
-    // --- Method 7: "Artistic Abstraction" (Now Method 5 in UI) ---
     public static void processMethod7(Bitmap originalBitmap, ScanListener listener) {
         Mat originalMat = new Mat();
         Utils.bitmapToMat(originalBitmap, originalMat);
@@ -449,7 +419,6 @@ public class DeepScanProcessor {
         originalMat.release(); grayMat.release(); simplifiedMat.release(); majorEdges.release(); detailEdges.release();
     }
 
-    // --- Method 8: "Clean Structure" (Now Method 6 in UI) ---
     public static void processMethod8(Bitmap originalBitmap, ScanListener listener) {
         Mat originalMat = new Mat();
         Utils.bitmapToMat(originalBitmap, originalMat);
@@ -475,7 +444,6 @@ public class DeepScanProcessor {
         originalMat.release(); grayMat.release(); blurredMat.release(); majorEdges.release(); detailEdges.release();
     }
 
-    // --- Method 9: "Detailed Texture" (Now Method 7 in UI) ---
     public static void processMethod9(Bitmap originalBitmap, ScanListener listener) {
         Mat originalMat = new Mat();
         Utils.bitmapToMat(originalBitmap, originalMat);
@@ -505,48 +473,39 @@ public class DeepScanProcessor {
         originalMat.release(); grayMat.release(); simplifiedMat.release(); accumulatedLines.release(); largeShapes.release(); detailShapes.release();
     }
 
-    // --- Method 10: Legacy (Now Method 8 in UI) ---
     public static void processMethod10(Bitmap originalBitmap, ScanListener listener) {
         processMethod8(originalBitmap, listener);
     }
-    
-    // --- METHOD 11 (Corresponds to Method 9 in UI) ---
+
+    // --- FIX END ---
+
     public static void processMethod11(Bitmap originalBitmap, int ksize, ScanListenerWithKsize listener) {
-        // Step 1: Convert the input Bitmap to grayscale OpenCV Mat
         Mat originalMat = new Mat();
         Utils.bitmapToMat(originalBitmap, originalMat);
         Mat grayMat = new Mat();
         Imgproc.cvtColor(originalMat, grayMat, Imgproc.COLOR_RGBA2GRAY);
 
-        // Step 2: Invert the grayscale image
         Mat invertedGray = new Mat();
         Core.bitwise_not(grayMat, invertedGray);
 
-        // Step 3: Apply Gaussian Blur with the ksize from the controller
-        // The ksize must be an odd number.
         int kernelSize = (ksize * 2) + 1;
         Mat blurred = new Mat();
         Imgproc.GaussianBlur(invertedGray, blurred, new Size(kernelSize, kernelSize), 0);
 
-        // Step 4: Invert the blurred image
         Mat invertedBlurred = new Mat();
         Core.bitwise_not(blurred, invertedBlurred);
 
-        // Step 5: Create the pencil sketch by dividing the grayscale image by the inverted-blurred image
         Mat pencilSketch = new Mat();
         Core.divide(grayMat, invertedBlurred, pencilSketch, 256.0);
 
-        // Convert the final sketch to a displayable format
         Bitmap finalBitmap = Bitmap.createBitmap(pencilSketch.cols(), pencilSketch.rows(), Bitmap.Config.ARGB_8888);
         Mat finalRgba = new Mat();
         Imgproc.cvtColor(pencilSketch, finalRgba, Imgproc.COLOR_GRAY2RGBA);
         Utils.matToBitmap(finalRgba, finalBitmap);
 
-        // Object count is not very meaningful for a sketch, so we can return a default value like 1
         ProcessingResult result = new ProcessingResult(finalBitmap, 1);
         listener.onScanComplete(result);
 
-        // Clean up all the Mats
         originalMat.release();
         grayMat.release();
         invertedGray.release();
@@ -556,11 +515,9 @@ public class DeepScanProcessor {
         finalRgba.release();
     }
 
-    // --- NEW AI METHOD 11: Pencil Sketch Person on Raw Background ---
     public static void processMethod12(Context context, Bitmap originalBitmap, int ksize, AiScanListener listener) {
         ImageSegmenter imageSegmenter = null;
         try {
-            // Step 1: Initialize MediaPipe to get the person mask
             ImageSegmenterOptions.Builder optionsBuilder =
                 ImageSegmenterOptions.builder()
                     .setBaseOptions(BaseOptions.builder().setModelAssetPath(MODEL_FILE).build())
@@ -573,7 +530,6 @@ public class DeepScanProcessor {
 
             if (segmenterResult != null && segmenterResult.confidenceMasks().isPresent()) {
                 try (MPImage mask = segmenterResult.confidenceMasks().get().get(0)) {
-                    // Step 2: Convert the AI mask to an OpenCV Mat
                     ByteBuffer byteBuffer = ByteBufferExtractor.extract(mask);
                     FloatBuffer confidenceMaskBuffer = byteBuffer.asFloatBuffer();
                     confidenceMaskBuffer.rewind();
@@ -586,7 +542,6 @@ public class DeepScanProcessor {
                     Mat personMask = new Mat();
                     Imgproc.threshold(mask8u, personMask, 128, 255, Imgproc.THRESH_BINARY);
 
-                    // Step 3: Prepare the full-color original image and the full pencil sketch
                     Mat originalMat = new Mat();
                     Utils.bitmapToMat(originalBitmap, originalMat);
                     if (originalMat.channels() == 3) {
@@ -595,25 +550,20 @@ public class DeepScanProcessor {
                     Mat grayMat = new Mat();
                     Imgproc.cvtColor(originalMat, grayMat, Imgproc.COLOR_RGBA2GRAY);
                     
-                    // Create the pencil sketch using our helper function
                     Mat pencilSketchMat = createAdvancedPencilSketchMat(grayMat, ksize);
                     Mat pencilSketchRgba = new Mat();
                     Imgproc.cvtColor(pencilSketchMat, pencilSketchRgba, Imgproc.COLOR_GRAY2RGBA);
 
-                    // Step 4: Resize the mask to match the image dimensions
                     Mat resizedMask = new Mat();
                     Imgproc.resize(personMask, resizedMask, originalMat.size());
 
-                    // Step 5: Composite the pencil sketch person onto the original full-color image
                     pencilSketchRgba.copyTo(originalMat, resizedMask);
 
-                    // Step 6: Convert the final result to a Bitmap and notify listener
                     Bitmap finalBitmap = Bitmap.createBitmap(originalMat.cols(), originalMat.rows(), Bitmap.Config.ARGB_8888);
                     Utils.matToBitmap(originalMat, finalBitmap);
-                    ProcessingResult result = new ProcessingResult(finalBitmap, 1); // Object count is 1 (the person)
+                    ProcessingResult result = new ProcessingResult(finalBitmap, 1);
                     listener.onAiScanComplete(result);
 
-                    // Clean up all OpenCV Mats
                     maskMat.release();
                     mask8u.release();
                     personMask.release();
@@ -636,11 +586,9 @@ public class DeepScanProcessor {
         }
     }
 
-    // --- CORRECTED AI METHOD 12: Pencil Sketch Person on "AI Smart Outline" Base ---
     public static void processMethod13(Context context, Bitmap originalBitmap, int ksize, AiScanListener listener) {
         ImageSegmenter imageSegmenter = null;
         try {
-            // Step 1: Initialize MediaPipe to get the person mask
             ImageSegmenterOptions.Builder optionsBuilder =
                 ImageSegmenterOptions.builder()
                     .setBaseOptions(BaseOptions.builder().setModelAssetPath(MODEL_FILE).build())
@@ -653,7 +601,6 @@ public class DeepScanProcessor {
 
             if (segmenterResult != null && segmenterResult.confidenceMasks().isPresent()) {
                 try (MPImage mask = segmenterResult.confidenceMasks().get().get(0)) {
-                    // Step 2: Convert the AI mask to an OpenCV Mat
                     ByteBuffer byteBuffer = ByteBufferExtractor.extract(mask);
                     FloatBuffer confidenceMaskBuffer = byteBuffer.asFloatBuffer();
                     confidenceMaskBuffer.rewind();
@@ -666,7 +613,6 @@ public class DeepScanProcessor {
                     Mat personMask = new Mat();
                     Imgproc.threshold(mask8u, personMask, 128, 255, Imgproc.THRESH_BINARY);
 
-                    // --- CORRECTED START: Create the "AI Smart Outline" Base Image (Logic from processMethod0) ---
                     Mat originalMat = new Mat();
                     Utils.bitmapToMat(originalBitmap, originalMat);
                     Mat resizedMaskForBase = new Mat();
@@ -686,27 +632,20 @@ public class DeepScanProcessor {
                     Mat lineArtBase = new Mat(originalBitmap.getHeight(), originalBitmap.getWidth(), CvType.CV_8UC4, new Scalar(255, 255, 255, 255));
                     Imgproc.drawContours(lineArtBase, contours, -1, new Scalar(0, 0, 0, 255), 2);
                     lineArtBase.setTo(new Scalar(0, 0, 0, 255), detailLines);
-                    // --- CORRECTED END: The base image is now correctly in 'lineArtBase' ---
                     
-                    // --- START: Create the Pencil Sketch Person (Logic from Method 9) ---
                     Mat grayForSketch = new Mat();
                     Imgproc.cvtColor(originalMat, grayForSketch, Imgproc.COLOR_RGBA2GRAY);
                     Mat pencilSketchMat = createAdvancedPencilSketchMat(grayForSketch, ksize);
                     Mat pencilSketchRgba = new Mat();
                     Imgproc.cvtColor(pencilSketchMat, pencilSketchRgba, Imgproc.COLOR_GRAY2RGBA);
-                    // --- END: Pencil Sketch is in 'pencilSketchRgba' ---
                     
-                    // Step 3: Composite the pencil sketch person onto the line art base
-                    // We can reuse the resized mask from the base creation step.
                     pencilSketchRgba.copyTo(lineArtBase, resizedMaskForBase);
 
-                    // Step 4: Convert final result to Bitmap and notify listener
                     Bitmap finalBitmap = Bitmap.createBitmap(lineArtBase.cols(), lineArtBase.rows(), Bitmap.Config.ARGB_8888);
                     Utils.matToBitmap(lineArtBase, finalBitmap);
                     ProcessingResult result = new ProcessingResult(finalBitmap, contours.size());
                     listener.onAiScanComplete(result);
 
-                    // Clean up all Mats
                     maskMat.release();
                     mask8u.release();
                     personMask.release();
@@ -738,8 +677,7 @@ public class DeepScanProcessor {
         }
     }
 
-
-    // --- UNIFIED PROCESSING METHOD FOR FINE-TUNING (MANUAL MODE) ---
+    // --- FINE-TUNING METHOD (Live Preview) ---
     public static void processWithFineTuning(Bitmap originalBitmap, int method, int depth, int sharpness, ScanListener listener) {
         Mat originalMat = new Mat();
         Utils.bitmapToMat(originalBitmap, originalMat);
@@ -747,22 +685,18 @@ public class DeepScanProcessor {
         Imgproc.cvtColor(originalMat, grayMat, Imgproc.COLOR_RGBA2GRAY);
         Mat finalLines = new Mat();
 
-        // Note: The 'method' parameter is the spinner index. This switch must be updated
-        // in ProcessingActivity to pass the correct logical method number.
-        // Assuming the mapping is handled there, this code remains similar.
         switch (method) {
-            // Cases for old methods 2 and 3 are removed.
-            case 2: // Now Segmented Detail
-            case 4: // Now Selective Detail
-            case 5: // Now Artistic
-            case 6: // Now Clean Structure
-            case 8: // Now Legacy
+            case 2:
+            case 4:
+            case 5:
+            case 6:
+            case 8:
                 finalLines = getStagedCleanStructureLines(grayMat, depth, sharpness);
                 break;
-            case 3: // Now Pencil Sketch
+            case 3:
                 finalLines = getStagedPencilSketch(grayMat, depth, sharpness);
                 break;
-            case 7: // Now Detailed Texture
+            case 7:
                 finalLines = getStagedDetailedTextureLines(grayMat, depth, sharpness);
                 break;
             default:
@@ -774,8 +708,6 @@ public class DeepScanProcessor {
         originalMat.release();
         grayMat.release();
     }
-
-    // --- STAGED PIPELINE IMPLEMENTATIONS FOR FINE-TUNING ---
 
     private static Mat getStagedCleanStructureLines(Mat grayMat, int depth, int sharpness) {
         int blurKernelSize = mapSharpnessToOdd(sharpness, 11, 3);
@@ -814,16 +746,13 @@ public class DeepScanProcessor {
         Mat finalized = new Mat();
         Mat boldKernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, new Size(boldKernelSize, boldKernelSize));
         Imgproc.dilate(cleaned, finalized, boldKernel);
-        if (depth == 3 || depth == 4) {
-            blurredMat.release();
-            detail.release();
-            foundation.release();
-            cleaned.release();
-            cleanKernel.release();
-            boldKernel.release();
-            return finalized;
-        }
 
+        blurredMat.release();
+        detail.release();
+        foundation.release();
+        cleaned.release();
+        cleanKernel.release();
+        boldKernel.release();
         return finalized;
     }
 
@@ -867,16 +796,13 @@ public class DeepScanProcessor {
         Mat finalized = new Mat();
         Mat boldKernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, new Size(boldKernelSize, boldKernelSize));
         Imgproc.dilate(cleaned, finalized, boldKernel);
-        if (depth == 3 || depth == 4) {
-            simplifiedMat.release();
-            detail.release();
-            foundation.release();
-            cleaned.release();
-            cleanKernel.release();
-            boldKernel.release();
-            return finalized;
-        }
 
+        simplifiedMat.release();
+        detail.release();
+        foundation.release();
+        cleaned.release();
+        cleanKernel.release();
+        boldKernel.release();
         return finalized;
     }
 
@@ -907,8 +833,6 @@ public class DeepScanProcessor {
         return sketch;
     }
 
-    // --- HELPER FUNCTIONS ---
-
     private static int mapSharpnessToInt(int sharpness, int valAt0, int valAt100) {
         float result = valAt0 + (valAt100 - valAt0) * (sharpness / 100.0f);
         return Math.max(1, (int)result);
@@ -936,30 +860,20 @@ public class DeepScanProcessor {
         topSub.release();
         return result;
     }
-    
-    // --- NEW HELPER: Creates an Advanced Pencil Sketch Mat ---
+
     private static Mat createAdvancedPencilSketchMat(Mat grayMat, int ksize) {
-        // The ksize must be an odd number for the kernel.
-        // Using the same logic as the existing Method 9 (processMethod11).
         int kernelSize = (ksize * 2) + 1;
-        
         Mat invertedGray = new Mat();
         Core.bitwise_not(grayMat, invertedGray);
-
         Mat blurred = new Mat();
         Imgproc.GaussianBlur(invertedGray, blurred, new Size(kernelSize, kernelSize), 0);
-
         Mat invertedBlurred = new Mat();
         Core.bitwise_not(blurred, invertedBlurred);
-
         Mat pencilSketch = new Mat();
         Core.divide(grayMat, invertedBlurred, pencilSketch, 256.0);
-
-        // Release intermediate Mats
         invertedGray.release();
         blurred.release();
         invertedBlurred.release();
-
         return pencilSketch;
     }
 
@@ -992,17 +906,6 @@ public class DeepScanProcessor {
         return finalLines;
     }
 
-    private static Mat getMethod7Lines(Mat grayMat) {
-        Mat simplified = getSimplifiedImage(grayMat);
-        Mat major = getCannyEdges(simplified, 5, 50);
-        Mat detail = getCannyEdges(simplified, 60, 120);
-        Core.bitwise_or(major, detail, major);
-        Mat finalLines = finalizeLines(major);
-        simplified.release();
-        detail.release();
-        return finalLines;
-    }
-
     private static Mat getMethod8Lines(Mat grayMat) {
         Mat blurred = new Mat();
         Imgproc.GaussianBlur(grayMat, blurred, new Size(5, 5), 0);
@@ -1016,7 +919,6 @@ public class DeepScanProcessor {
     }
 
     private static int countContours(Mat mat) {
-        // SAFETY FIX: Use a clone because findContours can modify the source Mat.
         Mat matCopy = mat.clone();
         List<MatOfPoint> contours = new ArrayList<>();
         Mat hierarchy = new Mat();
@@ -1032,24 +934,24 @@ public class DeepScanProcessor {
 
     private static void finalizeAndComplete(Mat finalLines, ScanListener listener) {
         int totalObjects = countContours(finalLines);
+        Bitmap finalBitmap;
         if (finalLines.channels() == 1) {
-             Bitmap finalBitmap = createBitmapFromMask(finalLines, finalLines.size());
-             ProcessingResult finalResult = new ProcessingResult(finalBitmap, totalObjects);
-             listener.onScanComplete(finalResult);
+            finalBitmap = createBitmapFromMask(finalLines, finalLines.size());
         } else {
-            Bitmap finalBitmap = Bitmap.createBitmap(finalLines.cols(), finalLines.rows(), Bitmap.Config.ARGB_8888);
+            finalBitmap = Bitmap.createBitmap(finalLines.cols(), finalLines.rows(), Bitmap.Config.ARGB_8888);
             Utils.matToBitmap(finalLines, finalBitmap);
-            ProcessingResult finalResult = new ProcessingResult(finalBitmap, totalObjects);
-            listener.onScanComplete(finalResult);
         }
-        // SAVING FIX: The Mat must be released here, after it has been converted to a bitmap, to prevent memory errors.
+        ProcessingResult finalResult = new ProcessingResult(finalBitmap, totalObjects);
+        listener.onScanComplete(finalResult);
         finalLines.release();
     }
 
     private static Bitmap createBitmapFromMask(Mat mask, Size originalSize) {
         Mat finalMat = new Mat(originalSize, CvType.CV_8UC4, new Scalar(255, 255, 255, 255));
         Scalar blackColor = new Scalar(0, 0, 0, 255);
-        finalMat.setTo(blackColor, mask);
+        if (mask != null && !mask.empty()) {
+           finalMat.setTo(blackColor, mask);
+        }
         Bitmap bitmap = Bitmap.createBitmap((int)originalSize.width, (int)originalSize.height, Bitmap.Config.ARGB_8888);
         Utils.matToBitmap(finalMat, bitmap);
         finalMat.release();
