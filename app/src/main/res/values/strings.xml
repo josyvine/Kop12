@@ -1,7 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- 
+      YOUR ORIGINAL AppTheme REMAINS UNCHANGED.
+    -->
+    <style name="AppTheme" parent="Theme.AppCompat.NoActionBar">
+        <!-- You can customize your theme attributes here in the future if needed. -->
+    </style>
 
-    <string name="app_name">kop</string>
-    <string name="hello_world">Hello world!</string>
+    <!--
+      START OF NEW, ADDED STYLE FOR AI CONTROLS
+      This is a new, separate theme overlay. It will only be applied to the AI
+      settings container. It provides the necessary attributes for Material Components
+      (like the outlined text box) to work without crashing, and it will not affect
+      the rest of your app's styling.
+    -->
+    <style name="MaterialComponentsThemeOverlay" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <!-- This theme enables the new UI components to function correctly. -->
+    </style>
 
 </resources>
