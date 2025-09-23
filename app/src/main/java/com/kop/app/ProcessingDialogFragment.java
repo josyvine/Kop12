@@ -603,9 +603,7 @@ public class ProcessingDialogFragment extends DialogFragment {
         performLivePreviewAnalysis();
     }
 
-    // --- LOGIC MERGED ---
-    // This is the main processing loop. The logic for handling methods 2-8 is restored
-    // from the older file, while the new AI logic for methods 11-12 is preserved.
+    // --- LOGIC MERGED AND ENHANCED ---
     private void processAllFrames(final int ksize, final int depth, final int sharpness) throws Exception {
         final int totalFrames = rawFrames.length;
         goldStandardBitmap = null; // Reset before each full run
@@ -632,15 +630,15 @@ public class ProcessingDialogFragment extends DialogFragment {
                 if (selectedMethod <= 1) { // Old AI Methods
                     beginBlockingAiScan(orientedBitmap, frameIndex);
                 } else if (selectedMethod >= 10 && selectedMethod <= 12) { // Pencil / New AI Methods
-                    // This block contains the NEW AI logic which is preserved
                     if (switchEnableAi.isChecked() && (selectedMethod == 11 || selectedMethod == 12)) {
-                        int frameKsize = ksize;
-
+                        // --- START OF NEW AI-GUIDED SCANNING LOGIC ---
                         if (frameIndex == 0) {
-                            goldStandardBitmap = getAiPencilScanAsBitmap(orientedBitmap, frameKsize);
+                            // The first frame is processed normally to establish the "gold standard" style.
+                            goldStandardBitmap = getAiPencilScanAsBitmap(orientedBitmap, ksize);
                             saveProcessedFrame(goldStandardBitmap, frameIndex);
                         } else {
-                            Bitmap draftBitmap = getAiPencilScanAsBitmap(orientedBitmap, frameKsize);
+                            // For subsequent frames, first check for style consistency.
+                            Bitmap draftBitmap = getAiPencilScanAsBitmap(orientedBitmap, ksize);
                             if (draftBitmap == null) {
                                 Log.e(TAG, "Draft bitmap for frame " + frameIndex + " is null. Skipping AI check.");
                                 continue;
@@ -652,19 +650,23 @@ public class ProcessingDialogFragment extends DialogFragment {
                                     goldStandardBitmap,
                                     orientedBitmap,
                                     draftBitmap,
-                                    frameKsize
+                                    ksize
                             );
 
                             if (params.wasCorrected) {
+                                // The AI detected an inconsistency and suggested a fix.
                                 draftBitmap.recycle();
-                                Bitmap finalBitmap = getAiPencilScanAsBitmap(orientedBitmap, params.ksize);
-                                saveProcessedFrame(finalBitmap, frameIndex);
+                                // We perform the more advanced, guided scan.
+                                beginBlockingAiGuidedScan(orientedBitmap, frameIndex, params.ksize);
+
                             } else {
+                                // The frame is consistent, save the draft and move on.
                                 saveProcessedFrame(draftBitmap, frameIndex);
                             }
                         }
+                        // --- END OF NEW AI-GUIDED SCANNING LOGIC ---
                     } else {
-                        // Standard processing for Method 10 or if new AI is off
+                        // Standard processing for Method 10 or if AI is off
                         beginBlockingPencilOrNewAiScan(orientedBitmap, frameIndex, ksize);
                     }
                 } else if (selectedMethod == 2) { // Live Analysis Method
@@ -673,11 +675,9 @@ public class ProcessingDialogFragment extends DialogFragment {
                     boolean isVideoStandardAuto = isVideoFile(inputFilePath) && sliderAnalysisMode.getProgress() == 0;
                     boolean isImageAutoScan = !isVideoFile(inputFilePath) && switchAutomaticScan.isChecked();
 
-                    // For an image, if automatic scan is on, it will run the 5-pass scan.
                     if (isVideoStandardAuto || isImageAutoScan) {
                         beginStandardScan(orientedBitmap, frameIndex);
                     } else {
-                        // For a video with tuned settings, or an image in manual mode.
                         beginTunedScan(orientedBitmap, frameIndex, depth, sharpness);
                     }
                 }
@@ -1353,7 +1353,7 @@ public class ProcessingDialogFragment extends DialogFragment {
         }
     }
 
-    // --- START OF NEW METHODS FOR AI FEATURE ---
+    // --- START OF NEW/UPDATED METHODS FOR AI FEATURE ---
 
     /**
      * Sets up the listeners and initial state for the AI controls UI.
@@ -1465,6 +1465,78 @@ public class ProcessingDialogFragment extends DialogFragment {
             }
         }
     }
-    // --- END OF NEW METHODS FOR AI FEATURE ---
 
+    /**
+     * NEW METHOD for Task 2: Performs the AI-guided scan for a single frame.
+     * This is the advanced path where the AI first finds object regions to guide the scan.
+     *
+     * @param bitmap The raw, unprocessed frame.
+     * @param frameIndex The index of the current frame.
+     * @param ksize The ksize parameter, potentially corrected by the AI.
+     * @throws InterruptedException
+     */
+    private void beginBlockingAiGuidedScan(Bitmap bitmap, final int frameIndex, final int ksize) throws InterruptedException {
+        // Step 1: Ask the AI to find important object regions in the raw frame.
+        String apiKey = sharedPreferences.getString("GEMINI_API_KEY", "");
+        FrameAnalysisResult analysisResult = GeminiAiHelper.findObjectRegions(apiKey, bitmap);
+
+        if (!analysisResult.hasObjects()) {
+            // If the AI couldn't find any objects, we fall back to the standard (non-guided) scan
+            // to ensure a frame is still produced.
+            Log.w(TAG, "AI found no objects for guided scan on frame " + frameIndex + ". Falling back to standard scan.");
+            beginBlockingPencilOrNewAiScan(bitmap, frameIndex, ksize);
+            return;
+        }
+
+        // Step 2: Create a black-and-white mask from the bounding boxes the AI provided.
+        Bitmap aiMask = ImageProcessor.createMaskFromRects(
+            bitmap.getWidth(),
+            bitmap.getHeight(),
+            analysisResult.getObjectBounds()
+        );
+
+        // Step 3: Call the overloaded processing method with the guide mask.
+        final CountDownLatch latch = new CountDownLatch(1);
+        DeepScanProcessor.AiScanListener listener = new DeepScanProcessor.AiScanListener() {
+            @Override
+            public void onAiScanComplete(final DeepScanProcessor.ProcessingResult finalResult) {
+                if (finalResult != null && finalResult.resultBitmap != null) {
+                    saveProcessedFrame(finalResult.resultBitmap, frameIndex);
+
+                    // --- IMPLEMENTATION OF TASK 1: Display Toast Notification ---
+                    final String toastMessage = String.format(Locale.US,
+                        "AI Assist: Enhanced Frame %d. Problem: %s. Fix: %s.",
+                        frameIndex + 1,
+                        finalResult.problemDetected,
+                        finalResult.fixApplied
+                    );
+                    uiHandler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            Toast.makeText(getContext(), toastMessage, Toast.LENGTH_SHORT).show();
+                        }
+                    });
+                    // --- END OF TASK 1 IMPLEMENTATION ---
+
+                } else {
+                    Log.e(TAG, "AI-guided scan returned null for frame " + frameIndex);
+                }
+                latch.countDown();
+            }
+        };
+
+        if (selectedMethod == 11) {
+            DeepScanProcessor.processMethod12(getContext(), bitmap, ksize, aiMask, listener);
+        } else if (selectedMethod == 12) {
+            DeepScanProcessor.processMethod13(getContext(), bitmap, ksize, aiMask, listener);
+        }
+
+        // Clean up the mask bitmap after use.
+        if (aiMask != null) {
+            aiMask.recycle();
+        }
+
+        latch.await();
+    }
+    // --- END OF NEW/UPDATED METHODS ---
 }
