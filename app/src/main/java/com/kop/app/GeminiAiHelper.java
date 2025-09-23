@@ -1,4 +1,4 @@
-package com.kop.app; 
+package com.kop.app;
 
 import android.graphics.Bitmap;
 import android.util.Base64;
@@ -11,11 +11,13 @@ import com.google.gson.JsonParser;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 
+// --- START OF ADDED IMPORTS TO FIX "CANNOT FIND SYMBOL" ERRORS ---
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
+// --- END OF ADDED IMPORTS ---
 
 /**
  * A dedicated helper class to handle all communication with the Google Gemini API.
@@ -26,7 +28,7 @@ public class GeminiAiHelper {
 
     private static final String TAG = "GeminiAiHelper";
     // The Gemini endpoint is hardcoded as requested. The API key will be appended.
-    private static final String API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=";
+    private static final String API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro-vision:generateContent?key=";
     private static final OkHttpClient client = new OkHttpClient();
 
     /**
