@@ -1,7 +1,9 @@
 package com.kop.app;
 
 import android.app.Dialog;
+import android.content.Context;
 import android.content.DialogInterface;
+import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Matrix;
@@ -18,6 +20,7 @@ import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.CompoundButton;
+import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -35,6 +38,9 @@ import androidx.exifinterface.media.ExifInterface;
 import androidx.fragment.app.DialogFragment;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
+
+import com.google.android.material.switchmaterial.SwitchMaterial;
+import com.google.android.material.textfield.TextInputLayout;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -86,7 +92,6 @@ public class ProcessingDialogFragment extends DialogFragment {
 
     private OnDialogClosedListener closeListener;
 
-    // --- FIX: Restore the Switch for image mode and get references to both control containers ---
     private Switch switchAutomaticScan;
     private LinearLayout imageControlsContainer;
     private SeekBar sliderAnalysisMode;
@@ -94,6 +99,18 @@ public class ProcessingDialogFragment extends DialogFragment {
 
     private final Handler livePreviewHandler = new Handler(Looper.getMainLooper());
     private Runnable livePreviewRunnable;
+
+    // --- START OF NEW VARIABLES FOR AI FEATURE ---
+    private SharedPreferences sharedPreferences;
+    private LinearLayout aiControlsContainer;
+    private TextInputLayout textInputLayoutApiKey;
+    private EditText etGeminiApiKey;
+    private Button btnSaveApiKey;
+    private ImageButton btnUpdateApiKey;
+    private SwitchMaterial switchEnableAi;
+    private Bitmap goldStandardBitmap = null;
+    // --- END OF NEW VARIABLES FOR AI FEATURE ---
+
 
     public interface OnDialogClosedListener {
         void onDialogClosed();
@@ -126,6 +143,14 @@ public class ProcessingDialogFragment extends DialogFragment {
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
         initializeViews(view);
+
+        // --- START OF NEW AI SETUP CALLS ---
+        // Initialize SharedPreferences for storing the API key
+        sharedPreferences = getContext().getSharedPreferences("KopAppSettings", Context.MODE_PRIVATE);
+        // Set up the listeners and initial state for the AI UI components
+        setupAiControls();
+        // --- END OF NEW AI SETUP CALLS ---
+
         if (inputFilePath != null && !inputFilePath.isEmpty()) {
             startInitialSetup();
         } else {
@@ -141,6 +166,13 @@ public class ProcessingDialogFragment extends DialogFragment {
     public void onDismiss(@NonNull DialogInterface dialog) {
         super.onDismiss(dialog);
         cleanupRawFiles();
+        // --- START OF NEW AI CLEANUP ---
+        // Ensure the gold standard bitmap is recycled if the dialog is closed mid-process
+        if (goldStandardBitmap != null) {
+            goldStandardBitmap.recycle();
+            goldStandardBitmap = null;
+        }
+        // --- END OF NEW AI CLEANUP ---
         if (closeListener != null) {
             closeListener.onDialogClosed();
         }
@@ -173,12 +205,19 @@ public class ProcessingDialogFragment extends DialogFragment {
         ksizeControlsContainer = view.findViewById(R.id.ksize_controls_container);
         sliderKsize = view.findViewById(R.id.slider_ksize);
 
-        // --- FIX START: Get references to the specific UI containers from the new layout ---
         switchAutomaticScan = view.findViewById(R.id.switch_automatic_scan);
         imageControlsContainer = view.findViewById(R.id.image_controls_container);
         sliderAnalysisMode = view.findViewById(R.id.slider_analysis_mode);
         videoControlsContainer = view.findViewById(R.id.video_controls_container);
-        // --- FIX END ---
+
+        // --- START OF NEW View-Finding for AI controls ---
+        aiControlsContainer = view.findViewById(R.id.ai_controls_container);
+        textInputLayoutApiKey = view.findViewById(R.id.text_input_layout_api_key);
+        etGeminiApiKey = view.findViewById(R.id.et_gemini_api_key);
+        btnSaveApiKey = view.findViewById(R.id.btn_save_api_key);
+        btnUpdateApiKey = view.findViewById(R.id.btn_update_api_key);
+        switchEnableAi = view.findViewById(R.id.switch_enable_ai);
+        // --- END OF NEW View-Finding for AI controls ---
 
         closeButton.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -237,19 +276,19 @@ public class ProcessingDialogFragment extends DialogFragment {
     }
 
     private void setupAnalysisControls(boolean isVideo) {
-        // --- FIX START: This is the core "wall" logic to show the right UI for images vs videos ---
         if (isVideo) {
             settingsButton.setVisibility(View.VISIBLE);
-            analysisControlsContainer.setVisibility(View.GONE); // Hide the main panel initially for videos
-            imageControlsContainer.setVisibility(View.GONE);    // Explicitly hide image controls
-            videoControlsContainer.setVisibility(View.VISIBLE);  // Explicitly show video controls
+            analysisControlsContainer.setVisibility(View.GONE);
+            imageControlsContainer.setVisibility(View.GONE);
+            videoControlsContainer.setVisibility(View.VISIBLE);
         } else {
             settingsButton.setVisibility(View.GONE);
-            analysisControlsContainer.setVisibility(View.VISIBLE); // Show the main panel for images
-            imageControlsContainer.setVisibility(View.VISIBLE);   // Explicitly show image controls
-            videoControlsContainer.setVisibility(View.GONE);      // Explicitly hide video controls
+            analysisControlsContainer.setVisibility(View.VISIBLE);
+            imageControlsContainer.setVisibility(View.VISIBLE);
+            videoControlsContainer.setVisibility(View.GONE);
+            // Hide AI controls for single images
+            aiControlsContainer.setVisibility(View.GONE);
         }
-        // --- FIX END ---
 
         fineTuningControls.setVisibility(View.GONE);
 
@@ -262,7 +301,20 @@ public class ProcessingDialogFragment extends DialogFragment {
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
                 selectedMethod = position;
-                // --- FIX: Update the correct UI based on file type ---
+
+                // --- START OF NEW LOGIC TO SHOW/HIDE AI CONTROLS ---
+                // Only show the AI controls container if a video is loaded AND method 11 or 12 is selected.
+                if (isVideo && (selectedMethod == 11 || selectedMethod == 12)) {
+                    aiControlsContainer.setVisibility(View.VISIBLE);
+                } else {
+                    aiControlsContainer.setVisibility(View.GONE);
+                    // Safety: always turn off AI if user switches away from a compatible method.
+                    if (switchEnableAi != null) {
+                        switchEnableAi.setChecked(false);
+                    }
+                }
+                // --- END OF NEW LOGIC TO SHOW/HIDE AI CONTROLS ---
+
                 if (isVideo) {
                     updateUiForVideoMode(sliderAnalysisMode.getProgress());
                 } else {
@@ -272,6 +324,12 @@ public class ProcessingDialogFragment extends DialogFragment {
             @Override
             public void onNothingSelected(AdapterView<?> parent) {
                 selectedMethod = 0;
+                // --- START OF NEW LOGIC TO SHOW/HIDE AI CONTROLS (for safety) ---
+                aiControlsContainer.setVisibility(View.GONE);
+                if (switchEnableAi != null) {
+                    switchEnableAi.setChecked(false);
+                }
+                // --- END OF NEW LOGIC TO SHOW/HIDE AI CONTROLS (for safety) ---
                 if (isVideo) {
                     updateUiForVideoMode(sliderAnalysisMode.getProgress());
                 } else {
@@ -319,7 +377,6 @@ public class ProcessingDialogFragment extends DialogFragment {
             });
         }
 
-        // --- FIX: Setup listeners for BOTH control types ---
         switchAutomaticScan.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
             @Override
             public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
@@ -380,7 +437,6 @@ public class ProcessingDialogFragment extends DialogFragment {
             }
         });
 
-        // --- FIX: Set initial state correctly ---
         if (isVideo) {
             updateUiForVideoMode(0);
         } else {
@@ -388,7 +444,6 @@ public class ProcessingDialogFragment extends DialogFragment {
         }
     }
 
-    // --- FIX START: New method to enable/disable all controls ---
     private void setUiEnabled(boolean isEnabled) {
         analyzeButton.setEnabled(isEnabled);
         settingsButton.setEnabled(isEnabled);
@@ -397,9 +452,7 @@ public class ProcessingDialogFragment extends DialogFragment {
         sliderAnalysisMode.setEnabled(isEnabled);
         switchAutomaticScan.setEnabled(isEnabled);
     }
-    // --- FIX END ---
 
-    // --- FIX START: Restored UI logic handler for IMAGES ---
     private void updateUiForImageMode(boolean isAutomatic) {
         boolean needsDepthSharpness = selectedMethod >= 3 && selectedMethod <= 9;
         boolean needsKsize = selectedMethod >= 10 && selectedMethod <= 12;
@@ -418,9 +471,7 @@ public class ProcessingDialogFragment extends DialogFragment {
             }
         }
     }
-    // --- FIX END ---
 
-    // --- FIX START: Renamed and clarified UI logic handler for VIDEOS ---
     private void updateUiForVideoMode(int mode) {
         boolean needsDepthSharpness = selectedMethod >= 3 && selectedMethod <= 9;
         boolean needsKsize = selectedMethod >= 10 && selectedMethod <= 12;
@@ -460,7 +511,6 @@ public class ProcessingDialogFragment extends DialogFragment {
                 break;
         }
     }
-    // --- FIX END ---
 
     private void performLivePreviewAnalysis() {
         if (sourceBitmapForTuning == null) {
@@ -483,9 +533,7 @@ public class ProcessingDialogFragment extends DialogFragment {
     }
 
     private void beginAnalysis() {
-        // --- FIX: Cancel any pending live preview runnables to prevent the race condition ---
         livePreviewHandler.removeCallbacksAndMessages(null);
-        // --- END FIX ---
 
         setUiEnabled(false);
         analysisControlsContainer.setVisibility(View.GONE);
@@ -501,28 +549,24 @@ public class ProcessingDialogFragment extends DialogFragment {
             @Override
             public void run() {
                 try {
-                    // --- FIX START: Reworked logic to handle the new UI separation ---
                     if (isVideoFile(inputFilePath)) {
                         int mode = sliderAnalysisMode.getProgress();
                         int ksize = sliderKsize.getProgress();
                         int depth = sliderDepth.getProgress();
                         int sharpness = sliderSharpness.getProgress();
 
-                        if (mode == 1) { // Clicked "Analyze Preview"
+                        if (mode == 1) {
                             processSingleFrameManually();
-                        } else { // Mode 0 (Standard Auto) or 2 (Apply to Video)
+                        } else {
                             processAllFrames(ksize, depth, sharpness);
                         }
-                    } else { // It's a single image
+                    } else {
                         if (switchAutomaticScan.isChecked()) {
-                            // Run with default values for the 5-pass analyzer
                             processAllFrames(10, 2, 50);
                         } else {
-                            // Run a single pass with tuned values
                             processSingleFrameManually();
                         }
                     }
-                    // --- FIX END ---
                 } catch (final Exception e) {
                     Log.e(TAG, "Analysis failed", e);
                     String message = (e.getMessage() != null) ? e.getMessage() : "An unknown error occurred.";
@@ -532,7 +576,6 @@ public class ProcessingDialogFragment extends DialogFragment {
         }).start();
     }
 
-    // --- FIX START: New name for clarity, this handles single frames for tuning/preview ---
     private void processSingleFrameManually() {
         if (isFirstFineTuneAnalysis) {
             try {
@@ -550,49 +593,98 @@ public class ProcessingDialogFragment extends DialogFragment {
         }
         performLivePreviewAnalysis();
     }
-    // --- FIX END ---
 
 
-    // --- FIX START: Renamed and clarified for handling multi-frame processing ---
     private void processAllFrames(final int ksize, final int depth, final int sharpness) throws Exception {
         final int totalFrames = rawFrames.length;
+        goldStandardBitmap = null; // Reset before each full run
+
         uiHandler.post(new Runnable() {
             @Override
             public void run() {
                 progressBar.setVisibility(View.VISIBLE);
             }
         });
-        for (int i = 0; i < totalFrames; i++) {
-            final int frameNum = i + 1;
-            final int frameIndex = i;
 
-            updateStatus("Processing frame " + frameNum + " of " + totalFrames, false);
-            updateProgress(frameNum, totalFrames);
-            updateCurrentFrameHighlight(frameIndex);
+        try {
+            for (int i = 0; i < totalFrames; i++) {
+                final int frameNum = i + 1;
+                final int frameIndex = i;
 
-            Bitmap orientedBitmap = decodeAndRotateBitmap(rawFrames[frameIndex].getAbsolutePath());
-            if (orientedBitmap == null) continue;
+                updateStatus("Processing frame " + frameNum + " of " + totalFrames, false);
+                updateProgress(frameNum, totalFrames);
+                updateCurrentFrameHighlight(frameIndex);
 
-            if (selectedMethod <= 1) { // AI Methods
-                beginBlockingAiScan(orientedBitmap, frameIndex);
-            } else if (selectedMethod >= 10 && selectedMethod <= 12) { // Pencil / AI Pencil Methods
-                beginBlockingPencilOrNewAiScan(orientedBitmap, frameIndex, ksize);
-            } else if (selectedMethod == 2) { // Live Analysis
-                beginMethod1LiveScan(orientedBitmap, frameIndex);
-            } else { // All other methods (2-8) that use the 5-pass or tuned logic
-                boolean isVideoStandardAuto = isVideoFile(inputFilePath) && sliderAnalysisMode.getProgress() == 0;
-                boolean isImageAutoScan = !isVideoFile(inputFilePath) && switchAutomaticScan.isChecked();
+                Bitmap orientedBitmap = decodeAndRotateBitmap(rawFrames[frameIndex].getAbsolutePath());
+                if (orientedBitmap == null) continue;
 
-                // --- FIX: This is where we run the 5-pass analyzer ---
-                if (isVideoStandardAuto || isImageAutoScan) {
-                    beginStandardScan(orientedBitmap, frameIndex);
+                if (selectedMethod <= 1) {
+                    beginBlockingAiScan(orientedBitmap, frameIndex);
+                } else if (selectedMethod >= 10 && selectedMethod <= 12) {
+                    // --- START OF NEW AI LOGIC PATH ---
+                    // Check if AI is enabled AND the method is one of the compatible ones
+                    if (switchEnableAi.isChecked() && (selectedMethod == 11 || selectedMethod == 12)) {
+                        // PATH A: AI IS ON - Use the new, separate AI-assisted logic
+                        int frameKsize = ksize; // Start with the user's selected ksize
+
+                        if (frameIndex == 0) {
+                            // First frame: create the Gold Standard and save it
+                            goldStandardBitmap = getAiPencilScanAsBitmap(orientedBitmap, frameKsize);
+                            saveProcessedFrame(goldStandardBitmap, frameIndex);
+                        } else {
+                            // Subsequent frames: run the AI check
+                            // 1. Create a "draft" with the user's settings
+                            Bitmap draftBitmap = getAiPencilScanAsBitmap(orientedBitmap, frameKsize);
+
+                            // 2. Call the AI Helper for analysis
+                            String apiKey = sharedPreferences.getString("GEMINI_API_KEY", "");
+                            CorrectedKsize params = GeminiAiHelper.getCorrectedKsize(
+                                    apiKey,
+                                    goldStandardBitmap,
+                                    orientedBitmap,
+                                    draftBitmap,
+                                    frameKsize
+                            );
+
+                            // 3. Decide which version to save
+                            if (params.wasCorrected) {
+                                // If AI corrected, re-process with the new ksize and save
+                                draftBitmap.recycle(); // Clean up the old draft
+                                Bitmap finalBitmap = getAiPencilScanAsBitmap(orientedBitmap, params.ksize);
+                                saveProcessedFrame(finalBitmap, frameIndex);
+                            } else {
+                                // If AI said it was good, just save the draft
+                                saveProcessedFrame(draftBitmap, frameIndex);
+                            }
+                        }
+                    } else {
+                        // PATH B: AI IS OFF OR METHOD IS 10 (not compatible)
+                        // RUN YOUR ORIGINAL, UNALTERED CODE.
+                        beginBlockingPencilOrNewAiScan(orientedBitmap, frameIndex, ksize);
+                    }
+                    // --- END OF NEW AI LOGIC PATH ---
+                } else if (selectedMethod == 2) {
+                    beginMethod1LiveScan(orientedBitmap, frameIndex);
                 } else {
-                    // This handles "Apply to Video" with tuned settings
-                    beginTunedScan(orientedBitmap, frameIndex, depth, sharpness);
+                    boolean isVideoStandardAuto = isVideoFile(inputFilePath) && sliderAnalysisMode.getProgress() == 0;
+                    boolean isImageAutoScan = !isVideoFile(inputFilePath) && switchAutomaticScan.isChecked();
+
+                    if (isVideoStandardAuto || isImageAutoScan) {
+                        beginStandardScan(orientedBitmap, frameIndex);
+                    } else {
+                        beginTunedScan(orientedBitmap, frameIndex, depth, sharpness);
+                    }
                 }
+                orientedBitmap.recycle();
             }
-            orientedBitmap.recycle();
+        } finally {
+            // IMPORTANT: Clean up the gold standard bitmap after the loop finishes to prevent memory leaks
+            if (goldStandardBitmap != null) {
+                goldStandardBitmap.recycle();
+                goldStandardBitmap = null;
+            }
         }
+
 
         cleanupRawFiles();
 
@@ -612,7 +704,6 @@ public class ProcessingDialogFragment extends DialogFragment {
             }
         });
     }
-    // --- FIX END ---
 
     private void beginAutomaticAiScan(final int methodIndex) {
         if (sourceBitmapForTuning == null) {
@@ -850,7 +941,6 @@ public class ProcessingDialogFragment extends DialogFragment {
         DeepScanProcessor.processWithFineTuning(sourceBitmapForTuning, finalLogicalMethod, depth, sharpness, listener);
     }
 
-    // --- FIX START: New method for applying tuned settings to a single frame in a batch ---
     private void beginTunedScan(Bitmap bitmap, final int frameIndex, int depth, int sharpness) throws InterruptedException {
         final CountDownLatch latch = new CountDownLatch(1);
         int logicalMethod = 0;
@@ -885,7 +975,6 @@ public class ProcessingDialogFragment extends DialogFragment {
         DeepScanProcessor.processWithFineTuning(bitmap, finalLogicalMethod, depth, sharpness, listener);
         latch.await();
     }
-    // --- FIX END ---
 
     private void saveCurrentImage() {
         if (mainDisplay.getDrawable() == null) {
@@ -1253,4 +1342,113 @@ public class ProcessingDialogFragment extends DialogFragment {
             dialog.getWindow().setLayout(width, height);
         }
     }
+
+    // --- START OF NEW METHODS FOR AI FEATURE ---
+
+    /**
+     * Sets up the listeners and initial state for the AI controls UI.
+     * This handles saving the API key and managing the visibility of UI components.
+     */
+    private void setupAiControls() {
+        btnSaveApiKey.setOnClickListener(v -> {
+            String apiKey = etGeminiApiKey.getText().toString().trim();
+            if (!apiKey.isEmpty()) {
+                sharedPreferences.edit().putString("GEMINI_API_KEY", apiKey).apply();
+                Toast.makeText(getContext(), "API Key Saved", Toast.LENGTH_SHORT).show();
+                updateAiUiState();
+            } else {
+                Toast.makeText(getContext(), "API Key cannot be empty", Toast.LENGTH_SHORT).show();
+            }
+        });
+
+        btnUpdateApiKey.setOnClickListener(v -> {
+            // Show the input box again to allow the user to enter a new key.
+            textInputLayoutApiKey.setVisibility(View.VISIBLE);
+            btnSaveApiKey.setVisibility(View.VISIBLE);
+            btnUpdateApiKey.setVisibility(View.GONE);
+        });
+
+        // Set the initial state of the UI based on whether a key is already saved.
+        updateAiUiState();
+    }
+
+    /**
+     * Updates the AI controls UI based on whether an API key is currently saved in SharedPreferences.
+     */
+    private void updateAiUiState() {
+        String savedApiKey = sharedPreferences.getString("GEMINI_API_KEY", null);
+        if (savedApiKey != null && !savedApiKey.isEmpty()) {
+            // Key exists: Hide input, show update icon, and enable the AI switch.
+            textInputLayoutApiKey.setVisibility(View.GONE);
+            btnSaveApiKey.setVisibility(View.GONE);
+            btnUpdateApiKey.setVisibility(View.VISIBLE);
+            switchEnableAi.setEnabled(true);
+        } else {
+            // No key: Show input, hide update icon, and disable the AI switch.
+            textInputLayoutApiKey.setVisibility(View.VISIBLE);
+            btnSaveApiKey.setVisibility(View.VISIBLE);
+            btnUpdateApiKey.setVisibility(View.GONE);
+            switchEnableAi.setEnabled(false);
+            switchEnableAi.setChecked(false); // Can't be enabled if there's no key.
+        }
+    }
+
+    /**
+     * A NEW, SEPARATE method for the AI to use. It returns a Bitmap instead of saving a file.
+     * This method DOES NOT alter your original `beginBlockingPencilOrNewAiScan` method.
+     * It runs the core processing logic and captures the output as a Bitmap.
+     */
+    private Bitmap getAiPencilScanAsBitmap(Bitmap bitmap, int ksize) throws InterruptedException {
+        final CountDownLatch latch = new CountDownLatch(1);
+        final Bitmap[] resultHolder = { null };
+
+        DeepScanProcessor.AiScanListener listener = new DeepScanProcessor.AiScanListener() {
+            @Override
+            public void onAiScanComplete(DeepScanProcessor.ProcessingResult finalResult) {
+                if (finalResult != null) {
+                    // Instead of saving, we store the resulting bitmap in our holder.
+                    resultHolder[0] = finalResult.resultBitmap;
+                }
+                latch.countDown();
+            }
+        };
+
+        if (selectedMethod == 11) {
+            DeepScanProcessor.processMethod12(getContext(), bitmap, ksize, listener);
+        } else if (selectedMethod == 12) {
+            DeepScanProcessor.processMethod13(getContext(), bitmap, ksize, listener);
+        } else {
+            // Fallback for safety, though this should not be called for other methods.
+            latch.countDown();
+        }
+
+        latch.await();
+        return resultHolder[0];
+    }
+
+    /**
+     * A NEW helper method to save a processed bitmap to a file and update the main display.
+     * This avoids code duplication within the new AI logic path.
+     * @param bitmap The bitmap to save.
+     * @param frameIndex The index of the frame, used for the filename.
+     */
+    private void saveProcessedFrame(Bitmap bitmap, int frameIndex) {
+        if (bitmap != null) {
+            updateMainDisplay(bitmap);
+            String outPath = new File(processedFramesDir, String.format("processed_%05d.png", frameIndex)).getAbsolutePath();
+            try {
+                ImageProcessor.saveBitmap(bitmap, outPath);
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to save AI processed frame.", e);
+            }
+            // IMPORTANT: The AI path manages its own memory.
+            // We recycle the bitmap after saving, but NOT if it's the gold standard,
+            // as that one needs to be kept for the entire loop.
+            if (bitmap != goldStandardBitmap) {
+                bitmap.recycle();
+            }
+        }
+    }
+    // --- END OF NEW METHODS FOR AI FEATURE ---
+
 }
