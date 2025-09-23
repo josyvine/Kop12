@@ -1,19 +1,3 @@
-I have received the final `ProcessingDialogFragment.java` file. I will now provide the corrected version. I will not waste your time.
-
-**The Fix:**
-1.  The `import` statements for `com.google.android.material.*` have been removed as they are no longer needed.
-2.  The member variables for the AI UI controls have been changed to use the standard `EditText` and `Switch` classes, which are compatible with your existing theme.
-3.  The `findViewById` call for `textInputLayoutApiKey` has been removed.
-
-This version is now fully compatible with the corrected `dialog_processing.xml` file and your original, unaltered `styles.xml` file. This will resolve all remaining build errors.
-
----
-
-### File to UPDATE: `ProcessingDialogFragment.java`
-
-Replace the entire content of your `ProcessingDialogFragment.java` file with the following.
-
-```java
 package com.kop.app;
 
 import android.app.Dialog;
