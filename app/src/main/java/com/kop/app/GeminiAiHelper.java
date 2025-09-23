@@ -1,15 +1,20 @@
 package com.kop.app;
 
 import android.graphics.Bitmap;
+import android.graphics.Rect;
 import android.util.Base64;
-import android.util.Log;  
+import android.util.Log;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 
 // --- START OF ADDED IMPORTS TO FIX "CANNOT FIND SYMBOL" ERRORS ---
 import okhttp3.MediaType;
@@ -182,4 +187,100 @@ public class GeminiAiHelper {
             return new CorrectedKsize(false, ksize);
         }
     }
+
+    // --- START OF NEW METHODS FOR TASK 2 (AI-Guided Scanning) ---
+
+    /**
+     * Scans a raw frame to find the bounding boxes of primary objects.
+     *
+     * @param apiKey The user's Gemini API key.
+     * @param rawFrame The unprocessed frame to analyze.
+     * @return A FrameAnalysisResult containing the bounding boxes of detected objects.
+     */
+    public static FrameAnalysisResult findObjectRegions(String apiKey, Bitmap rawFrame) {
+        if (apiKey == null || apiKey.isEmpty()) {
+            Log.w(TAG, "API Key is missing. Skipping AI object detection.");
+            return new FrameAnalysisResult(new ArrayList<Rect>());
+        }
+
+        try {
+            String rawFrameBase64 = bitmapToBase64(rawFrame);
+            String jsonPayload = buildObjectDetectionPayload(rawFrameBase64);
+
+            RequestBody body = RequestBody.create(jsonPayload, MediaType.get("application/json; charset=utf-8"));
+            Request request = new Request.Builder()
+                    .url(API_URL + apiKey)
+                    .post(body)
+                    .build();
+
+            try (Response response = client.newCall(request).execute()) {
+                if (!response.isSuccessful()) {
+                    Log.e(TAG, "Object Detection API Call Failed: " + response.code() + " " + response.body().string());
+                    return new FrameAnalysisResult(new ArrayList<Rect>());
+                }
+                String responseBody = response.body().string();
+                return parseObjectDetectionResponse(responseBody);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "An error occurred during AI object detection", e);
+            return new FrameAnalysisResult(new ArrayList<Rect>());
+        }
+    }
+
+    /**
+     * Constructs the JSON payload for the object detection task.
+     * @param rawFrameBase64 The Base64 encoded image.
+     * @return The JSON payload as a string.
+     */
+    private static String buildObjectDetectionPayload(String rawFrameBase64) {
+        String promptText = "You are an advanced object detection system. Your task is to identify the primary subjects in this image. " +
+                "Respond ONLY with a JSON object. The object must have a single key 'objects' which is an array. " +
+                "Each element in the array should be an object with a 'box' key. The 'box' value is an array of four integers: [x, y, width, height]. " +
+                "For example: {\\\"objects\\\": [{\\\"box\\\": [100, 150, 320, 400]}]}";
+
+        return "{\"contents\":[{\"parts\":[" +
+                "{\"text\": \"" + promptText + "\"}," +
+                "{\"inline_data\": {\"mime_type\":\"image/jpeg\", \"data\": \"" + rawFrameBase64 + "\"}}" +
+                "]}]}";
+    }
+
+    /**
+     * Parses the JSON response from the object detection API call.
+     * @param responseBody The raw JSON string from the API.
+     * @return A FrameAnalysisResult containing the parsed bounding boxes.
+     */
+    private static FrameAnalysisResult parseObjectDetectionResponse(String responseBody) {
+        List<Rect> objectBounds = new ArrayList<>();
+        try {
+            JsonObject root = JsonParser.parseString(responseBody).getAsJsonObject();
+            String textResponse = root.getAsJsonArray("candidates").get(0).getAsJsonObject()
+                                     .getAsJsonObject("content").getAsJsonArray("parts").get(0).getAsJsonObject()
+                                     .get("text").getAsString();
+
+            textResponse = textResponse.replace("```json", "").replace("```", "").trim();
+
+            JsonObject result = JsonParser.parseString(textResponse).getAsJsonObject();
+            if (result.has("objects")) {
+                JsonArray objects = result.getAsJsonArray("objects");
+                for (JsonElement objElement : objects) {
+                    JsonObject obj = objElement.getAsJsonObject();
+                    if (obj.has("box")) {
+                        JsonArray box = obj.getAsJsonArray("box");
+                        if (box.size() == 4) {
+                            int x = box.get(0).getAsInt();
+                            int y = box.get(1).getAsInt();
+                            int width = box.get(2).getAsInt();
+                            int height = box.get(3).getAsInt();
+                            objectBounds.add(new Rect(x, y, x + width, y + height));
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to parse AI object detection response: " + responseBody, e);
+        }
+        Log.d(TAG, "AI detected " + objectBounds.size() + " objects.");
+        return new FrameAnalysisResult(objectBounds);
+    }
+    // --- END OF NEW METHODS ---
 }
