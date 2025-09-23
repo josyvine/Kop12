@@ -40,11 +40,27 @@ public class DeepScanProcessor {
     public static class ProcessingResult {
         public final Bitmap resultBitmap;
         public final int objectsFound;
+        // --- START OF NEW FIELD FOR TASK 1 (Toast Notification) ---
+        public final String problemDetected; // e.g., "Low Detail"
+        public final String fixApplied;      // e.g., "Guided Scan"
+        // --- END OF NEW FIELD ---
+
 
         ProcessingResult(Bitmap bitmap, int count) {
             this.resultBitmap = bitmap;
             this.objectsFound = count;
+            this.problemDetected = "N/A"; // Default value
+            this.fixApplied = "N/A";      // Default value
         }
+
+        // --- START OF NEW CONSTRUCTOR FOR TASK 1 (Toast Notification) ---
+        ProcessingResult(Bitmap bitmap, int count, String problem, String fix) {
+            this.resultBitmap = bitmap;
+            this.objectsFound = count;
+            this.problemDetected = problem;
+            this.fixApplied = fix;
+        }
+        // --- END OF NEW CONSTRUCTOR ---
     }
 
     public interface AiScanListener {
@@ -549,7 +565,7 @@ public class DeepScanProcessor {
                     }
                     Mat grayMat = new Mat();
                     Imgproc.cvtColor(originalMat, grayMat, Imgproc.COLOR_RGBA2GRAY);
-                    
+
                     Mat pencilSketchMat = createAdvancedPencilSketchMat(grayMat, ksize);
                     Mat pencilSketchRgba = new Mat();
                     Imgproc.cvtColor(pencilSketchMat, pencilSketchRgba, Imgproc.COLOR_GRAY2RGBA);
@@ -632,13 +648,13 @@ public class DeepScanProcessor {
                     Mat lineArtBase = new Mat(originalBitmap.getHeight(), originalBitmap.getWidth(), CvType.CV_8UC4, new Scalar(255, 255, 255, 255));
                     Imgproc.drawContours(lineArtBase, contours, -1, new Scalar(0, 0, 0, 255), 2);
                     lineArtBase.setTo(new Scalar(0, 0, 0, 255), detailLines);
-                    
+
                     Mat grayForSketch = new Mat();
                     Imgproc.cvtColor(originalMat, grayForSketch, Imgproc.COLOR_RGBA2GRAY);
                     Mat pencilSketchMat = createAdvancedPencilSketchMat(grayForSketch, ksize);
                     Mat pencilSketchRgba = new Mat();
                     Imgproc.cvtColor(pencilSketchMat, pencilSketchRgba, Imgproc.COLOR_GRAY2RGBA);
-                    
+
                     pencilSketchRgba.copyTo(lineArtBase, resizedMaskForBase);
 
                     Bitmap finalBitmap = Bitmap.createBitmap(lineArtBase.cols(), lineArtBase.rows(), Bitmap.Config.ARGB_8888);
@@ -676,6 +692,241 @@ public class DeepScanProcessor {
             }
         }
     }
+
+    // --- START OF NEW OVERLOADED METHODS FOR TASK 2 (AI-Guided Scanning) ---
+
+    /**
+     * OVERLOADED AI-GUIDED version of Method 11 (Person Sketch).
+     * This version uses an AI-generated mask to focus the sketch effect on specific objects.
+     */
+    public static void processMethod12(Context context, Bitmap originalBitmap, int ksize, Bitmap aiMaskBitmap, AiScanListener listener) {
+        // This is the AI-guided path. If the AI mask is null, something went wrong, so we abort.
+        if (aiMaskBitmap == null) {
+            Log.e(TAG, "AI-guided scan for Method 11 was called with a null mask. Aborting.");
+            listener.onAiScanComplete(new ProcessingResult(null, 0));
+            return;
+        }
+
+        ImageSegmenter imageSegmenter = null;
+        try {
+            // Standard MediaPipe setup to get the person mask
+            ImageSegmenterOptions.Builder optionsBuilder =
+                ImageSegmenterOptions.builder()
+                    .setBaseOptions(BaseOptions.builder().setModelAssetPath(MODEL_FILE).build())
+                    .setRunningMode(RunningMode.IMAGE)
+                    .setOutputConfidenceMasks(true);
+            ImageSegmenterOptions options = optionsBuilder.build();
+            imageSegmenter = ImageSegmenter.createFromOptions(context, options);
+            MPImage mpImage = new BitmapImageBuilder(originalBitmap).build();
+            ImageSegmenterResult segmenterResult = imageSegmenter.segment(mpImage);
+
+            if (segmenterResult != null && segmenterResult.confidenceMasks().isPresent()) {
+                try (MPImage mask = segmenterResult.confidenceMasks().get().get(0)) {
+                    // Convert MediaPipe mask to OpenCV Mat
+                    ByteBuffer byteBuffer = ByteBufferExtractor.extract(mask);
+                    FloatBuffer confidenceMaskBuffer = byteBuffer.asFloatBuffer();
+                    confidenceMaskBuffer.rewind();
+                    Mat maskMat = new Mat(mask.getHeight(), mask.getWidth(), CvType.CV_32F);
+                    float[] floatArray = new float[confidenceMaskBuffer.remaining()];
+                    confidenceMaskBuffer.get(floatArray);
+                    maskMat.put(0, 0, floatArray);
+                    Mat mask8u = new Mat();
+                    maskMat.convertTo(mask8u, CvType.CV_8U, 255.0);
+                    Mat personMask = new Mat();
+                    Imgproc.threshold(mask8u, personMask, 128, 255, Imgproc.THRESH_BINARY);
+
+                    // Convert the AI-generated guide mask to an OpenCV Mat
+                    Mat aiGuideMask = new Mat();
+                    Utils.bitmapToMat(aiMaskBitmap, aiGuideMask);
+                    Mat aiGuideMaskGray = new Mat();
+                    Imgproc.cvtColor(aiGuideMask, aiGuideMaskGray, Imgproc.COLOR_RGBA2GRAY);
+
+                    Mat originalMat = new Mat();
+                    Utils.bitmapToMat(originalBitmap, originalMat);
+                    if (originalMat.channels() == 3) {
+                        Imgproc.cvtColor(originalMat, originalMat, Imgproc.COLOR_RGB2RGBA);
+                    }
+                    Mat grayMat = new Mat();
+                    Imgproc.cvtColor(originalMat, grayMat, Imgproc.COLOR_RGBA2GRAY);
+
+                    // Create the pencil sketch for the entire image
+                    Mat pencilSketchMat = createAdvancedPencilSketchMat(grayMat, ksize);
+                    Mat pencilSketchRgba = new Mat();
+                    Imgproc.cvtColor(pencilSketchMat, pencilSketchRgba, Imgproc.COLOR_GRAY2RGBA);
+
+                    // Resize MediaPipe's person mask and the AI's guide mask
+                    Mat resizedPersonMask = new Mat();
+                    Imgproc.resize(personMask, resizedPersonMask, originalMat.size());
+                    Mat resizedAiGuideMask = new Mat();
+                    Imgproc.resize(aiGuideMaskGray, resizedAiGuideMask, originalMat.size());
+
+                    // CRITICAL LOGIC: Combine the two masks. The final effect will only apply where
+                    // MediaPipe sees a person AND the AI has identified an important object region.
+                    Mat finalCombinedMask = new Mat();
+                    Core.bitwise_and(resizedPersonMask, resizedAiGuideMask, finalCombinedMask);
+
+                    // Apply the sketch effect to the original image, but only in the combined mask area.
+                    pencilSketchRgba.copyTo(originalMat, finalCombinedMask);
+
+                    Bitmap finalBitmap = Bitmap.createBitmap(originalMat.cols(), originalMat.rows(), Bitmap.Config.ARGB_8888);
+                    Utils.matToBitmap(originalMat, finalBitmap);
+
+                    // Create a result object with the special fields for the toast notification
+                    ProcessingResult result = new ProcessingResult(finalBitmap, 1, "Low Detail", "Guided Scan");
+                    listener.onAiScanComplete(result);
+
+                    // Release all Mats
+                    maskMat.release();
+                    mask8u.release();
+                    personMask.release();
+                    aiGuideMask.release();
+                    aiGuideMaskGray.release();
+                    originalMat.release();
+                    grayMat.release();
+                    pencilSketchMat.release();
+                    pencilSketchRgba.release();
+                    resizedPersonMask.release();
+                    resizedAiGuideMask.release();
+                    finalCombinedMask.release();
+                }
+            } else {
+                throw new Exception("MediaPipe segmentation returned a null or empty result for AI-guided scan.");
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "AI-guided scan for Method 11 (processMethod12) failed.", e);
+            listener.onAiScanComplete(new ProcessingResult(null, 0));
+        } finally {
+            if (imageSegmenter != null) {
+                imageSegmenter.close();
+            }
+        }
+    }
+
+    /**
+     * OVERLOADED AI-GUIDED version of Method 12 (Line Art BG).
+     * This version uses an AI-generated mask to guide where the line art is drawn.
+     */
+    public static void processMethod13(Context context, Bitmap originalBitmap, int ksize, Bitmap aiMaskBitmap, AiScanListener listener) {
+        if (aiMaskBitmap == null) {
+            Log.e(TAG, "AI-guided scan for Method 12 was called with a null mask. Aborting.");
+            listener.onAiScanComplete(new ProcessingResult(null, 0));
+            return;
+        }
+
+        ImageSegmenter imageSegmenter = null;
+        try {
+            // Standard MediaPipe setup
+            ImageSegmenterOptions.Builder optionsBuilder =
+                ImageSegmenterOptions.builder()
+                    .setBaseOptions(BaseOptions.builder().setModelAssetPath(MODEL_FILE).build())
+                    .setRunningMode(RunningMode.IMAGE)
+                    .setOutputConfidenceMasks(true);
+            ImageSegmenterOptions options = optionsBuilder.build();
+            imageSegmenter = ImageSegmenter.createFromOptions(context, options);
+            MPImage mpImage = new BitmapImageBuilder(originalBitmap).build();
+            ImageSegmenterResult segmenterResult = imageSegmenter.segment(mpImage);
+
+            if (segmenterResult != null && segmenterResult.confidenceMasks().isPresent()) {
+                try (MPImage mask = segmenterResult.confidenceMasks().get().get(0)) {
+                    // Convert MediaPipe mask
+                    ByteBuffer byteBuffer = ByteBufferExtractor.extract(mask);
+                    FloatBuffer confidenceMaskBuffer = byteBuffer.asFloatBuffer();
+                    confidenceMaskBuffer.rewind();
+                    Mat maskMat = new Mat(mask.getHeight(), mask.getWidth(), CvType.CV_32F);
+                    float[] floatArray = new float[confidenceMaskBuffer.remaining()];
+                    confidenceMaskBuffer.get(floatArray);
+                    maskMat.put(0, 0, floatArray);
+                    Mat mask8u = new Mat();
+                    maskMat.convertTo(mask8u, CvType.CV_8U, 255.0);
+                    Mat personMask = new Mat();
+                    Imgproc.threshold(mask8u, personMask, 128, 255, Imgproc.THRESH_BINARY);
+
+                    // Convert AI guide mask
+                    Mat aiGuideMask = new Mat();
+                    Utils.bitmapToMat(aiMaskBitmap, aiGuideMask);
+                    Mat aiGuideMaskGray = new Mat();
+                    Imgproc.cvtColor(aiGuideMask, aiGuideMaskGray, Imgproc.COLOR_RGBA2GRAY);
+
+                    Mat originalMat = new Mat();
+                    Utils.bitmapToMat(originalBitmap, originalMat);
+                    Mat resizedPersonMask = new Mat();
+                    Imgproc.resize(personMask, resizedPersonMask, originalMat.size());
+                    Mat resizedAiGuideMask = new Mat();
+                    Imgproc.resize(aiGuideMaskGray, resizedAiGuideMask, originalMat.size());
+
+                    // CRITICAL LOGIC: Create the final mask by combining the person mask and AI guide mask
+                    Mat finalCombinedMask = new Mat();
+                    Core.bitwise_and(resizedPersonMask, resizedAiGuideMask, finalCombinedMask);
+
+                    // Isolate only the subject area defined by the combined mask
+                    Mat isolatedSubjectMat = new Mat();
+                    Core.bitwise_and(originalMat, originalMat, isolatedSubjectMat, finalCombinedMask);
+
+                    // Generate line art ONLY from the guided, isolated subject
+                    Photo.fastNlMeansDenoisingColored(isolatedSubjectMat, isolatedSubjectMat, 3, 3, 7, 21);
+                    Mat grayIsolated = new Mat();
+                    Imgproc.cvtColor(isolatedSubjectMat, grayIsolated, Imgproc.COLOR_RGBA2GRAY);
+                    Imgproc.GaussianBlur(grayIsolated, grayIsolated, new Size(3, 3), 0);
+                    Mat detailLines = new Mat();
+                    Imgproc.Canny(grayIsolated, detailLines, 50, 150);
+                    List<MatOfPoint> contours = new ArrayList<>();
+                    Mat hierarchy = new Mat();
+                    Mat contoursMask = finalCombinedMask.clone(); // Use the combined mask for contours
+                    Imgproc.findContours(contoursMask, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
+                    
+                    // Create the background sketch
+                    Mat grayForSketch = new Mat();
+                    Imgproc.cvtColor(originalMat, grayForSketch, Imgproc.COLOR_RGBA2GRAY);
+                    Mat pencilSketchMat = createAdvancedPencilSketchMat(grayForSketch, ksize);
+                    Mat finalResultMat = new Mat();
+                    Imgproc.cvtColor(pencilSketchMat, finalResultMat, Imgproc.COLOR_GRAY2RGBA);
+
+                    // Draw the high-quality, guided line art over the sketch background
+                    Imgproc.drawContours(finalResultMat, contours, -1, new Scalar(0, 0, 0, 255), 2);
+                    finalResultMat.setTo(new Scalar(0, 0, 0, 255), detailLines);
+
+                    Bitmap finalBitmap = Bitmap.createBitmap(finalResultMat.cols(), finalResultMat.rows(), Bitmap.Config.ARGB_8888);
+                    Utils.matToBitmap(finalResultMat, finalBitmap);
+                    ProcessingResult result = new ProcessingResult(finalBitmap, contours.size(), "Low Detail", "Guided Scan");
+                    listener.onAiScanComplete(result);
+                    
+                    // Release Mats
+                    maskMat.release();
+                    mask8u.release();
+                    personMask.release();
+                    aiGuideMask.release();
+                    aiGuideMaskGray.release();
+                    originalMat.release();
+                    resizedPersonMask.release();
+                    resizedAiGuideMask.release();
+                    finalCombinedMask.release();
+                    isolatedSubjectMat.release();
+                    grayIsolated.release();
+                    detailLines.release();
+                    hierarchy.release();
+                    contoursMask.release();
+                    for (MatOfPoint contour : contours) {
+                        contour.release();
+                    }
+                    grayForSketch.release();
+                    pencilSketchMat.release();
+                    finalResultMat.release();
+                }
+            } else {
+                throw new Exception("MediaPipe segmentation returned a null or empty result for AI-guided scan.");
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "AI-guided scan for Method 12 (processMethod13) failed.", e);
+            listener.onAiScanComplete(new ProcessingResult(null, 0));
+        } finally {
+            if (imageSegmenter != null) {
+                imageSegmenter.close();
+            }
+        }
+    }
+
+    // --- END OF NEW OVERLOADED METHODS ---
+
 
     // --- FINE-TUNING METHOD (Live Preview) ---
     public static void processWithFineTuning(Bitmap originalBitmap, int method, int depth, int sharpness, ScanListener listener) {
@@ -863,6 +1114,7 @@ public class DeepScanProcessor {
 
     private static Mat createAdvancedPencilSketchMat(Mat grayMat, int ksize) {
         int kernelSize = (ksize * 2) + 1;
+        if (kernelSize < 1) kernelSize = 1; // Safety check
         Mat invertedGray = new Mat();
         Core.bitwise_not(grayMat, invertedGray);
         Mat blurred = new Mat();
