@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<RelativeLayout 
+<RelativeLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="#1C1C2E"
-    tools:context=".ProcessingActivity">
+    tools:context=".ProcessingDialogFragment">
 
     <ScrollView
         android:layout_width="match_parent"
@@ -119,9 +119,9 @@
                         android:spinnerMode="dropdown"/>
                 </LinearLayout>
 
-                <!-- THIS IS THE NEW CONTROL FOR IMAGES -->
+                <!-- FIX START: Container for IMAGE-specific controls -->
                 <LinearLayout
-                    android:id="@+id/image_mode_container"
+                    android:id="@+id/image_controls_container"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
@@ -143,10 +143,11 @@
                         android:layout_height="wrap_content"
                         android:checked="true"/>
                 </LinearLayout>
+                <!-- FIX END -->
 
-                <!-- THIS IS THE EXISTING CONTROL FOR VIDEOS -->
+                <!-- FIX START: Container for VIDEO-specific controls -->
                 <LinearLayout
-                    android:id="@+id/analysis_mode_container"
+                    android:id="@+id/video_controls_container"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
@@ -177,7 +178,6 @@
                             android:textSize="12sp"/>
 
                         <TextView
-                            android:id="@+id/tv_apply_to_video_label"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_alignParentEnd="true"
@@ -192,6 +192,8 @@
                         android:layout_height="wrap_content"
                         android:max="2" />
                 </LinearLayout>
+                <!-- FIX END -->
+
 
                 <Button
                     android:id="@+id/btn_analyze"
