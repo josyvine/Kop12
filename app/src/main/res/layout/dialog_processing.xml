@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <RelativeLayout
-    xmlns:android="http://schemas.android.com/apk/res/android" 
+    xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="#1C1C2E"
@@ -194,6 +195,78 @@
                 </LinearLayout>
                 <!-- FIX END -->
 
+                <!-- START OF NEW UI FOR AI FEATURE -->
+                <LinearLayout
+                    android:id="@+id/ai_controls_container"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:layout_marginTop="16dp"
+                    android:padding="8dp"
+                    android:background="#33FFFFFF"
+                    android:animateLayoutChanges="true"
+                    android:visibility="gone"
+                    tools:visibility="visible">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="AI Frame Assist (Methods 11 &amp; 12)"
+                        android:textColor="@android:color/white"
+                        android:textStyle="bold"
+                        android:layout_marginBottom="8dp"/>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+
+                        <com.google.android.material.textfield.TextInputLayout
+                            android:id="@+id/text_input_layout_api_key"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            app:boxBackgroundColor="#44FFFFFF"
+                            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/et_gemini_api_key"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:textColor="@android:color/white"
+                                android:hint="Paste your Gemini API Key"/>
+                        </com.google.android.material.textfield.TextInputLayout>
+
+                        <ImageButton
+                            android:id="@+id/btn_update_api_key"
+                            android:layout_width="48dp"
+                            android:layout_height="48dp"
+                            android:src="@android:drawable/ic_menu_edit"
+                            android:background="?attr/selectableItemBackgroundBorderless"
+                            android:contentDescription="Update API Key"
+                            android:visibility="gone"
+                            android:layout_marginStart="8dp"/>
+
+                    </LinearLayout>
+
+                    <Button
+                        android:id="@+id/btn_save_api_key"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Save Key"
+                        android:layout_gravity="end"
+                        android:layout_marginTop="4dp"/>
+
+                    <com.google.android.material.switchmaterial.SwitchMaterial
+                        android:id="@+id/switch_enable_ai"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Enable AI Assist"
+                        android:textColor="@android:color/white"
+                        android:layout_marginTop="8dp"/>
+
+                </LinearLayout>
+                <!-- END OF NEW UI FOR AI FEATURE -->
 
                 <Button
                     android:id="@+id/btn_analyze"
