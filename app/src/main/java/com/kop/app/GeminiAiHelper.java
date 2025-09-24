@@ -33,7 +33,8 @@ public class GeminiAiHelper {
 
     private static final String TAG = "GeminiAiHelper";
     // The Gemini endpoint is hardcoded as requested. The API key will be appended.
-    private static final String API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro-vision:generateContent?key=";
+    // FIX: Updated the model to the specific "gemini-2.0-flash" endpoint provided by the user.
+    private static final String API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=";
     private static final OkHttpClient client = new OkHttpClient();
 
     /**
