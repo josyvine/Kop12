@@ -534,6 +534,16 @@ public class ProcessingDialogFragment extends DialogFragment {
     // This is the entry point when the "Analyze" button is clicked. The logic
     // to differentiate between automatic and manual modes for images is restored from the older file.
     private void beginAnalysis() {
+        // --- INSTRUCTION 2.1: Pre-Launch Safety Check ---
+        if (switchEnableAi.isChecked() && (selectedMethod == 11 || selectedMethod == 12)) {
+            String apiKey = sharedPreferences.getString("GEMINI_API_KEY", "");
+            if (apiKey.isEmpty()) {
+                showErrorDialog("API Key Missing", "AI Assist is enabled, but the Gemini API Key has not been set. Please add your key in the settings panel.", true);
+                setUiEnabled(true);
+                return;
+            }
+        }
+
         livePreviewHandler.removeCallbacksAndMessages(null);
 
         setUiEnabled(false);
@@ -1454,67 +1464,75 @@ public class ProcessingDialogFragment extends DialogFragment {
      * @throws InterruptedException
      */
     private void beginBlockingAiGuidedScan(Bitmap bitmap, final int frameIndex, final int ksize) throws InterruptedException {
-        // Step 1: Ask the AI to find important object regions in the raw frame.
-        String apiKey = sharedPreferences.getString("GEMINI_API_KEY", "");
-        FrameAnalysisResult analysisResult = GeminiAiHelper.findObjectRegions(apiKey, bitmap);
+        try {
+            // "Happy Path" - Attempt AI processing
+            updateStatus("Frame " + (frameIndex + 1) + ": Asking AI for guidance...", false);
 
-        if (!analysisResult.hasObjects()) {
-            // If the AI couldn't find any objects, we fall back to the standard (non-guided) scan
-            // to ensure a frame is still produced.
-            Log.w(TAG, "AI found no objects for guided scan on frame " + frameIndex + ". Falling back to standard scan.");
-            beginBlockingPencilOrNewAiScan(bitmap, frameIndex, ksize);
-            return;
-        }
+            String apiKey = sharedPreferences.getString("GEMINI_API_KEY", "");
+            FrameAnalysisResult analysisResult = GeminiAiHelper.findObjectRegions(apiKey, bitmap);
 
-        // Step 2: Create a black-and-white mask from the bounding boxes the AI provided.
-        Bitmap aiMask = ImageProcessor.createMaskFromRects(
-            bitmap.getWidth(),
-            bitmap.getHeight(),
-            analysisResult.getObjectBounds()
-        );
+            updateStatus("Processing frame " + (frameIndex + 1) + " of " + rawFrames.length, false);
 
-        // Step 3: Call the overloaded processing method with the guide mask.
-        final CountDownLatch latch = new CountDownLatch(1);
-        DeepScanProcessor.AiScanListener listener = new DeepScanProcessor.AiScanListener() {
-            @Override
-            public void onAiScanComplete(final DeepScanProcessor.ProcessingResult finalResult) {
-                if (finalResult != null && finalResult.resultBitmap != null) {
-                    saveProcessedFrame(finalResult.resultBitmap, frameIndex);
-
-                    // --- IMPLEMENTATION OF TASK 1: Display Toast Notification ---
-                    final String toastMessage = String.format(Locale.US,
-                        "AI Assist: Enhanced Frame %d. Problem: %s. Fix: %s.",
-                        frameIndex + 1,
-                        finalResult.problemDetected,
-                        finalResult.fixApplied
-                    );
-                    uiHandler.post(new Runnable() {
-                        @Override
-                        public void run() {
-                            Toast.makeText(getContext(), toastMessage, Toast.LENGTH_SHORT).show();
-                        }
-                    });
-                    // --- END OF TASK 1 IMPLEMENTATION ---
-
-                } else {
-                    Log.e(TAG, "AI-guided scan returned null for frame " + frameIndex);
-                }
-                latch.countDown();
+            if (!analysisResult.hasObjects()) {
+                // Fallback for when AI finds no objects
+                Log.w(TAG, "AI found no objects for guided scan on frame " + frameIndex + ". Falling back to standard scan.");
+                beginBlockingPencilOrNewAiScan(bitmap, frameIndex, ksize);
+                return;
             }
-        };
 
-        if (selectedMethod == 11) {
-            DeepScanProcessor.processMethod12(getContext(), bitmap, ksize, aiMask, listener);
-        } else if (selectedMethod == 12) {
-            DeepScanProcessor.processMethod13(getContext(), bitmap, ksize, aiMask, listener);
+            // AI found objects, proceed with guided scan
+            Bitmap aiMask = ImageProcessor.createMaskFromRects(
+                bitmap.getWidth(),
+                bitmap.getHeight(),
+                analysisResult.getObjectBounds()
+            );
+
+            final CountDownLatch latch = new CountDownLatch(1);
+            DeepScanProcessor.AiScanListener listener = new DeepScanProcessor.AiScanListener() {
+                @Override
+                public void onAiScanComplete(final DeepScanProcessor.ProcessingResult finalResult) {
+                    if (finalResult != null && finalResult.resultBitmap != null) {
+                        saveProcessedFrame(finalResult.resultBitmap, frameIndex);
+
+                        // --- IMPLEMENTATION OF TASK 1: Display Toast Notification ---
+                        final String toastMessage = String.format(Locale.US,
+                            "AI Assist: Enhanced Frame %d. Problem: %s. Fix: %s.",
+                            frameIndex + 1,
+                            finalResult.problemDetected,
+                            finalResult.fixApplied
+                        );
+                        uiHandler.post(new Runnable() {
+                            @Override
+                            public void run() {
+                                Toast.makeText(getContext(), toastMessage, Toast.LENGTH_SHORT).show();
+                            }
+                        });
+                        // --- END OF TASK 1 IMPLEMENTATION ---
+
+                    } else {
+                        Log.e(TAG, "AI-guided scan returned null for frame " + frameIndex);
+                    }
+                    latch.countDown();
+                }
+            };
+
+            if (selectedMethod == 11) {
+                DeepScanProcessor.processMethod12(getContext(), bitmap, ksize, aiMask, listener);
+            } else if (selectedMethod == 12) {
+                DeepScanProcessor.processMethod13(getContext(), bitmap, ksize, aiMask, listener);
+            }
+
+            if (aiMask != null) {
+                aiMask.recycle();
+            }
+            latch.await();
+
+        } catch (IOException e) {
+            // "Failure Path" - Handle errors from the AI helper
+            Log.e(TAG, "AI-guided scan failed due to an exception.", e);
+            showErrorDialog("AI Assist Error", "The AI analysis failed for frame " + (frameIndex + 1) + ". " + e.getMessage() + "\n\nFalling back to standard processing for this frame.", false);
+            beginBlockingPencilOrNewAiScan(bitmap, frameIndex, ksize);
         }
-
-        // Clean up the mask bitmap after use.
-        if (aiMask != null) {
-            aiMask.recycle();
-        }
-
-        latch.await();
     }
     // --- END OF NEW/UPDATED METHODS ---
 }
