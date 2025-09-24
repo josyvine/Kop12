@@ -189,6 +189,112 @@ public class GeminiAiHelper {
         }
     }
 
+    // --- START OF NEW METHOD TO CHECK CONSISTENCY AGAINST GOLD STANDARD ---
+    /**
+     * Checks if the current frame's properties (lighting, detail) require an adjustment to
+     * the ksize parameter to maintain stylistic consistency with the user-approved "gold standard" frame.
+     *
+     * @param apiKey          The user's Gemini API key.
+     * @param goldStandard    The user-approved processed first frame (the target style).
+     * @param currentRawFrame The current unprocessed frame being analyzed.
+     * @param currentKsize    The ksize value used for the previous frame.
+     * @return A CorrectedKsize object containing either the original ksize or an AI-suggested adjustment.
+     */
+    public static CorrectedKsize checkFrameConsistency(
+            String apiKey,
+            Bitmap goldStandard,
+            Bitmap currentRawFrame,
+            int currentKsize) {
+
+        if (apiKey == null || apiKey.isEmpty() || goldStandard == null || currentRawFrame == null) {
+            Log.w(TAG, "checkFrameConsistency called with missing API key or bitmaps. Skipping.");
+            return new CorrectedKsize(false, currentKsize);
+        }
+
+        try {
+            String goldStandardBase64 = bitmapToBase64(goldStandard);
+            String rawFrameBase64 = bitmapToBase64(currentRawFrame);
+
+            String jsonPayload = buildConsistencyCheckPayload(goldStandardBase64, rawFrameBase64);
+
+            RequestBody body = RequestBody.create(jsonPayload, MediaType.get("application/json; charset=utf-8"));
+            Request request = new Request.Builder()
+                    .url(API_URL + apiKey)
+                    .post(body)
+                    .build();
+
+            try (Response response = client.newCall(request).execute()) {
+                if (!response.isSuccessful()) {
+                    Log.e(TAG, "Consistency Check API Call Failed: " + response.code() + " " + response.body().string());
+                    return new CorrectedKsize(false, currentKsize);
+                }
+
+                String responseBody = response.body().string();
+                return parseConsistencyCheckResponse(responseBody, currentKsize);
+            }
+
+        } catch (Exception e) {
+            Log.e(TAG, "An error occurred during AI consistency check", e);
+            return new CorrectedKsize(false, currentKsize);
+        }
+    }
+
+    /**
+     * Constructs the JSON payload for the frame consistency check.
+     */
+    private static String buildConsistencyCheckPayload(String goldStandardBase64, String rawFrameBase64) {
+        String promptText = "You are an expert video filter analyst. Image 1 is a 'Gold Standard' processed frame, representing the desired artistic style. " +
+                "Image 2 is a new, 'Raw' video frame. The primary parameter controlling the sketch is `ksize`. " +
+                "Based on the lighting and detail in the Raw frame, would the current `ksize` produce a result stylistically consistent with the Gold Standard? " +
+                "If the raw frame is much darker or brighter, `ksize` might need to be adjusted up or down by a small amount. " +
+                "Respond ONLY with JSON: {\\\"adjustment_needed\\\": boolean, \\\"reason\\\": \\\"none|too_dark|too_bright|low_detail\\\", \\\"suggested_ksize_change\\\": 0|-2|+2}";
+
+        return "{\"contents\":[{\"parts\":[" +
+                "{\"text\": \"" + promptText + "\"}," +
+                "{\"inline_data\": {\"mime_type\":\"image/jpeg\", \"data\": \"" + goldStandardBase64 + "\"}}," +
+                "{\"inline_data\": {\"mime_type\":\"image/jpeg\", \"data\": \"" + rawFrameBase64 + "\"}}" +
+                "]}]}";
+    }
+
+    /**
+     * Parses the JSON response from the consistency check and applies any suggested ksize change.
+     */
+    private static CorrectedKsize parseConsistencyCheckResponse(String responseBody, int currentKsize) {
+        try {
+            JsonObject root = JsonParser.parseString(responseBody).getAsJsonObject();
+            String textResponse = root.getAsJsonArray("candidates").get(0).getAsJsonObject()
+                                     .getAsJsonObject("content").getAsJsonArray("parts").get(0).getAsJsonObject()
+                                     .get("text").getAsString();
+
+            textResponse = textResponse.replace("```json", "").replace("```", "").trim();
+
+            JsonObject result = JsonParser.parseString(textResponse).getAsJsonObject();
+            boolean adjustmentNeeded = result.get("adjustment_needed").getAsBoolean();
+
+            if (!adjustmentNeeded) {
+                return new CorrectedKsize(false, currentKsize);
+            }
+
+            int ksizeChange = result.get("suggested_ksize_change").getAsInt();
+            int newKsize = currentKsize + ksizeChange;
+
+            // Safety checks: Ensure ksize is always an odd number and at least 3.
+            newKsize = Math.max(3, newKsize);
+            if (newKsize % 2 == 0) {
+                newKsize++; // If it's even, make it odd.
+            }
+
+            String reason = result.get("reason").getAsString();
+            Log.d(TAG, "AI Consistency Adjustment. Reason: " + reason + ". Original ksize: " + currentKsize + ", New ksize: " + newKsize);
+            return new CorrectedKsize(true, newKsize);
+
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to parse AI consistency response: " + responseBody, e);
+            return new CorrectedKsize(false, currentKsize);
+        }
+    }
+    // --- END OF NEW METHOD TO CHECK CONSISTENCY AGAINST GOLD STANDARD ---
+
     // --- START OF NEW METHODS FOR TASK 2 (AI-Guided Scanning) ---
 
     /**
@@ -283,110 +389,4 @@ public class GeminiAiHelper {
         return new FrameAnalysisResult(objectBounds);
     }
     // --- END OF NEW METHODS ---
-
-    // --- START OF NEW METHOD FOR AI CONTROL SYSTEM (Version 2) ---
-
-    /**
-     * Checks a new raw frame against a "gold standard" processed frame to maintain stylistic
-     * consistency, suggesting adjustments to the ksize parameter if needed.
-     *
-     * @param apiKey         The user's Gemini API key.
-     * @param goldStandard   The user-approved processed first frame (the target style).
-     * @param currentRawFrame The current unprocessed frame to be analyzed.
-     * @param currentKsize   The ksize value currently in use.
-     * @return A CorrectedKsize object containing either the original ksize or an AI-suggested one.
-     */
-    public static CorrectedKsize checkFrameConsistency(
-            String apiKey,
-            Bitmap goldStandard,
-            Bitmap currentRawFrame,
-            int currentKsize) {
-
-        if (apiKey == null || apiKey.isEmpty()) {
-            Log.w(TAG, "API Key is missing. Skipping AI consistency check.");
-            return new CorrectedKsize(false, currentKsize);
-        }
-
-        try {
-            String goldStandardBase64 = bitmapToBase64(goldStandard);
-            String rawFrameBase64 = bitmapToBase64(currentRawFrame);
-
-            String jsonPayload = buildConsistencyCheckPayload(goldStandardBase64, rawFrameBase64);
-
-            RequestBody body = RequestBody.create(jsonPayload, MediaType.get("application/json; charset=utf-8"));
-            Request request = new Request.Builder()
-                    .url(API_URL + apiKey)
-                    .post(body)
-                    .build();
-
-            try (Response response = client.newCall(request).execute()) {
-                if (!response.isSuccessful()) {
-                    Log.e(TAG, "AI Consistency Check Failed: " + response.code() + " " + response.body().string());
-                    return new CorrectedKsize(false, currentKsize);
-                }
-
-                String responseBody = response.body().string();
-                return parseConsistencyResponse(responseBody, currentKsize);
-            }
-
-        } catch (Exception e) {
-            Log.e(TAG, "An error occurred during AI consistency check", e);
-            return new CorrectedKsize(false, currentKsize);
-        }
-    }
-
-    /**
-     * Constructs the JSON payload for the frame consistency check task.
-     */
-    private static String buildConsistencyCheckPayload(String goldStandardBase64, String rawFrameBase64) {
-        String promptText = "You are an expert video filter analyst. Image 1 is a \\\"Gold Standard\\\" processed frame. " +
-                "Image 2 is a new, \\\"Raw\\\" video frame. The primary parameter controlling the sketch is `ksize`. " +
-                "Based on the lighting and detail in the Raw frame, would the current `ksize` produce a result stylistically consistent with the Gold Standard? " +
-                "If the raw frame is much darker or brighter, `ksize` might need to be adjusted up or down by a small amount. " +
-                "Respond ONLY with JSON: {\\\"adjustment_needed\\\": boolean, \\\"reason\\\": \\\"none|too_dark|too_bright|low_detail\\\", \\\"suggested_ksize_change\\\": 0|-2|+2}";
-
-        return "{\"contents\":[{\"parts\":[" +
-                "{\"text\": \"" + promptText + "\"}," +
-                "{\"inline_data\": {\"mime_type\":\"image/jpeg\", \"data\": \"" + goldStandardBase64 + "\"}}," +
-                "{\"inline_data\": {\"mime_type\":\"image/jpeg\", \"data\": \"" + rawFrameBase64 + "\"}}" +
-                "]}]}";
-    }
-
-    /**
-     * Parses the JSON response from the consistency check API call.
-     */
-    private static CorrectedKsize parseConsistencyResponse(String responseBody, int ksize) {
-        try {
-            JsonObject root = JsonParser.parseString(responseBody).getAsJsonObject();
-            String textResponse = root.getAsJsonArray("candidates").get(0).getAsJsonObject()
-                    .getAsJsonObject("content").getAsJsonArray("parts").get(0).getAsJsonObject()
-                    .get("text").getAsString();
-
-            textResponse = textResponse.replace("```json", "").replace("```", "").trim();
-
-            JsonObject result = JsonParser.parseString(textResponse).getAsJsonObject();
-            boolean adjustmentNeeded = result.get("adjustment_needed").getAsBoolean();
-
-            if (!adjustmentNeeded) {
-                return new CorrectedKsize(false, ksize);
-            }
-
-            int ksizeChange = result.get("suggested_ksize_change").getAsInt();
-            int newKsize = ksize + ksizeChange;
-
-            // Safety checks: Ensure ksize is always an odd number and at least 3.
-            newKsize = Math.max(3, newKsize);
-            if (newKsize % 2 == 0) {
-                newKsize++; // If it's even, make it odd.
-            }
-
-            Log.d(TAG, "AI Consistency Correction. Reason: " + result.get("reason").getAsString() + ". Original ksize: " + ksize + ", New ksize: " + newKsize);
-            return new CorrectedKsize(true, newKsize);
-
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to parse AI consistency response: " + responseBody, e);
-            return new CorrectedKsize(false, ksize);
-        }
-    }
-    // --- END OF NEW METHOD ---
 }
