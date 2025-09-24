@@ -603,7 +603,7 @@ public class ProcessingDialogFragment extends DialogFragment {
         performLivePreviewAnalysis();
     }
 
-    // --- LOGIC MERGED AND ENHANCED ---
+    // --- LOGIC CORRECTED AND ENHANCED ---
     private void processAllFrames(final int ksize, final int depth, final int sharpness) throws Exception {
         final int totalFrames = rawFrames.length;
         goldStandardBitmap = null; // Reset before each full run
@@ -630,45 +630,23 @@ public class ProcessingDialogFragment extends DialogFragment {
                 if (selectedMethod <= 1) { // Old AI Methods
                     beginBlockingAiScan(orientedBitmap, frameIndex);
                 } else if (selectedMethod >= 10 && selectedMethod <= 12) { // Pencil / New AI Methods
+                    // --- START OF CORRECTED AI LOGIC ---
                     if (switchEnableAi.isChecked() && (selectedMethod == 11 || selectedMethod == 12)) {
-                        // --- START OF NEW AI-GUIDED SCANNING LOGIC ---
+                        // THIS IS THE NEW, AI-GUIDED PATH
                         if (frameIndex == 0) {
-                            // The first frame is processed normally to establish the "gold standard" style.
-                            goldStandardBitmap = getAiPencilScanAsBitmap(orientedBitmap, ksize);
-                            saveProcessedFrame(goldStandardBitmap, frameIndex);
+                            // Process the first frame normally to establish the baseline.
+                            // No guided scan needed here.
+                            beginBlockingPencilOrNewAiScan(orientedBitmap, frameIndex, ksize);
                         } else {
-                            // For subsequent frames, first check for style consistency.
-                            Bitmap draftBitmap = getAiPencilScanAsBitmap(orientedBitmap, ksize);
-                            if (draftBitmap == null) {
-                                Log.e(TAG, "Draft bitmap for frame " + frameIndex + " is null. Skipping AI check.");
-                                continue;
-                            }
-
-                            String apiKey = sharedPreferences.getString("GEMINI_API_KEY", "");
-                            CorrectedKsize params = GeminiAiHelper.getCorrectedKsize(
-                                    apiKey,
-                                    goldStandardBitmap,
-                                    orientedBitmap,
-                                    draftBitmap,
-                                    ksize
-                            );
-
-                            if (params.wasCorrected) {
-                                // The AI detected an inconsistency and suggested a fix.
-                                draftBitmap.recycle();
-                                // We perform the more advanced, guided scan.
-                                beginBlockingAiGuidedScan(orientedBitmap, frameIndex, params.ksize);
-
-                            } else {
-                                // The frame is consistent, save the draft and move on.
-                                saveProcessedFrame(draftBitmap, frameIndex);
-                            }
+                            // For all subsequent frames, perform the AI-GUIDED scan.
+                            // This is the primary action, not a corrective one.
+                            beginBlockingAiGuidedScan(orientedBitmap, frameIndex, ksize);
                         }
-                        // --- END OF NEW AI-GUIDED SCANNING LOGIC ---
                     } else {
-                        // Standard processing for Method 10 or if AI is off
+                        // This is the original, unaltered path for non-AI processing.
                         beginBlockingPencilOrNewAiScan(orientedBitmap, frameIndex, ksize);
                     }
+                    // --- END OF CORRECTED AI LOGIC ---
                 } else if (selectedMethod == 2) { // Live Analysis Method
                     beginMethod1LiveScan(orientedBitmap, frameIndex);
                 } else { // THIS IS THE RESTORED LOGIC FOR METHODS 3-9
@@ -1472,7 +1450,7 @@ public class ProcessingDialogFragment extends DialogFragment {
      *
      * @param bitmap The raw, unprocessed frame.
      * @param frameIndex The index of the current frame.
-     * @param ksize The ksize parameter, potentially corrected by the AI.
+     * @param ksize The ksize parameter from the UI slider.
      * @throws InterruptedException
      */
     private void beginBlockingAiGuidedScan(Bitmap bitmap, final int frameIndex, final int ksize) throws InterruptedException {
