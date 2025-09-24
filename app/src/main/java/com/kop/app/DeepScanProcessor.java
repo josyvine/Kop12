@@ -132,7 +132,7 @@ public class DeepScanProcessor {
                     contoursMask.release();
 
                     Mat personLineArt = new Mat(originalBitmap.getHeight(), originalBitmap.getWidth(), CvType.CV_8UC4, new Scalar(255, 255, 255, 255));
-                    Imgproc.drawContours(personLineArt, contours, -1, new Scalar(0, 0, 0, 255), 2);
+                    // --- FIX: The problematic contour line has been removed. ---
                     personLineArt.setTo(new Scalar(0, 0, 0, 255), detailLines);
 
                     Mat finalComposite = new Mat();
@@ -230,7 +230,7 @@ public class DeepScanProcessor {
                     contoursMask.release();
 
                     Mat finalDrawing = new Mat(originalBitmap.getHeight(), originalBitmap.getWidth(), CvType.CV_8UC4, new Scalar(255, 255, 255, 255));
-                    Imgproc.drawContours(finalDrawing, contours, -1, new Scalar(0, 0, 0, 255), 2);
+                    // --- FIX: The problematic contour line has been removed. ---
                     finalDrawing.setTo(new Scalar(0, 0, 0, 255), detailLines);
 
                     Bitmap finalBitmap = Bitmap.createBitmap(finalDrawing.cols(), finalDrawing.rows(), Bitmap.Config.ARGB_8888);
@@ -646,7 +646,7 @@ public class DeepScanProcessor {
                     Mat contoursMask = resizedMaskForBase.clone();
                     Imgproc.findContours(contoursMask, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
                     Mat lineArtBase = new Mat(originalBitmap.getHeight(), originalBitmap.getWidth(), CvType.CV_8UC4, new Scalar(255, 255, 255, 255));
-                    Imgproc.drawContours(lineArtBase, contours, -1, new Scalar(0, 0, 0, 255), 2);
+                    // --- FIX: The problematic contour line has been removed. ---
                     lineArtBase.setTo(new Scalar(0, 0, 0, 255), detailLines);
 
                     Mat grayForSketch = new Mat();
@@ -882,7 +882,7 @@ public class DeepScanProcessor {
                     Imgproc.cvtColor(pencilSketchMat, finalResultMat, Imgproc.COLOR_GRAY2RGBA);
 
                     // Draw the high-quality, guided line art over the sketch background
-                    Imgproc.drawContours(finalResultMat, contours, -1, new Scalar(0, 0, 0, 255), 2);
+                    // --- FIX: The problematic contour line has been removed. ---
                     finalResultMat.setTo(new Scalar(0, 0, 0, 255), detailLines);
 
                     Bitmap finalBitmap = Bitmap.createBitmap(finalResultMat.cols(), finalResultMat.rows(), Bitmap.Config.ARGB_8888);
