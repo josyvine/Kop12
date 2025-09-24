@@ -700,7 +700,6 @@ public class DeepScanProcessor {
      * This version uses an AI-generated mask to focus the sketch effect on specific objects.
      */
     public static void processMethod12(Context context, Bitmap originalBitmap, int ksize, Bitmap aiMaskBitmap, AiScanListener listener) {
-        // This is the AI-guided path. If the AI mask is null, something went wrong, so we abort.
         if (aiMaskBitmap == null) {
             Log.e(TAG, "AI-guided scan for Method 11 was called with a null mask. Aborting.");
             listener.onAiScanComplete(new ProcessingResult(null, 0));
@@ -709,7 +708,6 @@ public class DeepScanProcessor {
 
         ImageSegmenter imageSegmenter = null;
         try {
-            // Standard MediaPipe setup to get the person mask
             ImageSegmenterOptions.Builder optionsBuilder =
                 ImageSegmenterOptions.builder()
                     .setBaseOptions(BaseOptions.builder().setModelAssetPath(MODEL_FILE).build())
@@ -740,39 +738,48 @@ public class DeepScanProcessor {
                     Utils.bitmapToMat(aiMaskBitmap, aiGuideMask);
                     Mat aiGuideMaskGray = new Mat();
                     Imgproc.cvtColor(aiGuideMask, aiGuideMaskGray, Imgproc.COLOR_RGBA2GRAY);
+                    Mat resizedAiGuideMask = new Mat();
+                    Imgproc.resize(aiGuideMaskGray, resizedAiGuideMask, personMask.size(), 0, 0, Imgproc.INTER_NEAREST);
+
+
+                    // --- START OF NEW AI CONTROL LOGIC ---
+                    // Refine the person mask by removing anything outside the AI's guide box.
+                    // This prevents hard edges and respects the full person shape.
+                    Mat refinedPersonMask = new Mat();
+                    Core.bitwise_and(personMask, resizedAiGuideMask, refinedPersonMask);
+                    // --- END OF NEW AI CONTROL LOGIC ---
+
 
                     Mat originalMat = new Mat();
                     Utils.bitmapToMat(originalBitmap, originalMat);
                     if (originalMat.channels() == 3) {
                         Imgproc.cvtColor(originalMat, originalMat, Imgproc.COLOR_RGB2RGBA);
                     }
+                    
+                    // --- CORE METHOD 11 LOGIC (UNCHANGED) ---
+                    // The core logic of applying the sketch to the person and leaving the background
+                    // is now respected, using the intelligently refined mask.
+                    Mat sketchLayer = new Mat();
+                    originalMat.copyTo(sketchLayer);
                     Mat grayMat = new Mat();
-                    Imgproc.cvtColor(originalMat, grayMat, Imgproc.COLOR_RGBA2GRAY);
-
-                    // Create the pencil sketch for the entire image
+                    Imgproc.cvtColor(sketchLayer, grayMat, Imgproc.COLOR_RGBA2GRAY);
                     Mat pencilSketchMat = createAdvancedPencilSketchMat(grayMat, ksize);
                     Mat pencilSketchRgba = new Mat();
                     Imgproc.cvtColor(pencilSketchMat, pencilSketchRgba, Imgproc.COLOR_GRAY2RGBA);
+                    
+                    Mat finalResultMat = new Mat();
+                    originalMat.copyTo(finalResultMat);
+                    
+                    Mat resizedRefinedMask = new Mat();
+                    Imgproc.resize(refinedPersonMask, resizedRefinedMask, finalResultMat.size());
 
-                    // Resize MediaPipe's person mask and the AI's guide mask
-                    Mat resizedPersonMask = new Mat();
-                    Imgproc.resize(personMask, resizedPersonMask, originalMat.size());
-                    Mat resizedAiGuideMask = new Mat();
-                    Imgproc.resize(aiGuideMaskGray, resizedAiGuideMask, originalMat.size());
+                    pencilSketchRgba.copyTo(finalResultMat, resizedRefinedMask);
+                    // --- END OF CORE METHOD 11 LOGIC ---
 
-                    // CRITICAL LOGIC: Combine the two masks. The final effect will only apply where
-                    // MediaPipe sees a person AND the AI has identified an important object region.
-                    Mat finalCombinedMask = new Mat();
-                    Core.bitwise_and(resizedPersonMask, resizedAiGuideMask, finalCombinedMask);
+                    Bitmap finalBitmap = Bitmap.createBitmap(finalResultMat.cols(), finalResultMat.rows(), Bitmap.Config.ARGB_8888);
+                    Utils.matToBitmap(finalResultMat, finalBitmap);
 
-                    // Apply the sketch effect to the original image, but only in the combined mask area.
-                    pencilSketchRgba.copyTo(originalMat, finalCombinedMask);
-
-                    Bitmap finalBitmap = Bitmap.createBitmap(originalMat.cols(), originalMat.rows(), Bitmap.Config.ARGB_8888);
-                    Utils.matToBitmap(originalMat, finalBitmap);
-
-                    // Create a result object with the special fields for the toast notification
-                    ProcessingResult result = new ProcessingResult(finalBitmap, 1, "Low Detail", "Guided Scan");
+                    ProcessingResult result = new ProcessingResult(finalBitmap, 1, "Object Refined", "AI Mask");
                     listener.onAiScanComplete(result);
 
                     // Release all Mats
@@ -781,13 +788,15 @@ public class DeepScanProcessor {
                     personMask.release();
                     aiGuideMask.release();
                     aiGuideMaskGray.release();
+                    resizedAiGuideMask.release();
+                    refinedPersonMask.release();
                     originalMat.release();
+                    sketchLayer.release();
                     grayMat.release();
                     pencilSketchMat.release();
                     pencilSketchRgba.release();
-                    resizedPersonMask.release();
-                    resizedAiGuideMask.release();
-                    finalCombinedMask.release();
+                    finalResultMat.release();
+                    resizedRefinedMask.release();
                 }
             } else {
                 throw new Exception("MediaPipe segmentation returned a null or empty result for AI-guided scan.");
@@ -815,7 +824,6 @@ public class DeepScanProcessor {
 
         ImageSegmenter imageSegmenter = null;
         try {
-            // Standard MediaPipe setup
             ImageSegmenterOptions.Builder optionsBuilder =
                 ImageSegmenterOptions.builder()
                     .setBaseOptions(BaseOptions.builder().setModelAssetPath(MODEL_FILE).build())
@@ -828,7 +836,6 @@ public class DeepScanProcessor {
 
             if (segmenterResult != null && segmenterResult.confidenceMasks().isPresent()) {
                 try (MPImage mask = segmenterResult.confidenceMasks().get().get(0)) {
-                    // Convert MediaPipe mask
                     ByteBuffer byteBuffer = ByteBufferExtractor.extract(mask);
                     FloatBuffer confidenceMaskBuffer = byteBuffer.asFloatBuffer();
                     confidenceMaskBuffer.rewind();
@@ -841,53 +848,50 @@ public class DeepScanProcessor {
                     Mat personMask = new Mat();
                     Imgproc.threshold(mask8u, personMask, 128, 255, Imgproc.THRESH_BINARY);
 
-                    // Convert AI guide mask
                     Mat aiGuideMask = new Mat();
                     Utils.bitmapToMat(aiMaskBitmap, aiGuideMask);
                     Mat aiGuideMaskGray = new Mat();
                     Imgproc.cvtColor(aiGuideMask, aiGuideMaskGray, Imgproc.COLOR_RGBA2GRAY);
+                    Mat resizedAiGuideMask = new Mat();
+                    Imgproc.resize(aiGuideMaskGray, resizedAiGuideMask, personMask.size(), 0, 0, Imgproc.INTER_NEAREST);
+                    
+                    // --- START OF NEW AI CONTROL LOGIC ---
+                    // Refine the person mask by removing anything outside the AI's guide box.
+                    Mat refinedPersonMask = new Mat();
+                    Core.bitwise_and(personMask, resizedAiGuideMask, refinedPersonMask);
+                    // --- END OF NEW AI CONTROL LOGIC ---
 
+                    // --- CORE METHOD 12 LOGIC (UNCHANGED) ---
+                    // Your original logic for Method 12 is now respected.
                     Mat originalMat = new Mat();
                     Utils.bitmapToMat(originalBitmap, originalMat);
-                    Mat resizedPersonMask = new Mat();
-                    Imgproc.resize(personMask, resizedPersonMask, originalMat.size());
-                    Mat resizedAiGuideMask = new Mat();
-                    Imgproc.resize(aiGuideMaskGray, resizedAiGuideMask, originalMat.size());
-
-                    // CRITICAL LOGIC: Create the final mask by combining the person mask and AI guide mask
-                    Mat finalCombinedMask = new Mat();
-                    Core.bitwise_and(resizedPersonMask, resizedAiGuideMask, finalCombinedMask);
-
-                    // Isolate only the subject area defined by the combined mask
+                    
+                    // 1. Create the background sketch for the whole image
+                    Mat grayForSketch = new Mat();
+                    Imgproc.cvtColor(originalMat, grayForSketch, Imgproc.COLOR_RGBA2GRAY);
+                    Mat pencilSketchMat = createAdvancedPencilSketchMat(grayForSketch, ksize);
+                    Mat finalResultMat = new Mat();
+                    Imgproc.cvtColor(pencilSketchMat, finalResultMat, Imgproc.COLOR_GRAY2RGBA);
+                    
+                    // 2. Create the line art for ONLY the person (using the refined mask)
+                    Mat resizedRefinedMask = new Mat();
+                    Imgproc.resize(refinedPersonMask, resizedRefinedMask, originalMat.size());
                     Mat isolatedSubjectMat = new Mat();
-                    Core.bitwise_and(originalMat, originalMat, isolatedSubjectMat, finalCombinedMask);
-
-                    // Generate line art ONLY from the guided, isolated subject
+                    Core.bitwise_and(originalMat, originalMat, isolatedSubjectMat, resizedRefinedMask);
                     Photo.fastNlMeansDenoisingColored(isolatedSubjectMat, isolatedSubjectMat, 3, 3, 7, 21);
                     Mat grayIsolated = new Mat();
                     Imgproc.cvtColor(isolatedSubjectMat, grayIsolated, Imgproc.COLOR_RGBA2GRAY);
                     Imgproc.GaussianBlur(grayIsolated, grayIsolated, new Size(3, 3), 0);
                     Mat detailLines = new Mat();
                     Imgproc.Canny(grayIsolated, detailLines, 50, 150);
-                    List<MatOfPoint> contours = new ArrayList<>();
-                    Mat hierarchy = new Mat();
-                    Mat contoursMask = finalCombinedMask.clone(); // Use the combined mask for contours
-                    Imgproc.findContours(contoursMask, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
                     
-                    // Create the background sketch
-                    Mat grayForSketch = new Mat();
-                    Imgproc.cvtColor(originalMat, grayForSketch, Imgproc.COLOR_RGBA2GRAY);
-                    Mat pencilSketchMat = createAdvancedPencilSketchMat(grayForSketch, ksize);
-                    Mat finalResultMat = new Mat();
-                    Imgproc.cvtColor(pencilSketchMat, finalResultMat, Imgproc.COLOR_GRAY2RGBA);
-
-                    // Draw the high-quality, guided line art over the sketch background
-                    // --- FIX: The problematic contour line has been removed. ---
+                    // 3. Combine them: Place the line art over the sketch background
                     finalResultMat.setTo(new Scalar(0, 0, 0, 255), detailLines);
+                    // --- END OF CORE METHOD 12 LOGIC ---
 
                     Bitmap finalBitmap = Bitmap.createBitmap(finalResultMat.cols(), finalResultMat.rows(), Bitmap.Config.ARGB_8888);
                     Utils.matToBitmap(finalResultMat, finalBitmap);
-                    ProcessingResult result = new ProcessingResult(finalBitmap, contours.size(), "Low Detail", "Guided Scan");
+                    ProcessingResult result = new ProcessingResult(finalBitmap, 1, "Object Refined", "AI Mask");
                     listener.onAiScanComplete(result);
                     
                     // Release Mats
@@ -896,21 +900,16 @@ public class DeepScanProcessor {
                     personMask.release();
                     aiGuideMask.release();
                     aiGuideMaskGray.release();
-                    originalMat.release();
-                    resizedPersonMask.release();
                     resizedAiGuideMask.release();
-                    finalCombinedMask.release();
-                    isolatedSubjectMat.release();
-                    grayIsolated.release();
-                    detailLines.release();
-                    hierarchy.release();
-                    contoursMask.release();
-                    for (MatOfPoint contour : contours) {
-                        contour.release();
-                    }
+                    refinedPersonMask.release();
+                    originalMat.release();
                     grayForSketch.release();
                     pencilSketchMat.release();
                     finalResultMat.release();
+                    resizedRefinedMask.release();
+                    isolatedSubjectMat.release();
+                    grayIsolated.release();
+                    detailLines.release();
                 }
             } else {
                 throw new Exception("MediaPipe segmentation returned a null or empty result for AI-guided scan.");
