@@ -164,7 +164,7 @@ public class ProcessingDialogFragment extends DialogFragment {
         cleanupRawFiles();
         // --- START OF NEW AI CLEANUP ---
         // Ensure the gold standard bitmap is recycled if the dialog is closed mid-process
-        if (goldStandardBitmap != null) {
+        if (goldStandardBitmap != null && !goldStandardBitmap.isRecycled()) {
             goldStandardBitmap.recycle();
             goldStandardBitmap = null;
         }
@@ -448,9 +448,6 @@ public class ProcessingDialogFragment extends DialogFragment {
         switchAutomaticScan.setEnabled(isEnabled);
     }
 
-    // --- LOGIC RESTORED ---
-    // This method correctly shows or hides the manual tuning sliders for images
-    // based on the "Automatic Scan" switch.
     private void updateUiForImageMode(boolean isAutomatic) {
         boolean needsDepthSharpness = selectedMethod >= 3 && selectedMethod <= 9;
         boolean needsKsize = selectedMethod >= 10 && selectedMethod <= 12;
@@ -530,11 +527,7 @@ public class ProcessingDialogFragment extends DialogFragment {
         }
     }
 
-    // --- LOGIC RESTORED ---
-    // This is the entry point when the "Analyze" button is clicked. The logic
-    // to differentiate between automatic and manual modes for images is restored from the older file.
     private void beginAnalysis() {
-        // --- INSTRUCTION 2.1: Pre-Launch Safety Check ---
         if (switchEnableAi.isChecked() && (selectedMethod == 11 || selectedMethod == 12)) {
             String apiKey = sharedPreferences.getString("GEMINI_API_KEY", "");
             if (apiKey.isEmpty()) {
@@ -560,7 +553,6 @@ public class ProcessingDialogFragment extends DialogFragment {
             @Override
             public void run() {
                 try {
-                    // Logic for video files (unchanged)
                     if (isVideoFile(inputFilePath)) {
                         int mode = sliderAnalysisMode.getProgress();
                         int ksize = sliderKsize.getProgress();
@@ -573,13 +565,9 @@ public class ProcessingDialogFragment extends DialogFragment {
                             processAllFrames(ksize, depth, sharpness);
                         }
                     } else { // It's a single image
-                        // RESTORED LOGIC: Check the switch to decide which path to take.
                         if (switchAutomaticScan.isChecked()) {
-                            // Automatic Mode: Run the multi-pass analyzer.
-                            // Default values are passed but not used by the 5-pass scan.
                             processAllFrames(10, 2, 50);
                         } else {
-                            // Manual Mode: Run a single pass with the user's tuned slider values.
                             processSingleFrameManually();
                         }
                     }
@@ -592,9 +580,6 @@ public class ProcessingDialogFragment extends DialogFragment {
         }).start();
     }
 
-    // --- LOGIC RESTORED ---
-    // This handles the "manual" path for a single image, triggering a live preview
-    // with the current slider settings.
     private void processSingleFrameManually() {
         if (isFirstFineTuneAnalysis) {
             try {
@@ -613,9 +598,15 @@ public class ProcessingDialogFragment extends DialogFragment {
         performLivePreviewAnalysis();
     }
 
-    // --- LOGIC REBUILT FOR AI CONTROL SYSTEM V2 ---
+    // --- START OF REFACTORED AI WORKFLOW ---
     private void processAllFrames(final int ksize, final int depth, final int sharpness) throws Exception {
         final int totalFrames = rawFrames.length;
+        // The ksize can now change frame-by-frame, so we need a mutable variable.
+        int currentKsize = ksize;
+
+        if (goldStandardBitmap != null && !goldStandardBitmap.isRecycled()) {
+            goldStandardBitmap.recycle();
+        }
         goldStandardBitmap = null; // Reset before each full run
 
         uiHandler.post(new Runnable() {
@@ -637,69 +628,70 @@ public class ProcessingDialogFragment extends DialogFragment {
                 Bitmap orientedBitmap = decodeAndRotateBitmap(rawFrames[frameIndex].getAbsolutePath());
                 if (orientedBitmap == null) continue;
 
-                // --- NEW WORKFLOW ---
-                if (frameIndex == 0) {
-                    // --- FIRST FRAME: Process normally to create the GOLD STANDARD ---
-                    updateStatus("Processing frame 1 to set Gold Standard...", false);
-                    Bitmap firstFrameResult = null;
+                // --- NEW AI-ENABLED WORKFLOW FOR VIDEOS ---
+                if (isVideoFile(inputFilePath) && switchEnableAi.isChecked() && (selectedMethod == 11 || selectedMethod == 12)) {
+                    if (frameIndex == 0) {
+                        // ** FRAME 0: ESTABLISH THE GOLD STANDARD **
+                        updateStatus("Processing frame 1 to set Gold Standard...", false);
+                        // Process the first frame using the user's chosen settings without guidance.
+                        Bitmap processedFirstFrame = getAiPencilScanAsBitmap(orientedBitmap, currentKsize);
+                        if (processedFirstFrame != null) {
+                            // Store this result as the reference for all other frames.
+                            goldStandardBitmap = processedFirstFrame; // This is a new bitmap, so no need to copy
+                            saveProcessedFrame(goldStandardBitmap, frameIndex); // Save the first frame
+                        } else {
+                            throw new Exception("Failed to process the first frame to create a Gold Standard.");
+                        }
+                    } else {
+                        // ** SUBSEQUENT FRAMES: USE AI ASSIST **
+                        // First, ask AI if ksize needs adjustment for consistency.
+                        CorrectedKsize correction = GeminiAiHelper.checkFrameConsistency(
+                                sharedPreferences.getString("GEMINI_API_KEY", ""),
+                                goldStandardBitmap,
+                                orientedBitmap,
+                                currentKsize
+                        );
+                        currentKsize = correction.ksize; // Update ksize for this frame
+                        if (correction.wasCorrected) {
+                             final int correctedKsize = currentKsize; // final for toast
+                             uiHandler.post(new Runnable() {
+                                 @Override
+                                 public void run() {
+                                     Toast.makeText(getContext(), "AI adjusted ksize to " + correctedKsize, Toast.LENGTH_SHORT).show();
+                                 }
+                             });
+                        }
 
-                    if (selectedMethod >= 10 && selectedMethod <= 12) {
-                        firstFrameResult = getAiPencilScanAsBitmap(orientedBitmap, ksize);
-                    } else if (selectedMethod >= 3 && selectedMethod <= 9) {
-                        firstFrameResult = getTunedScanAsBitmap(orientedBitmap, depth, sharpness);
-                    } else if (selectedMethod <= 1) { // Old AI Methods
-                        beginBlockingAiScan(orientedBitmap, frameIndex);
-                        // These methods save themselves, so we skip the rest of the block
-                        orientedBitmap.recycle();
-                        continue;
-                    } else if (selectedMethod == 2) { // Live Analysis Method
-                        beginMethod1LiveScan(orientedBitmap, frameIndex);
-                        orientedBitmap.recycle();
-                        continue;
-                    } else { // Standard Scan for methods 3-9
-                        beginStandardScan(orientedBitmap, frameIndex);
-                        orientedBitmap.recycle();
-                        continue;
-                    }
-
-                    if (firstFrameResult != null) {
-                        saveProcessedFrame(firstFrameResult, frameIndex);
-                        // Create a copy for the gold standard that we can safely recycle later
-                        goldStandardBitmap = firstFrameResult.copy(firstFrameResult.getConfig(), false);
-                        firstFrameResult.recycle();
+                        // Now, run the full AI-guided scan with the (potentially new) ksize.
+                        beginBlockingAiGuidedScan(orientedBitmap, frameIndex, currentKsize);
                     }
                 } else {
-                    // --- SUBSEQUENT FRAMES ---
-                    if (switchEnableAi.isChecked() && goldStandardBitmap != null && (selectedMethod == 11 || selectedMethod == 12)) {
-                        // AI ASSIST is ON: Use the AI-guided workflow
-                        beginBlockingAiGuidedScan(orientedBitmap, frameIndex, ksize);
+                    // --- ORIGINAL, NON-AI PROCESSING PATH (UNCHANGED) ---
+                    if (selectedMethod <= 1) {
+                        beginBlockingAiScan(orientedBitmap, frameIndex);
+                    } else if (selectedMethod >= 10 && selectedMethod <= 12) {
+                        beginBlockingPencilOrNewAiScan(orientedBitmap, frameIndex, currentKsize);
+                    } else if (selectedMethod == 2) {
+                        beginMethod1LiveScan(orientedBitmap, frameIndex);
                     } else {
-                        // AI ASSIST is OFF or not applicable: Process normally
-                        if (selectedMethod >= 10 && selectedMethod <= 12) {
-                            beginBlockingPencilOrNewAiScan(orientedBitmap, frameIndex, ksize);
-                        } else if (selectedMethod >= 3 && selectedMethod <= 9) {
-                            boolean isVideoStandardAuto = isVideoFile(inputFilePath) && sliderAnalysisMode.getProgress() == 0;
-                            boolean isImageAutoScan = !isVideoFile(inputFilePath) && switchAutomaticScan.isChecked();
-                            if (isVideoStandardAuto || isImageAutoScan) {
-                                beginStandardScan(orientedBitmap, frameIndex);
-                            } else {
-                                beginTunedScan(orientedBitmap, frameIndex, depth, sharpness);
-                            }
-                        } else if (selectedMethod <= 1) {
-                            beginBlockingAiScan(orientedBitmap, frameIndex);
-                        } else if (selectedMethod == 2) {
-                            beginMethod1LiveScan(orientedBitmap, frameIndex);
+                        boolean isVideoStandardAuto = isVideoFile(inputFilePath) && sliderAnalysisMode.getProgress() == 0;
+                        boolean isImageAutoScan = !isVideoFile(inputFilePath) && switchAutomaticScan.isChecked();
+                        if (isVideoStandardAuto || isImageAutoScan) {
+                            beginStandardScan(orientedBitmap, frameIndex);
+                        } else {
+                            beginTunedScan(orientedBitmap, frameIndex, depth, sharpness);
                         }
                     }
                 }
                 orientedBitmap.recycle();
             }
         } finally {
-            if (goldStandardBitmap != null) {
+            if (goldStandardBitmap != null && !goldStandardBitmap.isRecycled()) {
                 goldStandardBitmap.recycle();
                 goldStandardBitmap = null;
             }
         }
+        // --- END OF REFACTORED AI WORKFLOW ---
 
         cleanupRawFiles();
 
@@ -789,11 +781,32 @@ public class ProcessingDialogFragment extends DialogFragment {
     }
 
     private void beginBlockingPencilOrNewAiScan(Bitmap bitmap, final int frameIndex, final int ksize) throws InterruptedException {
-        Bitmap resultBitmap = getAiPencilScanAsBitmap(bitmap, ksize);
-        if (resultBitmap != null) {
-            saveProcessedFrame(resultBitmap, frameIndex);
-            // The result is recycled inside saveProcessedFrame
+        final CountDownLatch latch = new CountDownLatch(1);
+        DeepScanProcessor.AiScanListener listener = new DeepScanProcessor.AiScanListener() {
+            @Override
+            public void onAiScanComplete(DeepScanProcessor.ProcessingResult finalResult) {
+                if (finalResult != null && finalResult.resultBitmap != null) {
+                    saveProcessedFrame(finalResult.resultBitmap, frameIndex);
+                }
+                latch.countDown();
+            }
+        };
+
+        if (selectedMethod == 10) {
+            DeepScanProcessor.processMethod11(bitmap, ksize, new DeepScanProcessor.ScanListenerWithKsize(){
+                @Override
+                public void onScanProgress(int pass, int totalPasses, String status, Bitmap intermediateResult) {}
+                @Override
+                public void onScanComplete(DeepScanProcessor.ProcessingResult finalResult) {
+                    listener.onAiScanComplete(finalResult);
+                }
+            });
+        } else if (selectedMethod == 11) {
+            DeepScanProcessor.processMethod12(getContext(), bitmap, ksize, listener);
+        } else if (selectedMethod == 12) {
+            DeepScanProcessor.processMethod13(getContext(), bitmap, ksize, listener);
         }
+        latch.await();
     }
 
     private void performNewAiAnalysis() {
@@ -847,8 +860,6 @@ public class ProcessingDialogFragment extends DialogFragment {
         }).start();
     }
 
-    // --- LOGIC RESTORED ---
-    // This method performs the automatic 5-pass scan. It is called when the switch is ON.
     private void beginStandardScan(Bitmap bitmap, final int frameIndex) throws InterruptedException {
         final CountDownLatch latch = new CountDownLatch(1);
 
@@ -886,8 +897,6 @@ public class ProcessingDialogFragment extends DialogFragment {
         latch.await();
     }
 
-    // --- LOGIC RESTORED ---
-    // This method performs the manual, single-pass scan based on slider values.
     private void performFineTuningAnalysis() {
         if (sourceBitmapForTuning == null) {
             return;
@@ -933,14 +942,39 @@ public class ProcessingDialogFragment extends DialogFragment {
         DeepScanProcessor.processWithFineTuning(sourceBitmapForTuning, finalLogicalMethod, depth, sharpness, listener);
     }
 
-    // --- LOGIC RESTORED ---
-    // This method applies the manually tuned slider settings to a single frame during batch processing.
     private void beginTunedScan(Bitmap bitmap, final int frameIndex, int depth, int sharpness) throws InterruptedException {
-        Bitmap resultBitmap = getTunedScanAsBitmap(bitmap, depth, sharpness);
-        if (resultBitmap != null) {
-            saveProcessedFrame(resultBitmap, frameIndex);
-            // The result is recycled inside saveProcessedFrame
+        final CountDownLatch latch = new CountDownLatch(1);
+        int logicalMethod = 0;
+        switch(selectedMethod) {
+            case 3: logicalMethod = 2; break;
+            case 4: logicalMethod = 3; break;
+            case 5: logicalMethod = 4; break;
+            case 6: logicalMethod = 5; break;
+            case 7: logicalMethod = 6; break;
+            case 8: logicalMethod = 7; break;
+            case 9: logicalMethod = 8; break;
         }
+        final int finalLogicalMethod = logicalMethod;
+
+        DeepScanProcessor.ScanListener listener = new DeepScanProcessor.ScanListener() {
+            @Override
+            public void onScanProgress(int pass, int totalPasses, String status, Bitmap intermediateResult) {}
+            @Override
+            public void onScanComplete(DeepScanProcessor.ProcessingResult finalResult) {
+                if (finalResult != null && finalResult.resultBitmap != null) {
+                    updateMainDisplay(finalResult.resultBitmap);
+                    String outPath = new File(processedFramesDir, String.format("processed_%05d.png", frameIndex)).getAbsolutePath();
+                    try {
+                        ImageProcessor.saveBitmap(finalResult.resultBitmap, outPath);
+                    } catch (Exception e) {
+                        Log.e(TAG, "Failed to save processed tuned frame.", e);
+                    }
+                }
+                latch.countDown();
+            }
+        };
+        DeepScanProcessor.processWithFineTuning(bitmap, finalLogicalMethod, depth, sharpness, listener);
+        latch.await();
     }
 
     private void saveCurrentImage() {
@@ -1312,10 +1346,6 @@ public class ProcessingDialogFragment extends DialogFragment {
 
     // --- START OF NEW/UPDATED METHODS FOR AI FEATURE ---
 
-    /**
-     * Sets up the listeners and initial state for the AI controls UI.
-     * This handles saving the API key and managing the visibility of UI components.
-     */
     private void setupAiControls() {
         btnSaveApiKey.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -1334,43 +1364,31 @@ public class ProcessingDialogFragment extends DialogFragment {
         btnUpdateApiKey.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                // Show the input box again to allow the user to enter a new key.
                 etGeminiApiKey.setVisibility(View.VISIBLE);
                 btnSaveApiKey.setVisibility(View.VISIBLE);
                 btnUpdateApiKey.setVisibility(View.GONE);
             }
         });
 
-        // Set the initial state of the UI based on whether a key is already saved.
         updateAiUiState();
     }
 
-    /**
-     * Updates the AI controls UI based on whether an API key is currently saved in SharedPreferences.
-     */
     private void updateAiUiState() {
         String savedApiKey = sharedPreferences.getString("GEMINI_API_KEY", null);
         if (savedApiKey != null && !savedApiKey.isEmpty()) {
-            // Key exists: Hide input, show update icon, and enable the AI switch.
             etGeminiApiKey.setVisibility(View.GONE);
             btnSaveApiKey.setVisibility(View.GONE);
             btnUpdateApiKey.setVisibility(View.VISIBLE);
             switchEnableAi.setEnabled(true);
         } else {
-            // No key: Show input, hide update icon, and disable the AI switch.
             etGeminiApiKey.setVisibility(View.VISIBLE);
             btnSaveApiKey.setVisibility(View.VISIBLE);
             btnUpdateApiKey.setVisibility(View.GONE);
             switchEnableAi.setEnabled(false);
-            switchEnableAi.setChecked(false); // Can't be enabled if there's no key.
+            switchEnableAi.setChecked(false);
         }
     }
 
-    /**
-     * A NEW, SEPARATE method for the AI to use. It returns a Bitmap instead of saving a file.
-     * This method DOES NOT alter your original `beginBlockingPencilOrNewAiScan` method.
-     * It runs the core processing logic and captures the output as a Bitmap.
-     */
     private Bitmap getAiPencilScanAsBitmap(Bitmap bitmap, int ksize) throws InterruptedException {
         final CountDownLatch latch = new CountDownLatch(1);
         final Bitmap[] resultHolder = { null };
@@ -1379,7 +1397,6 @@ public class ProcessingDialogFragment extends DialogFragment {
             @Override
             public void onAiScanComplete(DeepScanProcessor.ProcessingResult finalResult) {
                 if (finalResult != null) {
-                    // Instead of saving, we store the resulting bitmap in our holder.
                     resultHolder[0] = finalResult.resultBitmap;
                 }
                 latch.countDown();
@@ -1391,27 +1408,13 @@ public class ProcessingDialogFragment extends DialogFragment {
         } else if (selectedMethod == 12) {
             DeepScanProcessor.processMethod13(getContext(), bitmap, ksize, listener);
         } else {
-            // Fallback for non-AI pencil sketch
-            DeepScanProcessor.processMethod11(bitmap, ksize, new DeepScanProcessor.ScanListenerWithKsize() {
-                @Override
-                public void onScanProgress(int pass, int totalPasses, String status, Bitmap intermediateResult) {}
-                @Override
-                public void onScanComplete(DeepScanProcessor.ProcessingResult finalResult) {
-                    listener.onAiScanComplete(finalResult);
-                }
-            });
+            latch.countDown();
         }
 
         latch.await();
         return resultHolder[0];
     }
 
-    /**
-     * A NEW helper method to save a processed bitmap to a file and update the main display.
-     * This avoids code duplication within the new AI logic path.
-     * @param bitmap The bitmap to save.
-     * @param frameIndex The index of the frame, used for the filename.
-     */
     private void saveProcessedFrame(Bitmap bitmap, int frameIndex) {
         if (bitmap != null) {
             updateMainDisplay(bitmap);
@@ -1421,67 +1424,55 @@ public class ProcessingDialogFragment extends DialogFragment {
             } catch (Exception e) {
                 Log.e(TAG, "Failed to save AI processed frame.", e);
             }
-            // IMPORTANT: The AI path manages its own memory.
-            // We recycle the bitmap after saving, but NOT if it's the gold standard,
-            // as that one needs to be kept for the entire loop.
             if (bitmap != goldStandardBitmap) {
-                bitmap.recycle();
+                // Don't recycle the gold standard; it's needed for the whole loop.
+                // Other bitmaps are temporary for the current frame and can be recycled.
+                if(!bitmap.isRecycled()){
+                    bitmap.recycle();
+                }
             }
         }
     }
 
-    // --- REBUILT METHOD for AI Control System V2 ---
-    private void beginBlockingAiGuidedScan(Bitmap bitmap, final int frameIndex, final int initialKsize) throws InterruptedException {
-        Bitmap finalProcessedBitmap = null;
-        Bitmap aiMask = null;
-
+    private void beginBlockingAiGuidedScan(Bitmap bitmap, final int frameIndex, final int ksize) throws InterruptedException {
         try {
+            updateStatus("Frame " + (frameIndex + 1) + ": AI analyzing subject...", false);
             String apiKey = sharedPreferences.getString("GEMINI_API_KEY", "");
-            
-            // Step 1: Check for stylistic consistency and get ksize adjustment
-            updateStatus("Frame " + (frameIndex + 1) + ": AI checking consistency...", false);
-            CorrectedKsize ksizeCorrection = GeminiAiHelper.checkFrameConsistency(apiKey, goldStandardBitmap, bitmap, initialKsize);
-            int adjustedKsize = ksizeCorrection.ksize;
-
-            // Step 2: Ask AI for object regions
-            updateStatus("Frame " + (frameIndex + 1) + ": AI identifying subjects...", false);
             FrameAnalysisResult analysisResult = GeminiAiHelper.findObjectRegions(apiKey, bitmap);
             updateStatus("Processing frame " + (frameIndex + 1) + " of " + rawFrames.length, false);
 
             if (!analysisResult.hasObjects()) {
-                Log.w(TAG, "AI found no objects for guided scan on frame " + frameIndex + ". Falling back to standard scan with adjusted ksize.");
-                beginBlockingPencilOrNewAiScan(bitmap, frameIndex, adjustedKsize);
+                Log.w(TAG, "AI found no objects for guided scan on frame " + frameIndex + ". Falling back to standard scan.");
+                beginBlockingPencilOrNewAiScan(bitmap, frameIndex, ksize);
                 return;
             }
 
-            // Step 3: Create a high-quality, unified mask from the regions
-            aiMask = ImageProcessor.createUnifiedMaskFromRects(
+            // Use the new, intelligent mask creation method.
+            Bitmap aiMask = ImageProcessor.createUnifiedMaskFromRects(
                 bitmap.getWidth(),
                 bitmap.getHeight(),
                 analysisResult.getObjectBounds()
             );
 
-            // Step 4: Perform the final scan using the overloaded processor method
-            finalProcessedBitmap = performAiGuidedScan(bitmap, adjustedKsize, aiMask);
+            // Perform the scan, which returns a clean bitmap.
+            Bitmap finalProcessedBitmap = performAiGuidedScan(bitmap, ksize, aiMask);
 
-            // Step 5: Save and display the clean, final bitmap.
+            // Save and display the clean bitmap.
             saveProcessedFrame(finalProcessedBitmap, frameIndex);
+
+            // Clean up the temporary unified mask.
+            if (aiMask != null && !aiMask.isRecycled()) {
+                aiMask.recycle();
+            }
 
         } catch (Exception e) {
             Log.e(TAG, "AI-guided scan failed due to an exception.", e);
             String message = (e instanceof IOException) ? e.getMessage() : "An unexpected error occurred.";
             showErrorDialog("AI Assist Error", "The AI analysis failed for frame " + (frameIndex + 1) + ". " + message + "\n\nFalling back to standard processing for this frame.", false);
-            beginBlockingPencilOrNewAiScan(bitmap, frameIndex, initialKsize); // Fallback with original ksize
-        } finally {
-            // Step 6: Clean up the temporary mask
-            if (aiMask != null) {
-                aiMask.recycle();
-            }
+            beginBlockingPencilOrNewAiScan(bitmap, frameIndex, ksize);
         }
     }
 
-
-    // --- NEW HELPER METHOD to encapsulate the blocking logic and ensure a clean return ---
     private Bitmap performAiGuidedScan(Bitmap originalBitmap, int ksize, Bitmap aiMask) throws InterruptedException {
         final CountDownLatch latch = new CountDownLatch(1);
         final Bitmap[] resultHolder = { null };
@@ -1490,7 +1481,6 @@ public class ProcessingDialogFragment extends DialogFragment {
             @Override
             public void onAiScanComplete(final DeepScanProcessor.ProcessingResult finalResult) {
                 if (finalResult != null && finalResult.resultBitmap != null) {
-                    // Store the clean result from the processor.
                     resultHolder[0] = finalResult.resultBitmap;
 
                     final String toastMessage = String.format(Locale.US,
@@ -1511,49 +1501,14 @@ public class ProcessingDialogFragment extends DialogFragment {
             }
         };
 
-        // Call the appropriate processor method with the guide mask.
         if (selectedMethod == 11) {
             DeepScanProcessor.processMethod12(getContext(), originalBitmap, ksize, aiMask, listener);
         } else if (selectedMethod == 12) {
             DeepScanProcessor.processMethod13(getContext(), originalBitmap, ksize, aiMask, listener);
         } else {
-            // Should not happen if called correctly, but provides a safe exit.
             latch.countDown();
         }
 
-        latch.await();
-        return resultHolder[0];
-    }
-    
-    // --- NEW HELPER for getting tuned scan result as a bitmap for gold standard ---
-    private Bitmap getTunedScanAsBitmap(Bitmap bitmap, int depth, int sharpness) throws InterruptedException {
-        final CountDownLatch latch = new CountDownLatch(1);
-        final Bitmap[] resultHolder = { null };
-
-        int logicalMethod = 0;
-        switch(selectedMethod) {
-            case 3: logicalMethod = 2; break;
-            case 4: logicalMethod = 3; break;
-            case 5: logicalMethod = 4; break;
-            case 6: logicalMethod = 5; break;
-            case 7: logicalMethod = 6; break;
-            case 8: logicalMethod = 7; break;
-            case 9: logicalMethod = 8; break;
-        }
-        final int finalLogicalMethod = logicalMethod;
-
-        DeepScanProcessor.ScanListener listener = new DeepScanProcessor.ScanListener() {
-            @Override
-            public void onScanProgress(int pass, int totalPasses, String status, Bitmap intermediateResult) {}
-            @Override
-            public void onScanComplete(DeepScanProcessor.ProcessingResult finalResult) {
-                if (finalResult != null) {
-                    resultHolder[0] = finalResult.resultBitmap;
-                }
-                latch.countDown();
-            }
-        };
-        DeepScanProcessor.processWithFineTuning(bitmap, finalLogicalMethod, depth, sharpness, listener);
         latch.await();
         return resultHolder[0];
     }
