@@ -1454,86 +1454,88 @@ public class ProcessingDialogFragment extends DialogFragment {
         }
     }
 
-    /**
-     * NEW METHOD for Task 2: Performs the AI-guided scan for a single frame.
-     * This is the advanced path where the AI first finds object regions to guide the scan.
-     *
-     * @param bitmap The raw, unprocessed frame.
-     * @param frameIndex The index of the current frame.
-     * @param ksize The ksize parameter from the UI slider.
-     * @throws InterruptedException
-     */
+    // --- FIX: This method is refactored to remove any possibility of debug drawings ---
     private void beginBlockingAiGuidedScan(Bitmap bitmap, final int frameIndex, final int ksize) throws InterruptedException {
         try {
-            // "Happy Path" - Attempt AI processing
             updateStatus("Frame " + (frameIndex + 1) + ": Asking AI for guidance...", false);
-
             String apiKey = sharedPreferences.getString("GEMINI_API_KEY", "");
             FrameAnalysisResult analysisResult = GeminiAiHelper.findObjectRegions(apiKey, bitmap);
-
             updateStatus("Processing frame " + (frameIndex + 1) + " of " + rawFrames.length, false);
 
             if (!analysisResult.hasObjects()) {
-                // Fallback for when AI finds no objects
                 Log.w(TAG, "AI found no objects for guided scan on frame " + frameIndex + ". Falling back to standard scan.");
                 beginBlockingPencilOrNewAiScan(bitmap, frameIndex, ksize);
                 return;
             }
 
-            // AI found objects, proceed with guided scan
+            // Create the mask using the AI's results. This mask is for INTERNAL use by the processor.
             Bitmap aiMask = ImageProcessor.createMaskFromRects(
                 bitmap.getWidth(),
                 bitmap.getHeight(),
                 analysisResult.getObjectBounds()
             );
 
-            final CountDownLatch latch = new CountDownLatch(1);
-            DeepScanProcessor.AiScanListener listener = new DeepScanProcessor.AiScanListener() {
-                @Override
-                public void onAiScanComplete(final DeepScanProcessor.ProcessingResult finalResult) {
-                    if (finalResult != null && finalResult.resultBitmap != null) {
-                        saveProcessedFrame(finalResult.resultBitmap, frameIndex);
+            // Perform the scan, which returns a CLEAN bitmap with NO debug drawings.
+            Bitmap finalProcessedBitmap = performAiGuidedScan(bitmap, ksize, aiMask);
 
-                        // --- IMPLEMENTATION OF TASK 1: Display Toast Notification ---
-                        final String toastMessage = String.format(Locale.US,
-                            "AI Assist: Enhanced Frame %d. Problem: %s. Fix: %s.",
-                            frameIndex + 1,
-                            finalResult.problemDetected,
-                            finalResult.fixApplied
-                        );
-                        uiHandler.post(new Runnable() {
-                            @Override
-                            public void run() {
-                                Toast.makeText(getContext(), toastMessage, Toast.LENGTH_SHORT).show();
-                            }
-                        });
-                        // --- END OF TASK 1 IMPLEMENTATION ---
+            // Save and display the CLEAN bitmap.
+            saveProcessedFrame(finalProcessedBitmap, frameIndex);
 
-                    } else {
-                        Log.e(TAG, "AI-guided scan returned null for frame " + frameIndex);
-                    }
-                    latch.countDown();
-                }
-            };
-
-            if (selectedMethod == 11) {
-                DeepScanProcessor.processMethod12(getContext(), bitmap, ksize, aiMask, listener);
-            } else if (selectedMethod == 12) {
-                DeepScanProcessor.processMethod13(getContext(), bitmap, ksize, aiMask, listener);
-            }
-
+            // Clean up the temporary mask.
             if (aiMask != null) {
                 aiMask.recycle();
             }
-            latch.await();
 
         } catch (Exception e) {
-            // "Failure Path" - Handle errors from the AI helper and other exceptions
             Log.e(TAG, "AI-guided scan failed due to an exception.", e);
             String message = (e instanceof IOException) ? e.getMessage() : "An unexpected error occurred.";
             showErrorDialog("AI Assist Error", "The AI analysis failed for frame " + (frameIndex + 1) + ". " + message + "\n\nFalling back to standard processing for this frame.", false);
             beginBlockingPencilOrNewAiScan(bitmap, frameIndex, ksize);
         }
+    }
+
+    // --- NEW HELPER METHOD to encapsulate the blocking logic and ensure a clean return ---
+    private Bitmap performAiGuidedScan(Bitmap originalBitmap, int ksize, Bitmap aiMask) throws InterruptedException {
+        final CountDownLatch latch = new CountDownLatch(1);
+        final Bitmap[] resultHolder = { null };
+
+        DeepScanProcessor.AiScanListener listener = new DeepScanProcessor.AiScanListener() {
+            @Override
+            public void onAiScanComplete(final DeepScanProcessor.ProcessingResult finalResult) {
+                if (finalResult != null && finalResult.resultBitmap != null) {
+                    // Store the clean result from the processor.
+                    resultHolder[0] = finalResult.resultBitmap;
+
+                    final String toastMessage = String.format(Locale.US,
+                        "AI Assist: Enhanced Frame. Problem: %s. Fix: %s.",
+                        finalResult.problemDetected,
+                        finalResult.fixApplied
+                    );
+                    uiHandler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            Toast.makeText(getContext(), toastMessage, Toast.LENGTH_SHORT).show();
+                        }
+                    });
+                } else {
+                    Log.e(TAG, "AI-guided scan returned a null result bitmap.");
+                }
+                latch.countDown();
+            }
+        };
+
+        // Call the appropriate processor method with the guide mask.
+        if (selectedMethod == 11) {
+            DeepScanProcessor.processMethod12(getContext(), originalBitmap, ksize, aiMask, listener);
+        } else if (selectedMethod == 12) {
+            DeepScanProcessor.processMethod13(getContext(), originalBitmap, ksize, aiMask, listener);
+        } else {
+            // Should not happen if called correctly, but provides a safe exit.
+            latch.countDown();
+        }
+
+        latch.await();
+        return resultHolder[0];
     }
     // --- END OF NEW/UPDATED METHODS ---
 }
