@@ -1527,10 +1527,11 @@ public class ProcessingDialogFragment extends DialogFragment {
             }
             latch.await();
 
-        } catch (IOException e) {
-            // "Failure Path" - Handle errors from the AI helper
+        } catch (Exception e) {
+            // "Failure Path" - Handle errors from the AI helper and other exceptions
             Log.e(TAG, "AI-guided scan failed due to an exception.", e);
-            showErrorDialog("AI Assist Error", "The AI analysis failed for frame " + (frameIndex + 1) + ". " + e.getMessage() + "\n\nFalling back to standard processing for this frame.", false);
+            String message = (e instanceof IOException) ? e.getMessage() : "An unexpected error occurred.";
+            showErrorDialog("AI Assist Error", "The AI analysis failed for frame " + (frameIndex + 1) + ". " + message + "\n\nFalling back to standard processing for this frame.", false);
             beginBlockingPencilOrNewAiScan(bitmap, frameIndex, ksize);
         }
     }
