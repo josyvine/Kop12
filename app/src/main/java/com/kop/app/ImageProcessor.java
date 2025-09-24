@@ -8,6 +8,14 @@ import android.graphics.Rect;
 import java.io.FileOutputStream;
 import java.util.List;
 
+// --- START OF ADDED IMPORTS FOR NEW METHOD ---
+import org.opencv.android.Utils;
+import org.opencv.core.Mat;
+import org.opencv.core.Size;
+import org.opencv.imgproc.Imgproc;
+// --- END OF ADDED IMPORTS FOR NEW METHOD ---
+
+
 /**
  * A utility class for handling bitmap operations, such as saving to a file.
  * The core processing logic has been moved to DeepScanProcessor.
@@ -75,6 +83,60 @@ public class ImageProcessor {
         }
 
         return maskBitmap;
+    }
+    // --- END OF NEW METHOD ---
+
+    // --- START OF NEW METHOD FOR AI CONTROL SYSTEM (Version 2) ---
+
+    /**
+     * Creates a unified, solid black-and-white mask from a list of potentially disconnected
+     * rectangular regions by merging them using morphological operations.
+     * This is used to create a cohesive silhouette to guide the processing.
+     *
+     * @param width The width of the mask to create.
+     * @param height The height of the mask to create.
+     * @param rects A list of Rect objects defining the areas to be marked in white.
+     * @return A new Bitmap representing the unified mask.
+     */
+    public static Bitmap createUnifiedMaskFromRects(int width, int height, List<Rect> rects) {
+        // Step 1: Call the existing method to get the base bitmap with separate rectangles.
+        Bitmap initialBitmap = createMaskFromRects(width, height, rects);
+        if (rects == null || rects.isEmpty()) {
+            return initialBitmap; // Return the all-black bitmap directly.
+        }
+
+        Mat maskMat = new Mat();
+        Mat grayMat = new Mat();
+        Mat kernel = null;
+        try {
+            // Step 2: Convert the bitmap to an OpenCV Mat.
+            Utils.bitmapToMat(initialBitmap, maskMat);
+
+            // Step 3: Convert to a single-channel grayscale image.
+            Imgproc.cvtColor(maskMat, grayMat, Imgproc.COLOR_RGBA2GRAY);
+
+            // Step 4: Create a large rectangular kernel to close gaps.
+            kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, new Size(25, 25));
+
+            // Step 5: Use MORPH_CLOSE to fill gaps between the white rectangles.
+            Imgproc.morphologyEx(grayMat, grayMat, Imgproc.MORPH_CLOSE, kernel);
+
+            // Step 6: Convert the final, unified Mat back into a Bitmap.
+            Bitmap finalBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+            Utils.matToBitmap(grayMat, finalBitmap);
+
+            return finalBitmap;
+        } finally {
+            // Step 7: Ensure all intermediate resources are properly released.
+            if (initialBitmap != null) {
+                initialBitmap.recycle();
+            }
+            maskMat.release();
+            grayMat.release();
+            if (kernel != null) {
+                kernel.release();
+            }
+        }
     }
     // --- END OF NEW METHOD ---
 }
