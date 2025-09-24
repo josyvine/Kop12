@@ -196,11 +196,11 @@ public class GeminiAiHelper {
      * @param apiKey The user's Gemini API key.
      * @param rawFrame The unprocessed frame to analyze.
      * @return A FrameAnalysisResult containing the bounding boxes of detected objects.
+     * @throws IOException if the API key is missing, the network call fails, or the response cannot be parsed.
      */
-    public static FrameAnalysisResult findObjectRegions(String apiKey, Bitmap rawFrame) {
+    public static FrameAnalysisResult findObjectRegions(String apiKey, Bitmap rawFrame) throws IOException {
         if (apiKey == null || apiKey.isEmpty()) {
-            Log.w(TAG, "API Key is missing. Skipping AI object detection.");
-            return new FrameAnalysisResult(new ArrayList<Rect>());
+            throw new IOException("API Key is missing.");
         }
 
         try {
@@ -215,15 +215,14 @@ public class GeminiAiHelper {
 
             try (Response response = client.newCall(request).execute()) {
                 if (!response.isSuccessful()) {
-                    Log.e(TAG, "Object Detection API Call Failed: " + response.code() + " " + response.body().string());
-                    return new FrameAnalysisResult(new ArrayList<Rect>());
+                    throw new IOException("API Call Failed: " + response.code() + " " + response.body().string());
                 }
                 String responseBody = response.body().string();
                 return parseObjectDetectionResponse(responseBody);
             }
         } catch (Exception e) {
             Log.e(TAG, "An error occurred during AI object detection", e);
-            return new FrameAnalysisResult(new ArrayList<Rect>());
+            throw new IOException("Failed to process AI request. Check logs for details.", e);
         }
     }
 
