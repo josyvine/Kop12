@@ -1,4 +1,4 @@
-package com.kop.app; 
+package com.kop.app;
 
 import android.content.Context;
 import android.graphics.Bitmap;
@@ -30,8 +30,6 @@ import org.tensorflow.lite.Interpreter;
 import org.tensorflow.lite.gpu.CompatibilityList;
 import org.tensorflow.lite.gpu.GpuDelegate;
 import org.tensorflow.lite.support.common.ops.NormalizeOp;
-// --- FIX: REMOVED this import to resolve naming conflict ---
-// import org.tensorflow.lite.support.image.ImageProcessor;
 import org.tensorflow.lite.support.image.TensorImage;
 import org.tensorflow.lite.support.image.ops.ResizeOp;
 import org.tensorflow.lite.support.tensorbuffer.TensorBuffer;
@@ -1241,8 +1239,13 @@ public class DeepScanProcessor {
         tensorContentImage.load(contentBitmap);
         tensorContentImage = imageProcessor.process(tensorContentImage);
 
-        // The model expects two inputs: content image and style vector
-        Object[] inputs = new Object[]{tensorContentImage.getBuffer(), styleVector};
+        // --- FIX START: The style vector must be reshaped to a 4D array ---
+        float[][][][] reshapedStyleVector = new float[1][1][1][100];
+        reshapedStyleVector[0][0][0] = styleVector;
+        // --- FIX END ---
+
+        // The model expects two inputs: content image and the reshaped style vector
+        Object[] inputs = new Object[]{tensorContentImage.getBuffer(), reshapedStyleVector};
 
         // Define the output buffer for the stylized image
         // The shape is [1, 384, 384, 3] as specified by the model
