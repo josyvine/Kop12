@@ -62,4 +62,9 @@ dependencies {
     // For parsing JSON data from the Gemini API response
     implementation 'com.google.code.gson:gson:2.8.9'
     // *** END OF ADDED LIBRARIES FOR AI FEATURE ***
+
+    // NEW DEPENDENCY: Core TensorFlow Lite library for running AI models.
+    implementation 'org.tensorflow:tensorflow-lite:2.9.0'
+    // NEW DEPENDENCY: GPU delegate for hardware acceleration of TFLite models.
+    implementation 'org.tensorflow:tensorflow-lite-gpu:2.9.0'
 }
