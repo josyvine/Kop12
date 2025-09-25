@@ -4,6 +4,8 @@ import android.app.Dialog;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.SharedPreferences;
+import android.content.res.AssetFileDescriptor;
+import android.content.res.AssetManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Matrix;
@@ -39,12 +41,18 @@ import androidx.fragment.app.DialogFragment;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
+import org.tensorflow.lite.Interpreter;
+import org.tensorflow.lite.gpu.CompatibilityList;
+import org.tensorflow.lite.gpu.GpuDelegate;
+
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.MappedByteBuffer;
+import java.nio.channels.FileChannel;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -106,6 +114,19 @@ public class ProcessingDialogFragment extends DialogFragment {
     private Switch switchEnableAi;
     private Bitmap goldStandardBitmap = null;
     // --- END OF CORRECTED VARIABLES FOR AI FEATURE ---
+
+    // --- START OF NEW VARIABLES FOR METHOD 14 ---
+    private Spinner styleSpinner;
+    private LinearLayout aiStyleControlsContainer;
+    // This array MUST match the order and contents of the 'ai_sketch_style_options' in arrays.xml
+    private final String[] styleAssetFiles = {
+            "style_charcoal.jpg",
+            "style_graphite_soft.jpg",
+            "style_crosshatch.jpg",
+            "style_technical_pen.jpg",
+            "style_pencil_sketch.jpg"
+    };
+    // --- END OF NEW VARIABLES FOR METHOD 14 ---
 
 
     public interface OnDialogClosedListener {
@@ -214,6 +235,11 @@ public class ProcessingDialogFragment extends DialogFragment {
         switchEnableAi = view.findViewById(R.id.switch_enable_ai);
         // --- END OF CORRECTED View-Finding for AI controls ---
 
+        // --- START OF NEW View-Finding FOR METHOD 14 ---
+        styleSpinner = view.findViewById(R.id.spinner_ai_style);
+        aiStyleControlsContainer = view.findViewById(R.id.ai_style_controls_container);
+        // --- END OF NEW View-Finding FOR METHOD 14 ---
+
         closeButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -292,6 +318,15 @@ public class ProcessingDialogFragment extends DialogFragment {
         methodAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         methodSpinner.setAdapter(methodAdapter);
         methodSpinner.setSelection(selectedMethod, false);
+
+        // --- START OF NEW LOGIC FOR METHOD 14 ---
+        ArrayAdapter<CharSequence> styleAdapter = ArrayAdapter.createFromResource(getContext(),
+                R.array.ai_sketch_style_options, android.R.layout.simple_spinner_item);
+        styleAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        styleSpinner.setAdapter(styleAdapter);
+        // --- END OF NEW LOGIC FOR METHOD 14 ---
+
+
         methodSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
@@ -310,6 +345,15 @@ public class ProcessingDialogFragment extends DialogFragment {
                 }
                 // --- END OF NEW LOGIC TO SHOW/HIDE AI CONTROLS ---
 
+                // --- START OF NEW LOGIC TO SHOW/HIDE STYLE SPINNER FOR METHOD 14 ---
+                // Method 14 is at index 13
+                if (selectedMethod == 13) {
+                    aiStyleControlsContainer.setVisibility(View.VISIBLE);
+                } else {
+                    aiStyleControlsContainer.setVisibility(View.GONE);
+                }
+                // --- END OF NEW LOGIC TO SHOW/HIDE STYLE SPINNER FOR METHOD 14 ---
+
                 if (isVideo) {
                     updateUiForVideoMode(sliderAnalysisMode.getProgress());
                 } else {
@@ -325,6 +369,11 @@ public class ProcessingDialogFragment extends DialogFragment {
                     switchEnableAi.setChecked(false);
                 }
                 // --- END OF NEW LOGIC TO SHOW/HIDE AI CONTROLS (for safety) ---
+
+                // --- START OF NEW LOGIC FOR METHOD 14 (for safety) ---
+                aiStyleControlsContainer.setVisibility(View.GONE);
+                // --- END OF NEW LOGIC FOR METHOD 14 (for safety) ---
+
                 if (isVideo) {
                     updateUiForVideoMode(sliderAnalysisMode.getProgress());
                 } else {
@@ -616,79 +665,148 @@ public class ProcessingDialogFragment extends DialogFragment {
             }
         });
 
-        try {
-            for (int i = 0; i < totalFrames; i++) {
-                final int frameNum = i + 1;
-                final int frameIndex = i;
+        // --- START: NEW LOGIC BLOCK FOR METHOD 14 ---
+        if (selectedMethod == 13) {
+            // This entire block is dedicated to Method 14 processing
+            updateStatus("Preparing AI Style Transfer...", true);
 
-                updateStatus("Processing frame " + frameNum + " of " + totalFrames, false);
-                updateProgress(frameNum, totalFrames);
-                updateCurrentFrameHighlight(frameIndex);
-
-                Bitmap orientedBitmap = decodeAndRotateBitmap(rawFrames[frameIndex].getAbsolutePath());
-                if (orientedBitmap == null) continue;
-
-                // --- NEW AI-ENABLED WORKFLOW FOR VIDEOS ---
-                if (isVideoFile(inputFilePath) && switchEnableAi.isChecked() && (selectedMethod == 11 || selectedMethod == 12)) {
-                    if (frameIndex == 0) {
-                        // ** FRAME 0: ESTABLISH THE GOLD STANDARD **
-                        updateStatus("Processing frame 1 to set Gold Standard...", false);
-                        // Process the first frame using the user's chosen settings without guidance.
-                        Bitmap processedFirstFrame = getAiPencilScanAsBitmap(orientedBitmap, currentKsize);
-                        if (processedFirstFrame != null) {
-                            // Store this result as the reference for all other frames.
-                            goldStandardBitmap = processedFirstFrame; // This is a new bitmap, so no need to copy
-                            saveProcessedFrame(goldStandardBitmap, frameIndex); // Save the first frame
-                        } else {
-                            throw new Exception("Failed to process the first frame to create a Gold Standard.");
-                        }
-                    } else {
-                        // ** SUBSEQUENT FRAMES: USE AI ASSIST **
-                        // First, ask AI if ksize needs adjustment for consistency.
-                        CorrectedKsize correction = GeminiAiHelper.checkFrameConsistency(
-                                sharedPreferences.getString("GEMINI_API_KEY", ""),
-                                goldStandardBitmap,
-                                orientedBitmap,
-                                currentKsize
-                        );
-                        currentKsize = correction.ksize; // Update ksize for this frame
-                        if (correction.wasCorrected) {
-                             final int correctedKsize = currentKsize; // final for toast
-                             uiHandler.post(new Runnable() {
-                                 @Override
-                                 public void run() {
-                                     Toast.makeText(getContext(), "AI adjusted ksize to " + correctedKsize, Toast.LENGTH_SHORT).show();
-                                 }
-                             });
-                        }
-
-                        // Now, run the full AI-guided scan with the (potentially new) ksize.
-                        beginBlockingAiGuidedScan(orientedBitmap, frameIndex, currentKsize);
-                    }
-                } else {
-                    // --- ORIGINAL, NON-AI PROCESSING PATH (UNCHANGED) ---
-                    if (selectedMethod <= 1) {
-                        beginBlockingAiScan(orientedBitmap, frameIndex);
-                    } else if (selectedMethod >= 10 && selectedMethod <= 12) {
-                        beginBlockingPencilOrNewAiScan(orientedBitmap, frameIndex, currentKsize);
-                    } else if (selectedMethod == 2) {
-                        beginMethod1LiveScan(orientedBitmap, frameIndex);
-                    } else {
-                        boolean isVideoStandardAuto = isVideoFile(inputFilePath) && sliderAnalysisMode.getProgress() == 0;
-                        boolean isImageAutoScan = !isVideoFile(inputFilePath) && switchAutomaticScan.isChecked();
-                        if (isVideoStandardAuto || isImageAutoScan) {
-                            beginStandardScan(orientedBitmap, frameIndex);
-                        } else {
-                            beginTunedScan(orientedBitmap, frameIndex, depth, sharpness);
-                        }
-                    }
-                }
-                orientedBitmap.recycle();
+            // 1. Check for GPU support
+            CompatibilityList compatList = new CompatibilityList();
+            GpuDelegate.Options delegateOptions = compatList.getBestOptionsForThisDevice();
+            if (!compatList.isDelegateSupportedOnThisDevice()){
+                showErrorDialog("GPU Not Supported", "This device does not support hardware acceleration required for this feature.", true);
+                return;
             }
-        } finally {
-            if (goldStandardBitmap != null && !goldStandardBitmap.isRecycled()) {
-                goldStandardBitmap.recycle();
-                goldStandardBitmap = null;
+            GpuDelegate gpuDelegate = new GpuDelegate(delegateOptions);
+            Interpreter.Options interpreterOptions = new Interpreter.Options().addDelegate(gpuDelegate);
+
+            Interpreter predictionInterpreter = null;
+            Interpreter transferInterpreter = null;
+
+            try {
+                // 2. Get user's style choice
+                int selectedStyleIndex = styleSpinner.getSelectedItemPosition();
+                String styleAssetName = styleAssetFiles[selectedStyleIndex];
+                Bitmap styleBitmap = loadBitmapFromAssets(styleAssetName);
+
+                // 3. Run Style Prediction (once, before the loop)
+                updateStatus("Analyzing Art Style...", true);
+                MappedByteBuffer predictionModel = loadModelFile("magenta_prediction.tflite");
+                predictionInterpreter = new Interpreter(predictionModel, interpreterOptions);
+                float[] styleVector = DeepScanProcessor.runStylePrediction(styleBitmap, predictionInterpreter);
+                styleBitmap.recycle(); // No longer need the style bitmap
+
+                // 4. Prepare Style Transfer
+                MappedByteBuffer transferModel = loadModelFile("magenta_transfer.tflite");
+                transferInterpreter = new Interpreter(transferModel, interpreterOptions);
+
+                // 5. Loop through frames and apply the style
+                for (int i = 0; i < totalFrames; i++) {
+                    final int frameNum = i + 1;
+                    final int frameIndex = i;
+                    updateStatus("Applying style to frame " + frameNum + " of " + totalFrames, false);
+                    updateProgress(frameNum, totalFrames);
+                    updateCurrentFrameHighlight(frameIndex);
+
+                    Bitmap contentBitmap = decodeAndRotateBitmap(rawFrames[frameIndex].getAbsolutePath());
+                    if (contentBitmap == null) continue;
+
+                    Bitmap stylizedBitmap = DeepScanProcessor.runStyleTransfer(contentBitmap, styleVector, transferInterpreter);
+
+                    updateMainDisplay(stylizedBitmap);
+                    saveProcessedFrame(stylizedBitmap, frameIndex);
+
+                    contentBitmap.recycle();
+                    stylizedBitmap.recycle();
+                }
+            } finally {
+                // 6. Cleanup interpreters
+                if (predictionInterpreter != null) {
+                    predictionInterpreter.close();
+                }
+                if (transferInterpreter != null) {
+                    transferInterpreter.close();
+                }
+                gpuDelegate.close();
+            }
+
+        // --- END: NEW LOGIC BLOCK FOR METHOD 14 ---
+        } else {
+            // --- EXISTING LOGIC FOR ALL OTHER METHODS ---
+            try {
+                for (int i = 0; i < totalFrames; i++) {
+                    final int frameNum = i + 1;
+                    final int frameIndex = i;
+
+                    updateStatus("Processing frame " + frameNum + " of " + totalFrames, false);
+                    updateProgress(frameNum, totalFrames);
+                    updateCurrentFrameHighlight(frameIndex);
+
+                    Bitmap orientedBitmap = decodeAndRotateBitmap(rawFrames[frameIndex].getAbsolutePath());
+                    if (orientedBitmap == null) continue;
+
+                    // --- NEW AI-ENABLED WORKFLOW FOR VIDEOS ---
+                    if (isVideoFile(inputFilePath) && switchEnableAi.isChecked() && (selectedMethod == 11 || selectedMethod == 12)) {
+                        if (frameIndex == 0) {
+                            // ** FRAME 0: ESTABLISH THE GOLD STANDARD **
+                            updateStatus("Processing frame 1 to set Gold Standard...", false);
+                            // Process the first frame using the user's chosen settings without guidance.
+                            Bitmap processedFirstFrame = getAiPencilScanAsBitmap(orientedBitmap, currentKsize);
+                            if (processedFirstFrame != null) {
+                                // Store this result as the reference for all other frames.
+                                goldStandardBitmap = processedFirstFrame; // This is a new bitmap, so no need to copy
+                                saveProcessedFrame(goldStandardBitmap, frameIndex); // Save the first frame
+                            } else {
+                                throw new Exception("Failed to process the first frame to create a Gold Standard.");
+                            }
+                        } else {
+                            // ** SUBSEQUENT FRAMES: USE AI ASSIST **
+                            // First, ask AI if ksize needs adjustment for consistency.
+                            CorrectedKsize correction = GeminiAiHelper.checkFrameConsistency(
+                                    sharedPreferences.getString("GEMINI_API_KEY", ""),
+                                    goldStandardBitmap,
+                                    orientedBitmap,
+                                    currentKsize
+                            );
+                            currentKsize = correction.ksize; // Update ksize for this frame
+                            if (correction.wasCorrected) {
+                                final int correctedKsize = currentKsize; // final for toast
+                                uiHandler.post(new Runnable() {
+                                    @Override
+                                    public void run() {
+                                        Toast.makeText(getContext(), "AI adjusted ksize to " + correctedKsize, Toast.LENGTH_SHORT).show();
+                                    }
+                                });
+                            }
+
+                            // Now, run the full AI-guided scan with the (potentially new) ksize.
+                            beginBlockingAiGuidedScan(orientedBitmap, frameIndex, currentKsize);
+                        }
+                    } else {
+                        // --- ORIGINAL, NON-AI PROCESSING PATH (UNCHANGED) ---
+                        if (selectedMethod <= 1) {
+                            beginBlockingAiScan(orientedBitmap, frameIndex);
+                        } else if (selectedMethod >= 10 && selectedMethod <= 12) {
+                            beginBlockingPencilOrNewAiScan(orientedBitmap, frameIndex, currentKsize);
+                        } else if (selectedMethod == 2) {
+                            beginMethod1LiveScan(orientedBitmap, frameIndex);
+                        } else {
+                            boolean isVideoStandardAuto = isVideoFile(inputFilePath) && sliderAnalysisMode.getProgress() == 0;
+                            boolean isImageAutoScan = !isVideoFile(inputFilePath) && switchAutomaticScan.isChecked();
+                            if (isVideoStandardAuto || isImageAutoScan) {
+                                beginStandardScan(orientedBitmap, frameIndex);
+                            } else {
+                                beginTunedScan(orientedBitmap, frameIndex, depth, sharpness);
+                            }
+                        }
+                    }
+                    orientedBitmap.recycle();
+                }
+            } finally {
+                if (goldStandardBitmap != null && !goldStandardBitmap.isRecycled()) {
+                    goldStandardBitmap.recycle();
+                    goldStandardBitmap = null;
+                }
             }
         }
         // --- END OF REFACTORED AI WORKFLOW ---
@@ -1513,4 +1631,34 @@ public class ProcessingDialogFragment extends DialogFragment {
         return resultHolder[0];
     }
     // --- END OF NEW/UPDATED METHODS ---
+
+    // --- START: NEW HELPER METHODS FOR METHOD 14 ---
+
+    /**
+     * Loads a TFLite model file from the assets folder.
+     * @param modelFileName The name of the model file in the assets folder.
+     * @return A MappedByteBuffer containing the model data.
+     * @throws IOException if the model file cannot be found or read.
+     */
+    private MappedByteBuffer loadModelFile(String modelFileName) throws IOException {
+        AssetFileDescriptor fileDescriptor = getContext().getAssets().openFd(modelFileName);
+        FileInputStream inputStream = new FileInputStream(fileDescriptor.getFileDescriptor());
+        FileChannel fileChannel = inputStream.getChannel();
+        long startOffset = fileDescriptor.getStartOffset();
+        long declaredLength = fileDescriptor.getDeclaredLength();
+        return fileChannel.map(FileChannel.MapMode.READ_ONLY, startOffset, declaredLength);
+    }
+
+    /**
+     * Loads a Bitmap from the assets folder.
+     * @param fileName The name of the image file in the assets folder.
+     * @return A Bitmap object.
+     * @throws IOException if the file cannot be found or read.
+     */
+    private Bitmap loadBitmapFromAssets(String fileName) throws IOException {
+        AssetManager assetManager = getContext().getAssets();
+        InputStream inputStream = assetManager.open(fileName);
+        return BitmapFactory.decodeStream(inputStream);
+    }
+    // --- END: NEW HELPER METHODS FOR METHOD 14 ---
 }
