@@ -1204,7 +1204,7 @@ public class DeepScanProcessor {
      */
     public static float[] runStylePrediction(Bitmap styleBitmap, Interpreter predictionInterpreter) {
         // Preprocess the style image: resize and normalize
-        ImageProcessor imageProcessor = new ImageProcessor.Builder()
+        org.tensorflow.lite.support.image.ImageProcessor imageProcessor = new org.tensorflow.lite.support.image.ImageProcessor.Builder()
                 .add(new ResizeOp(256, 256, ResizeOp.ResizeMethod.BILINEAR))
                 .add(new NormalizeOp(0.0f, 255.0f))
                 .build();
@@ -1233,7 +1233,7 @@ public class DeepScanProcessor {
      */
     public static Bitmap runStyleTransfer(Bitmap contentBitmap, float[] styleVector, Interpreter transferInterpreter) {
         // Preprocess the content image: resize and normalize
-        ImageProcessor imageProcessor = new ImageProcessor.Builder()
+        org.tensorflow.lite.support.image.ImageProcessor imageProcessor = new org.tensorflow.lite.support.image.ImageProcessor.Builder()
                 .add(new ResizeOp(384, 384, ResizeOp.ResizeMethod.BILINEAR))
                 .add(new NormalizeOp(0.0f, 255.0f))
                 .build();
