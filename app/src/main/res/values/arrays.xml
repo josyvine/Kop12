@@ -29,6 +29,8 @@
         <!-- NEW METHODS ADDED HERE -->
         <item>AI Method 11 (Person Sketch)</item>
         <item>AI Method 12 (Line Art BG)</item>
+        <!-- NEW METHOD 14 ADDED HERE -->
+        <item>Method 14 (AI Offline Sketch)</item>
     </string-array>
 
     <!-- NEW: This array contains filter options for the media picker. -->
@@ -45,5 +47,14 @@
         <item>Method 9 (Pencil Sketch)</item>
         <item>AI Method 11 (Person Sketch)</item>
         <item>AI Method 12 (Line Art BG)</item>
+    </string-array>
+
+    <!-- NEW: This array holds the user-facing names for the different AI sketch styles. -->
+    <string-array name="ai_sketch_style_options">
+        <item>Charcoal Sketch</item>
+        <item>Soft Graphite</item>
+        <item>Crosshatching</item>
+        <item>Technical Pen</item>
+        <item>Pencil Sketch</item>
     </string-array>
 </resources>
