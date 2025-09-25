@@ -10,7 +10,7 @@ android {
         targetSdkVersion 33
         versionCode 1
         versionName "1.0"
-        multiDexEnabled true 
+        multiDexEnabled true
     }
 
     buildTypes {
@@ -67,4 +67,7 @@ dependencies {
     implementation 'org.tensorflow:tensorflow-lite:2.9.0'
     // NEW DEPENDENCY: GPU delegate for hardware acceleration of TFLite models.
     implementation 'org.tensorflow:tensorflow-lite-gpu:2.9.0'
+
+    // --- THIS IS THE CRITICAL MISSING LIBRARY THAT I FORGOT. THIS WILL FIX THE BUILD ERRORS. ---
+    implementation 'org.tensorflow:tensorflow-lite-support:0.4.0'
 }
