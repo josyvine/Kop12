@@ -42,8 +42,9 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import org.tensorflow.lite.Interpreter;
-import org.tensorflow.lite.gpu.CompatibilityList;
-import org.tensorflow.lite.gpu.GpuDelegate;
+// --- FIX: REMOVED ALL GPU-RELATED IMPORTS ---
+// import org.tensorflow.lite.gpu.CompatibilityList;
+// import org.tensorflow.lite.gpu.GpuDelegate;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -671,35 +672,18 @@ public class ProcessingDialogFragment extends DialogFragment {
 
             Interpreter predictionInterpreter = null;
             Interpreter transferInterpreter = null;
-            // --- FIX: This GpuDelegate variable is needed for the finally block ---
-            GpuDelegate gpuDelegate = null;
-
+            
             try {
-                // Get the models ready to be loaded
+                // --- FIX: ALWAYS USE CPU. THIS IS THE GUARANTEED FIX. ---
+                Interpreter.Options options = new Interpreter.Options();
+                
                 MappedByteBuffer predictionModel = loadModelFile("magenta_prediction.tflite");
-                MappedByteBuffer transferModel = loadModelFile("magenta_transfer.tflite");
+                predictionInterpreter = new Interpreter(predictionModel, options);
 
-                // --- FIX: This is the robust try-catch block for GPU/CPU fallback ---
-                try {
-                    CompatibilityList compatList = new CompatibilityList();
-                    if (compatList.isDelegateSupportedOnThisDevice()) {
-                        GpuDelegate.Options delegateOptions = compatList.getBestOptionsForThisDevice();
-                        gpuDelegate = new GpuDelegate(delegateOptions);
-                        predictionInterpreter = new Interpreter(predictionModel, new Interpreter.Options().addDelegate(gpuDelegate));
-                        transferInterpreter = new Interpreter(transferModel, new Interpreter.Options().addDelegate(gpuDelegate));
-                        Log.d(TAG, "Method 14: Using GPU delegate.");
-                    } else {
-                        // Fallback to CPU if GPU is not supported
-                        predictionInterpreter = new Interpreter(predictionModel, new Interpreter.Options());
-                        transferInterpreter = new Interpreter(transferModel, new Interpreter.Options());
-                        Log.d(TAG, "Method 14: GPU not supported, falling back to CPU.");
-                    }
-                } catch (Exception e) {
-                    Log.e(TAG, "Method 14: Failed to initialize GPU delegate, falling back to CPU.", e);
-                    // Fallback to CPU if GPU initialization fails
-                    predictionInterpreter = new Interpreter(predictionModel, new Interpreter.Options());
-                    transferInterpreter = new Interpreter(transferModel, new Interpreter.Options());
-                }
+                MappedByteBuffer transferModel = loadModelFile("magenta_transfer.tflite");
+                transferInterpreter = new Interpreter(transferModel, options);
+
+                Log.d(TAG, "Method 14: Successfully initialized interpreters on CPU.");
 
                 // Get user's style choice
                 int selectedStyleIndex = styleSpinner.getSelectedItemPosition();
@@ -731,15 +715,12 @@ public class ProcessingDialogFragment extends DialogFragment {
                     stylizedBitmap.recycle();
                 }
             } finally {
-                // Cleanup interpreters and delegate
+                // Cleanup interpreters
                 if (predictionInterpreter != null) {
                     predictionInterpreter.close();
                 }
                 if (transferInterpreter != null) {
                     transferInterpreter.close();
-                }
-                if (gpuDelegate != null) {
-                    gpuDelegate.close();
                 }
             }
 
