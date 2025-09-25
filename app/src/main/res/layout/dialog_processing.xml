@@ -95,6 +95,32 @@
                         android:spinnerMode="dropdown"/>
                 </LinearLayout>
 
+                <!-- NEW: Container for the AI Style Spinner, hidden by default -->
+                <LinearLayout
+                    android:id="@+id/ai_style_controls_container"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center"
+                    android:layout_marginTop="8dp"
+                    android:visibility="gone"
+                    tools:visibility="visible">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="AI Style:"
+                        android:textColor="@android:color/white"
+                        android:layout_marginEnd="8dp"/>
+
+                    <Spinner
+                        android:id="@+id/spinner_ai_style"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:background="@android:drawable/btn_dropdown"
+                        android:spinnerMode="dropdown"/>
+                </LinearLayout>
+
                 <LinearLayout
                     android:id="@+id/fps_controls"
                     android:layout_width="wrap_content"
