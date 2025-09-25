@@ -1,4 +1,4 @@
-package com.kop.app;  
+package com.kop.app;
 
 import android.app.Dialog;
 import android.content.Context;
@@ -667,40 +667,51 @@ public class ProcessingDialogFragment extends DialogFragment {
 
         // --- START: NEW LOGIC BLOCK FOR METHOD 14 ---
         if (selectedMethod == 13) {
-            // This entire block is dedicated to Method 14 processing
             updateStatus("Preparing AI Style Transfer...", true);
-
-            // 1. Check for GPU support
-            CompatibilityList compatList = new CompatibilityList();
-            GpuDelegate.Options delegateOptions = compatList.getBestOptionsForThisDevice();
-            if (!compatList.isDelegateSupportedOnThisDevice()){
-                showErrorDialog("GPU Not Supported", "This device does not support hardware acceleration required for this feature.", true);
-                return;
-            }
-            GpuDelegate gpuDelegate = new GpuDelegate(delegateOptions);
-            Interpreter.Options interpreterOptions = new Interpreter.Options().addDelegate(gpuDelegate);
 
             Interpreter predictionInterpreter = null;
             Interpreter transferInterpreter = null;
+            // --- FIX: This GpuDelegate variable is needed for the finally block ---
+            GpuDelegate gpuDelegate = null;
 
             try {
-                // 2. Get user's style choice
+                // Get the models ready to be loaded
+                MappedByteBuffer predictionModel = loadModelFile("magenta_prediction.tflite");
+                MappedByteBuffer transferModel = loadModelFile("magenta_transfer.tflite");
+
+                // --- FIX: This is the robust try-catch block for GPU/CPU fallback ---
+                try {
+                    CompatibilityList compatList = new CompatibilityList();
+                    if (compatList.isDelegateSupportedOnThisDevice()) {
+                        GpuDelegate.Options delegateOptions = compatList.getBestOptionsForThisDevice();
+                        gpuDelegate = new GpuDelegate(delegateOptions);
+                        predictionInterpreter = new Interpreter(predictionModel, new Interpreter.Options().addDelegate(gpuDelegate));
+                        transferInterpreter = new Interpreter(transferModel, new Interpreter.Options().addDelegate(gpuDelegate));
+                        Log.d(TAG, "Method 14: Using GPU delegate.");
+                    } else {
+                        // Fallback to CPU if GPU is not supported
+                        predictionInterpreter = new Interpreter(predictionModel, new Interpreter.Options());
+                        transferInterpreter = new Interpreter(transferModel, new Interpreter.Options());
+                        Log.d(TAG, "Method 14: GPU not supported, falling back to CPU.");
+                    }
+                } catch (Exception e) {
+                    Log.e(TAG, "Method 14: Failed to initialize GPU delegate, falling back to CPU.", e);
+                    // Fallback to CPU if GPU initialization fails
+                    predictionInterpreter = new Interpreter(predictionModel, new Interpreter.Options());
+                    transferInterpreter = new Interpreter(transferModel, new Interpreter.Options());
+                }
+
+                // Get user's style choice
                 int selectedStyleIndex = styleSpinner.getSelectedItemPosition();
                 String styleAssetName = styleAssetFiles[selectedStyleIndex];
                 Bitmap styleBitmap = loadBitmapFromAssets(styleAssetName);
 
-                // 3. Run Style Prediction (once, before the loop)
+                // Run Style Prediction (once, before the loop)
                 updateStatus("Analyzing Art Style...", true);
-                MappedByteBuffer predictionModel = loadModelFile("magenta_prediction.tflite");
-                predictionInterpreter = new Interpreter(predictionModel, interpreterOptions);
                 float[] styleVector = DeepScanProcessor.runStylePrediction(styleBitmap, predictionInterpreter);
                 styleBitmap.recycle(); // No longer need the style bitmap
 
-                // 4. Prepare Style Transfer
-                MappedByteBuffer transferModel = loadModelFile("magenta_transfer.tflite");
-                transferInterpreter = new Interpreter(transferModel, interpreterOptions);
-
-                // 5. Loop through frames and apply the style
+                // Loop through frames and apply the style
                 for (int i = 0; i < totalFrames; i++) {
                     final int frameNum = i + 1;
                     final int frameIndex = i;
@@ -720,14 +731,16 @@ public class ProcessingDialogFragment extends DialogFragment {
                     stylizedBitmap.recycle();
                 }
             } finally {
-                // 6. Cleanup interpreters
+                // Cleanup interpreters and delegate
                 if (predictionInterpreter != null) {
                     predictionInterpreter.close();
                 }
                 if (transferInterpreter != null) {
                     transferInterpreter.close();
                 }
-                gpuDelegate.close();
+                if (gpuDelegate != null) {
+                    gpuDelegate.close();
+                }
             }
 
         // --- END: NEW LOGIC BLOCK FOR METHOD 14 ---
