@@ -14,6 +14,8 @@ import android.os.SystemClock;
 import android.util.Log;
 import android.util.Size;
 import android.view.LayoutInflater;
+import android.view.MotionEvent;
+import android.view.ScaleGestureDetector;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.AdapterView;
@@ -29,6 +31,7 @@ import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.camera.core.Camera;
 import androidx.camera.core.CameraSelector;
 import androidx.camera.core.ImageAnalysis;
 import androidx.camera.core.ImageProxy;
@@ -74,6 +77,9 @@ public class CameraDialogFragment extends DialogFragment {
     private ProcessCameraProvider cameraProvider;
     private CameraSelector cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA;
     private ImageAnalysis imageAnalysis;
+    private Camera cameraControl;
+    private ScaleGestureDetector scaleGestureDetector;
+
 
     // State management
     private int selectedMethod = 0;
@@ -117,6 +123,7 @@ public class CameraDialogFragment extends DialogFragment {
         setupListeners();
         setupDefaultParameters();
         startCamera();
+        setupPinchToZoom();
     }
 
     private void initializeViews(View view) {
@@ -259,13 +266,11 @@ public class CameraDialogFragment extends DialogFragment {
         Preview preview = new Preview.Builder().build();
         preview.setSurfaceProvider(cameraPreview.getSurfaceProvider());
         
-        Size targetResolution = new Size(640, 480);
-
-        // --- FIX: Remove the creation of the fixed-size bitmap ---
-        // inputBitmap = Bitmap.createBitmap(targetResolution.getWidth(), targetResolution.getHeight(), Bitmap.Config.ARGB_8888);
+        // --- FIX: REMOVED THE FIXED LOW RESOLUTION ---
+        // Size targetResolution = new Size(640, 480);
 
         imageAnalysis = new ImageAnalysis.Builder()
-                .setTargetResolution(targetResolution)
+                // .setTargetResolution(targetResolution) // THIS LINE IS REMOVED
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .build();
 
@@ -276,22 +281,17 @@ public class CameraDialogFragment extends DialogFragment {
                 Bitmap rotatedBitmap = null;
 
                 try {
-                    // --- FIX START: Get a new, correctly-sized bitmap from the converter ---
                     inputBitmap = yuvToRgbConverter.yuvToRgb(image);
                     if (inputBitmap == null) {
-                        return; // If conversion fails, stop processing this frame.
+                        return; 
                     }
-                    // --- FIX END ---
 
-                    // --- After this point, inputBitmap is a perfect, uncorrupted image ---
-
-                    // Create a correctly rotated and flipped version for processing
                     rotatedBitmap = rotateAndFlipBitmap(inputBitmap, image.getImageInfo().getRotationDegrees());
 
                     final int currentMethod = selectedMethod;
                     final int currentKsize = ksize;
                     
-                    final Bitmap finalRotatedBitmap = rotatedBitmap; // Make it final for the inner class
+                    final Bitmap finalRotatedBitmap = rotatedBitmap;
 
                     processFrame(finalRotatedBitmap, currentMethod, currentKsize, new DeepScanProcessor.AiScanListener() {
                         @Override
@@ -313,29 +313,50 @@ public class CameraDialogFragment extends DialogFragment {
                                     });
                                 }
                             }
-                            // Rotated bitmap was a temporary copy, so it must be recycled.
                             if (finalRotatedBitmap != null) {
                                 finalRotatedBitmap.recycle();
                             }
                         }
                     });
                 } finally {
-                    // --- FIX START: We must now recycle the bitmap we received from the converter ---
                     if (inputBitmap != null) {
                         inputBitmap.recycle();
                     }
-                    // --- FIX END ---
-                    // We are done with this frame.
                     image.close();
                 }
             }
         });
 
         try {
-            cameraProvider.bindToLifecycle((LifecycleOwner)this, cameraSelector, preview, imageAnalysis);
+            // --- FIX: Capture the camera control object ---
+            cameraControl = cameraProvider.bindToLifecycle((LifecycleOwner)this, cameraSelector, preview, imageAnalysis);
         } catch (Exception e) {
             Log.e(TAG, "Use case binding failed", e);
         }
+    }
+    
+    private void setupPinchToZoom() {
+        ScaleGestureDetector.SimpleOnScaleGestureListener listener = new ScaleGestureDetector.SimpleOnScaleGestureListener() {
+            @Override
+            public boolean onScale(ScaleGestureDetector detector) {
+                if (cameraControl != null) {
+                    float currentZoomRatio = cameraControl.getCameraInfo().getZoomState().getValue().getZoomRatio();
+                    float delta = detector.getScaleFactor();
+                    cameraControl.getCameraControl().setZoomRatio(currentZoomRatio * delta);
+                }
+                return true;
+            }
+        };
+
+        scaleGestureDetector = new ScaleGestureDetector(getContext(), listener);
+
+        processedDisplay.setOnTouchListener(new View.OnTouchListener() {
+            @Override
+            public boolean onTouch(View v, MotionEvent event) {
+                scaleGestureDetector.onTouchEvent(event);
+                return true;
+            }
+        });
     }
 
     private Bitmap rotateAndFlipBitmap(Bitmap source, int rotationDegrees) {
