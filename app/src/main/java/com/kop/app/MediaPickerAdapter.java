@@ -19,6 +19,8 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import java.io.File;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class MediaPickerAdapter extends RecyclerView.Adapter<MediaPickerAdapter.MediaViewHolder> {
 
@@ -26,6 +28,7 @@ public class MediaPickerAdapter extends RecyclerView.Adapter<MediaPickerAdapter.
     private List<MediaItem> mediaItems;
     private OnMediaSelectedListener listener;
     private OnFolderClickedListener folderListener;
+    private final ExecutorService thumbnailExecutor = Executors.newFixedThreadPool(4);
 
     public interface OnMediaSelectedListener {
         void onMediaSelected(File file);
@@ -87,7 +90,8 @@ public class MediaPickerAdapter extends RecyclerView.Adapter<MediaPickerAdapter.
             videoIcon.setVisibility(View.GONE);
             folderLayout.setVisibility(View.GONE);
             selectionOverlay.setVisibility(View.GONE);
-            thumbnail.setImageBitmap(null);
+            thumbnail.setImageBitmap(null); // Clear previous image
+            thumbnail.setTag(item.getPath()); // Tag the view with the unique path
 
             switch (item.getType()) {
                 case FOLDER:
@@ -107,20 +111,48 @@ public class MediaPickerAdapter extends RecyclerView.Adapter<MediaPickerAdapter.
 
                 case FILE:
                     thumbnail.setVisibility(View.VISIBLE);
-                    String filePath = item.getPath();
-                    String lowerCasePath = filePath.toLowerCase();
+                    // Set a placeholder while the thumbnail loads
+                    thumbnail.setImageResource(android.R.color.darker_gray);
 
-                    if (isImageFile(lowerCasePath)) {
-                        BitmapFactory.Options options = new BitmapFactory.Options();
-                        options.inSampleSize = 8;
-                        Bitmap bmp = BitmapFactory.decodeFile(filePath, options);
-                        thumbnail.setImageBitmap(bmp);
-                        videoIcon.setVisibility(View.GONE);
-                    } else if (isVideoFile(lowerCasePath)) {
-                        Bitmap bmp = ThumbnailUtils.createVideoThumbnail(filePath, MediaStore.Images.Thumbnails.MINI_KIND);
-                        thumbnail.setImageBitmap(bmp);
-                        videoIcon.setVisibility(View.VISIBLE);
-                    }
+                    thumbnailExecutor.execute(new Runnable() {
+                        @Override
+                        public void run() {
+                            final String filePath = item.getPath();
+                            final String lowerCasePath = filePath.toLowerCase();
+                            final Bitmap bmp;
+
+                            if (isImageFile(lowerCasePath)) {
+                                BitmapFactory.Options options = new BitmapFactory.Options();
+                                options.inSampleSize = 8;
+                                bmp = BitmapFactory.decodeFile(filePath, options);
+                            } else if (isVideoFile(lowerCasePath)) {
+                                bmp = ThumbnailUtils.createVideoThumbnail(filePath, MediaStore.Images.Thumbnails.MINI_KIND);
+                            } else {
+                                bmp = null;
+                            }
+
+                            // Check if the view hasn't been recycled for another item
+                            if (thumbnail.getTag().equals(filePath)) {
+                                thumbnail.post(new Runnable() {
+                                    @Override
+                                    public void run() {
+                                        if (bmp != null) {
+                                            thumbnail.setImageBitmap(bmp);
+                                            if (isVideoFile(lowerCasePath)) {
+                                                videoIcon.setVisibility(View.VISIBLE);
+                                            } else {
+                                                videoIcon.setVisibility(View.GONE);
+                                            }
+                                        } else {
+                                            // Set a default icon if thumbnail creation fails
+                                            thumbnail.setImageResource(android.R.drawable.ic_menu_report_image);
+                                            videoIcon.setVisibility(View.GONE);
+                                        }
+                                    }
+                                });
+                            }
+                        }
+                    });
 
                     // A long click selects the file for processing.
                     itemView.setOnLongClickListener(new View.OnLongClickListener() {
