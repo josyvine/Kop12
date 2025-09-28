@@ -1,4 +1,4 @@
-package com.kop.app; 
+package com.kop.app;
 
 import android.Manifest;
 import android.content.pm.PackageManager;
@@ -6,12 +6,15 @@ import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
+import android.opengl.GLES20;
 import android.opengl.GLSurfaceView;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
+import android.util.Size;
+import android.view.Surface;
 import android.view.View;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
@@ -26,6 +29,7 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.camera.core.CameraSelector;
 import androidx.camera.core.ImageAnalysis;
 import androidx.camera.core.ImageProxy;
+import androidx.camera.core.Preview;
 import androidx.camera.lifecycle.ProcessCameraProvider;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
@@ -43,6 +47,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
+import java.nio.IntBuffer;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
@@ -62,6 +67,10 @@ public class CameraFilterActivity extends AppCompatActivity {
     private ExecutorService cameraExecutor;
     private YuvToRgbConverter yuvToRgbConverter;
 
+    private ProcessCameraProvider cameraProvider;
+    private CameraSelector cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA;
+    private boolean isCapturing = false;
+
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -78,7 +87,7 @@ public class CameraFilterActivity extends AppCompatActivity {
 
         if (checkCameraPermission()) {
             setupImageSegmenter();
-            startCameraAnalysis();
+            startCamera();
         } else {
             requestCameraPermission();
         }
@@ -99,7 +108,13 @@ public class CameraFilterActivity extends AppCompatActivity {
         flipButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                renderer.switchCamera();
+                if (cameraSelector == CameraSelector.DEFAULT_BACK_CAMERA) {
+                    cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA;
+                } else {
+                    cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA;
+                }
+                // Re-bind use cases to the new camera
+                startCamera();
             }
         });
 
@@ -139,8 +154,8 @@ public class CameraFilterActivity extends AppCompatActivity {
         captureButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                // This is a placeholder for future implementation of capturing from GLSurfaceView
-                Toast.makeText(CameraFilterActivity.this, "Capture not yet implemented.", Toast.LENGTH_SHORT).show();
+                // *** FIX: Implemented real capture logic ***
+                captureFrame();
             }
         });
     }
@@ -160,14 +175,14 @@ public class CameraFilterActivity extends AppCompatActivity {
         }
     }
 
-    private void startCameraAnalysis() {
+    private void startCamera() {
         ListenableFuture<ProcessCameraProvider> cameraProviderFuture = ProcessCameraProvider.getInstance(this);
         cameraProviderFuture.addListener(new Runnable() {
             @Override
             public void run() {
                 try {
-                    ProcessCameraProvider cameraProvider = cameraProviderFuture.get();
-                    bindImageAnalysis(cameraProvider);
+                    cameraProvider = cameraProviderFuture.get();
+                    bindCameraUseCases();
                 } catch (ExecutionException | InterruptedException e) {
                     Log.e(TAG, "Failed to get camera provider", e);
                 }
@@ -175,8 +190,18 @@ public class CameraFilterActivity extends AppCompatActivity {
         }, ContextCompat.getMainExecutor(this));
     }
 
-    private void bindImageAnalysis(@NonNull ProcessCameraProvider cameraProvider) {
+    private void bindCameraUseCases() {
+        if (cameraProvider == null) {
+            return;
+        }
+        cameraProvider.unbindAll();
+
+        // Use Case 1: Preview for GPU Rendering
+        Preview preview = new Preview.Builder().build();
+
+        // Use Case 2: ImageAnalysis for CPU (AI Mask)
         ImageAnalysis imageAnalysis = new ImageAnalysis.Builder()
+                .setTargetResolution(new Size(256, 256)) // Lower resolution for faster AI processing
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .build();
 
@@ -184,22 +209,39 @@ public class CameraFilterActivity extends AppCompatActivity {
             @Override
             public void analyze(@NonNull ImageProxy image) {
                 if (imageSegmenter != null) {
-                    // This bitmap is for analysis only, not for display
                     Bitmap bitmapForAnalysis = yuvToRgbConverter.yuvToRgb(image);
                     if (bitmapForAnalysis != null) {
                         runSegmentation(bitmapForAnalysis);
-                        bitmapForAnalysis.recycle(); // Clean up the analysis bitmap
+                        bitmapForAnalysis.recycle();
                     }
                 }
                 image.close();
             }
         });
 
-        // We only bind the analysis use case with CameraX.
-        // The preview is handled by Camera1 API inside the renderer.
-        cameraProvider.unbindAll();
-        cameraProvider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, imageAnalysis);
+        // This is the crucial part: connect the Preview use case to our renderer's SurfaceTexture
+        preview.setSurfaceProvider(new Preview.SurfaceProvider() {
+            @Override
+            public void onSurfaceRequested(@NonNull androidx.camera.core.SurfaceRequest request) {
+                Surface surface = new Surface(renderer.getSurfaceTexture());
+                request.provideSurface(surface, ContextCompat.getMainExecutor(CameraFilterActivity.this), new androidx.core.util.Consumer<androidx.camera.core.SurfaceRequest.Result>() {
+                    @Override
+                    public void accept(androidx.camera.core.SurfaceRequest.Result result) {
+                        // Cleanup when the surface is no longer needed
+                        surface.release();
+                    }
+                });
+            }
+        });
+        
+        try {
+            // Bind both use cases to the camera
+            cameraProvider.bindToLifecycle(this, cameraSelector, preview, imageAnalysis);
+        } catch (Exception e) {
+            Log.e(TAG, "Use case binding failed", e);
+        }
     }
+
 
     private void runSegmentation(Bitmap bitmap) {
         MPImage mpImage = new BitmapImageBuilder(bitmap).build();
@@ -216,22 +258,93 @@ public class CameraFilterActivity extends AppCompatActivity {
     private Bitmap createBitmapFromConfidenceMask(MPImage confidenceMask) {
         ByteBuffer buffer = ByteBufferExtractor.extract(confidenceMask);
         FloatBuffer floatBuffer = buffer.asFloatBuffer();
-
         int width = confidenceMask.getWidth();
         int height = confidenceMask.getHeight();
         Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
-        
         int[] pixels = new int[width * height];
         for (int i = 0; i < width * height; i++) {
             float confidence = floatBuffer.get(i);
-            int alpha = 255;
-            // We use the confidence value for all R, G, B channels to create a grayscale mask
             int grayValue = (int) (confidence * 255);
-            pixels[i] = Color.argb(alpha, grayValue, grayValue, grayValue);
+            pixels[i] = Color.argb(255, grayValue, grayValue, grayValue);
         }
         bitmap.setPixels(pixels, 0, width, 0, 0, width, height);
         return bitmap;
     }
+
+    private void captureFrame() {
+        if (isCapturing) {
+            return;
+        }
+        isCapturing = true;
+        Toast.makeText(this, "Capturing...", Toast.LENGTH_SHORT).show();
+
+        glSurfaceView.queueEvent(new Runnable() {
+            @Override
+            public void run() {
+                int width = glSurfaceView.getWidth();
+                int height = glSurfaceView.getHeight();
+
+                IntBuffer pixelBuffer = IntBuffer.allocate(width * height);
+                GLES20.glReadPixels(0, 0, width, height, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, pixelBuffer);
+
+                // OpenGL pixels are vertically flipped. We need to correct this.
+                int[] pixels = pixelBuffer.array();
+                int[] flippedPixels = new int[width * height];
+                for (int y = 0; y < height; y++) {
+                    for (int x = 0; x < width; x++) {
+                        flippedPixels[((height - 1 - y) * width) + x] = pixels[(y * width) + x];
+                    }
+                }
+
+                Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+                bitmap.copyPixelsFromBuffer(IntBuffer.wrap(flippedPixels));
+
+                saveBitmap(bitmap);
+            }
+        });
+    }
+
+    private void saveBitmap(final Bitmap bitmap) {
+        cameraExecutor.execute(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    String timestamp = new SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.US).format(new Date());
+                    String fileName = "Kop_GPU_" + timestamp + ".png";
+                    File projectDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "kop/Live_Captures");
+                    if (!projectDir.exists()) {
+                        projectDir.mkdirs();
+                    }
+                    final File outFile = new File(projectDir, fileName);
+
+                    FileOutputStream out = new FileOutputStream(outFile);
+                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, out);
+                    out.flush();
+                    out.close();
+
+                    bitmap.recycle();
+
+                    new Handler(Looper.getMainLooper()).post(new Runnable() {
+                        @Override
+                        public void run() {
+                            Toast.makeText(CameraFilterActivity.this, "Saved to " + outFile.getParent(), Toast.LENGTH_LONG).show();
+                            isCapturing = false;
+                        }
+                    });
+                } catch (Exception e) {
+                    Log.e(TAG, "Failed to save bitmap", e);
+                    new Handler(Looper.getMainLooper()).post(new Runnable() {
+                        @Override
+                        public void run() {
+                            Toast.makeText(CameraFilterActivity.this, "Error saving image.", Toast.LENGTH_SHORT).show();
+                            isCapturing = false;
+                        }
+                    });
+                }
+            }
+        });
+    }
+
 
     @Override
     protected void onResume() {
@@ -243,10 +356,7 @@ public class CameraFilterActivity extends AppCompatActivity {
     protected void onPause() {
         super.onPause();
         glSurfaceView.onPause();
-        renderer.releaseCamera();
     }
-
-
 
     @Override
     protected void onDestroy() {
@@ -257,7 +367,6 @@ public class CameraFilterActivity extends AppCompatActivity {
         }
     }
 
-    // --- Permission Handling ---
     private boolean checkCameraPermission() {
         return ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED;
     }
@@ -272,7 +381,7 @@ public class CameraFilterActivity extends AppCompatActivity {
         if (requestCode == CAMERA_PERMISSION_REQUEST_CODE) {
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 setupImageSegmenter();
-                startCameraAnalysis();
+                startCamera();
             } else {
                 Toast.makeText(this, "Camera permission is required to use this feature.", Toast.LENGTH_LONG).show();
                 finish();
