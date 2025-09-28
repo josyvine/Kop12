@@ -1,7 +1,7 @@
 #extension GL_OES_EGL_image_external : require
 precision mediump float;
 
-varying vec2 vTextureCoord;
+varying vec2 vTextureCoord; 
 uniform samplerExternalOES uCameraTexture;
 uniform sampler2D uMaskTexture; // The AI-generated mask
 uniform float uKsize; // Range 0.0 to 1.0
