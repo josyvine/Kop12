@@ -1,4 +1,4 @@
-package com.kop.app;
+package com.kop.app; 
 
 import android.Manifest;
 import android.content.pm.PackageManager;
