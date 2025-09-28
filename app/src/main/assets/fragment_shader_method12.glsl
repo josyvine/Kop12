@@ -5,6 +5,7 @@ varying vec2 vTextureCoord;
 uniform samplerExternalOES uCameraTexture;
 uniform sampler2D uMaskTexture; // The AI-generated mask
 uniform float uKsize; // Range 0.0 to 1.0
+uniform vec2 uTextureSize; // The dimensions of the texture
 
 // Function to convert a color to grayscale
 float grayscale(vec4 color) {
@@ -24,7 +25,8 @@ void main() {
     // Check if the current pixel is part of the background (mask is black)
     if (mask.r < 0.5) {
         // --- Apply Pencil Sketch Logic (Identical to Method 9) ---
-        vec2 texelSize = 1.0 / vec2(textureSize(uCameraTexture, 0));
+        // --- THIS IS THE FIX. We now use the uniform instead of the unsupported function. ---
+        vec2 texelSize = 1.0 / uTextureSize;
         float originalGray = grayscale(originalColor);
         
         float blurRadius = uKsize * 5.0;
@@ -52,7 +54,8 @@ void main() {
     }
 
     // --- Edge Detection on the Mask to create an outline ---
-    vec2 texelSize = 1.0 / vec2(textureSize(uMaskTexture, 0));
+    // --- THIS IS THE FIX. We now use the uniform instead of the unsupported function. ---
+    vec2 texelSize = 1.0 / uTextureSize;
     // Sobel operator for edge detection
     float topLeft = texture2D(uMaskTexture, vTextureCoord + vec2(-texelSize.x, -texelSize.y)).r;
     float top = texture2D(uMaskTexture, vTextureCoord + vec2(0.0, -texelSize.y)).r;
