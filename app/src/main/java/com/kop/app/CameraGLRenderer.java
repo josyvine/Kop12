@@ -26,7 +26,6 @@ public class CameraGLRenderer implements GLSurfaceView.Renderer, SurfaceTexture.
     private final Context context;
     private final GLSurfaceView glSurfaceView;
 
-    // *** NEW: Listener to signal when the SurfaceTexture is ready. ***
     private OnSurfaceReadyListener surfaceReadyListener;
 
     private int programMethod9;
@@ -37,6 +36,10 @@ public class CameraGLRenderer implements GLSurfaceView.Renderer, SurfaceTexture.
     private int maskTextureId;
 
     private SurfaceTexture surfaceTexture;
+
+    // --- FIX START: This matrix will hold the camera texture's transformation data. ---
+    private final float[] transformMatrix = new float[16];
+    // --- FIX END ---
 
     private final FloatBuffer vertexBuffer;
     private final FloatBuffer texCoordBuffer;
@@ -50,7 +53,6 @@ public class CameraGLRenderer implements GLSurfaceView.Renderer, SurfaceTexture.
 
     private Bitmap aiMaskBitmap;
 
-    // *** NEW: The listener interface definition. ***
     public interface OnSurfaceReadyListener {
         void onSurfaceReady(SurfaceTexture surfaceTexture);
     }
@@ -69,7 +71,6 @@ public class CameraGLRenderer implements GLSurfaceView.Renderer, SurfaceTexture.
         texCoordBuffer.put(texCoords).position(0);
     }
 
-    // *** NEW: A setter for the Activity to register its listener. ***
     public void setOnSurfaceReadyListener(OnSurfaceReadyListener listener) {
         this.surfaceReadyListener = listener;
     }
@@ -92,7 +93,7 @@ public class CameraGLRenderer implements GLSurfaceView.Renderer, SurfaceTexture.
 
         GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, cameraTextureId);
         GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE);
-        GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE);
+        GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_to_EDGE);
         GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_NEAREST);
         GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_NEAREST);
 
@@ -107,7 +108,6 @@ public class CameraGLRenderer implements GLSurfaceView.Renderer, SurfaceTexture.
 
         GLES20.glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 
-        // *** NEW: Send the "ready" signal to the Activity. ***
         if (surfaceReadyListener != null) {
             surfaceReadyListener.onSurfaceReady(surfaceTexture);
         }
@@ -126,6 +126,9 @@ public class CameraGLRenderer implements GLSurfaceView.Renderer, SurfaceTexture.
         synchronized (frameSyncObject) {
             if (frameAvailable) {
                 surfaceTexture.updateTexImage();
+                // --- FIX START: Retrieve the transformation matrix from the SurfaceTexture. ---
+                surfaceTexture.getTransformMatrix(transformMatrix);
+                // --- FIX END ---
                 frameAvailable = false;
             }
         }
@@ -153,6 +156,9 @@ public class CameraGLRenderer implements GLSurfaceView.Renderer, SurfaceTexture.
         int ksizeHandle = GLES20.glGetUniformLocation(activeProgram, "uKsize");
         int cameraTextureHandle = GLES20.glGetUniformLocation(activeProgram, "uCameraTexture");
         int maskTextureHandle = GLES20.glGetUniformLocation(activeProgram, "uMaskTexture");
+        // --- FIX START: Get the handle for the new transformation matrix uniform. ---
+        int transformMatrixHandle = GLES20.glGetUniformLocation(activeProgram, "uTransformMatrix");
+        // --- FIX END ---
 
         GLES20.glEnableVertexAttribArray(positionHandle);
         GLES20.glVertexAttribPointer(positionHandle, 2, GLES20.GL_FLOAT, false, 8, vertexBuffer);
@@ -175,6 +181,9 @@ public class CameraGLRenderer implements GLSurfaceView.Renderer, SurfaceTexture.
         }
 
         GLES20.glUniform1f(ksizeHandle, currentKsize);
+        // --- FIX START: Pass the transformation matrix to the vertex shader. ---
+        GLES20.glUniformMatrix4fv(transformMatrixHandle, 1, false, transformMatrix, 0);
+        // --- FIX END ---
         GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4);
         GLES20.glDisableVertexAttribArray(positionHandle);
         GLES20.glDisableVertexAttribArray(texCoordHandle);
