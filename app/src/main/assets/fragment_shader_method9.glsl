@@ -4,6 +4,7 @@ precision mediump float;
 varying vec2 vTextureCoord; 
 uniform samplerExternalOES uCameraTexture;
 uniform float uKsize; // Range 0.0 to 1.0 (from SeekBar 0-100)
+uniform vec2 uTextureSize; // The dimensions of the texture
 
 const float PI = 3.14159265359;
 
@@ -18,7 +19,8 @@ vec3 colorDodge(vec3 base, vec3 blend) {
 }
 
 void main() {
-    vec2 texelSize = 1.0 / vec2(textureSize(uCameraTexture, 0));
+    // --- THIS IS THE FIX. We now use the uniform instead of the unsupported function. ---
+    vec2 texelSize = 1.0 / uTextureSize;
     float originalGray = grayscale(texture2D(uCameraTexture, vTextureCoord));
     float invertedGray = 1.0 - originalGray;
 
