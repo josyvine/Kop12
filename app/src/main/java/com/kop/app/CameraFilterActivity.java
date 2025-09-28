@@ -3,7 +3,6 @@ package com.kop.app;
 import android.Manifest;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
-// *** THIS IS THE MISSING IMPORT THAT CAUSED THE BUILD ERROR ***
 import android.graphics.Color;
 import android.graphics.SurfaceTexture;
 import android.opengl.GLES20;
@@ -171,9 +170,22 @@ public class CameraFilterActivity extends AppCompatActivity implements CameraGLR
                 captureFrame();
             }
         });
+
+        // --- FIX START: Add listener for the video record button ---
+        ImageButton recordButton = findViewById(R.id.btn_record_video);
+        recordButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                Toast.makeText(CameraFilterActivity.this, "Video recording is not yet implemented.", Toast.LENGTH_SHORT).show();
+            }
+        });
+        // --- FIX END ---
     }
 
     private void setupImageSegmenter() {
+        // --- FIX START: Initialize the debug logger here, after permissions are confirmed. ---
+        DebugLogger.initialize();
+        // --- FIX END ---
         try {
             BaseOptions baseOptions = BaseOptions.builder().setModelAssetPath(MODEL_FILE).build();
             ImageSegmenter.ImageSegmenterOptions options = ImageSegmenter.ImageSegmenterOptions.builder()
