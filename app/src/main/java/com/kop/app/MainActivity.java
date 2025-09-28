@@ -8,6 +8,7 @@ import androidx.fragment.app.FragmentTransaction;
 import android.Manifest;
 import android.content.Context;
 import android.content.DialogInterface;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
@@ -137,7 +138,10 @@ public class MainActivity extends AppCompatActivity {
                 @Override
                 public void run() {
                     if (checkCameraPermission()) {
-                        launchCameraDialog();
+                        // *** THIS IS THE MODIFIED LOGIC ***
+                        // Launch the new GPU-accelerated CameraFilterActivity instead of the old dialog.
+                        Intent intent = new Intent(MainActivity.this, CameraFilterActivity.class);
+                        startActivity(intent);
                     } else {
                         requestCameraPermission();
                     }
@@ -221,11 +225,11 @@ public class MainActivity extends AppCompatActivity {
         processingDialog.show(getSupportFragmentManager(), ProcessingDialogFragment.TAG);
     }
 
-    private void launchCameraDialog() {
-        CameraDialogFragment cameraDialog = CameraDialogFragment.newInstance();
-        cameraDialog.show(getSupportFragmentManager(), "CameraDialogFragment");
-    }
-
+    // *** THIS METHOD IS NOW OBSOLETE AND HAS BEEN REMOVED ***
+    // private void launchCameraDialog() {
+    //     CameraDialogFragment cameraDialog = CameraDialogFragment.newInstance();
+    //     cameraDialog.show(getSupportFragmentManager(), "CameraDialogFragment");
+    // }
 
     private void showToast(final String message) {
         runOnUiThread(new Runnable() {
@@ -276,7 +280,10 @@ public class MainActivity extends AppCompatActivity {
             }
         } else if (requestCode == CAMERA_PERMISSION_REQUEST_CODE) {
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                launchCameraDialog();
+                // *** THIS IS THE MODIFIED LOGIC ***
+                // After permission is granted, launch the new activity
+                Intent intent = new Intent(MainActivity.this, CameraFilterActivity.class);
+                startActivity(intent);
             } else {
                 Toast.makeText(this, "Camera permission is required to use this feature.", Toast.LENGTH_SHORT).show();
             }
