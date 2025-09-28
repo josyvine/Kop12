@@ -1,8 +1,10 @@
-package com.kop.app; 
+package com.kop.app;
 
 import android.Manifest;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
+// *** THIS IS THE MISSING IMPORT THAT CAUSED THE BUILD ERROR ***
+import android.graphics.Color;
 import android.graphics.SurfaceTexture;
 import android.opengl.GLES20;
 import android.opengl.GLSurfaceView;
@@ -53,7 +55,6 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-// *** MODIFIED ***: Implements the new listener to wait for the renderer signal.
 public class CameraFilterActivity extends AppCompatActivity implements CameraGLRenderer.OnSurfaceReadyListener {
 
     private static final String TAG = "CameraFilterActivity";
@@ -70,7 +71,6 @@ public class CameraFilterActivity extends AppCompatActivity implements CameraGLR
     private CameraSelector cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA;
     private boolean isCapturing = false;
 
-    // *** NEW ***: A SurfaceTexture variable to hold the reference once it's ready.
     private SurfaceTexture rendererSurfaceTexture;
 
     @Override
@@ -83,10 +83,7 @@ public class CameraFilterActivity extends AppCompatActivity implements CameraGLR
         glSurfaceView.setPreserveEGLContextOnPause(true);
 
         renderer = new CameraGLRenderer(this, glSurfaceView);
-        
-        // *** MODIFIED ***: Register the listener before setting the renderer.
         renderer.setOnSurfaceReadyListener(this);
-        
         glSurfaceView.setRenderer(renderer);
         glSurfaceView.setRenderMode(GLSurfaceView.RENDERMODE_WHEN_DIRTY);
 
@@ -95,21 +92,16 @@ public class CameraFilterActivity extends AppCompatActivity implements CameraGLR
 
         if (checkPermissions()) {
             setupImageSegmenter();
-            // *** MODIFIED ***: DO NOT start the camera here. Wait for the onSurfaceReady signal.
         } else {
             requestPermissions();
         }
 
         setupUI();
     }
-    
-    // *** THIS IS THE CORE FIX FOR THE BLACK SCREEN ***
-    // This method is called from the GPU thread only after the SurfaceTexture has been created.
+
     @Override
     public void onSurfaceReady(SurfaceTexture surfaceTexture) {
         this.rendererSurfaceTexture = surfaceTexture;
-        // Now that we have a valid SurfaceTexture, it is safe to start the camera.
-        // We must run it on the main thread.
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
@@ -117,7 +109,7 @@ public class CameraFilterActivity extends AppCompatActivity implements CameraGLR
             }
         });
     }
-
+    
     private void setupUI() {
         ImageButton closeButton = findViewById(R.id.btn_camera_close);
         closeButton.setOnClickListener(new View.OnClickListener() {
@@ -375,7 +367,6 @@ public class CameraFilterActivity extends AppCompatActivity implements CameraGLR
         }
     }
 
-    // *** PERMISSION HANDLING UPDATED FOR BOTH PERMISSIONS ***
     private boolean checkPermissions() {
         int cameraPermission = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA);
         int storagePermission = ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE);
@@ -391,9 +382,7 @@ public class CameraFilterActivity extends AppCompatActivity implements CameraGLR
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == PERMISSIONS_REQUEST_CODE) {
             if (grantResults.length > 1 && grantResults[0] == PackageManager.PERMISSION_GRANTED && grantResults[1] == PackageManager.PERMISSION_GRANTED) {
-                // *** MODIFIED ***: Now that permissions are granted, we can start the camera setup.
                 setupImageSegmenter();
-                // The onSurfaceReady listener will handle the actual camera start.
             } else {
                 Toast.makeText(this, "Camera and Storage permissions are required.", Toast.LENGTH_LONG).show();
                 finish();
