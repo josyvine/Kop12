@@ -1,9 +1,8 @@
-package com.kop.app; 
+package com.kop.app;
 
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.SurfaceTexture;
-// *** REMOVED ***: import android.hardware.Camera;
 import android.opengl.GLES11Ext;
 import android.opengl.GLES20;
 import android.opengl.GLSurfaceView;
@@ -27,6 +26,9 @@ public class CameraGLRenderer implements GLSurfaceView.Renderer, SurfaceTexture.
     private final Context context;
     private final GLSurfaceView glSurfaceView;
 
+    // *** NEW: Listener to signal when the SurfaceTexture is ready. ***
+    private OnSurfaceReadyListener surfaceReadyListener;
+
     private int programMethod9;
     private int programMethod11;
     private int programMethod12;
@@ -35,8 +37,6 @@ public class CameraGLRenderer implements GLSurfaceView.Renderer, SurfaceTexture.
     private int maskTextureId;
 
     private SurfaceTexture surfaceTexture;
-    // *** REMOVED ***: private Camera camera;
-    // *** REMOVED ***: private int cameraFacing = Camera.CameraInfo.CAMERA_FACING_BACK;
 
     private final FloatBuffer vertexBuffer;
     private final FloatBuffer texCoordBuffer;
@@ -50,13 +50,16 @@ public class CameraGLRenderer implements GLSurfaceView.Renderer, SurfaceTexture.
 
     private Bitmap aiMaskBitmap;
 
+    // *** NEW: The listener interface definition. ***
+    public interface OnSurfaceReadyListener {
+        void onSurfaceReady(SurfaceTexture surfaceTexture);
+    }
+
     public CameraGLRenderer(Context context, GLSurfaceView glSurfaceView) {
         this.context = context;
         this.glSurfaceView = glSurfaceView;
 
-        // Setup vertex data for a full-screen quad
         final float[] vertices = {-1.0f, -1.0f, 1.0f, -1.0f, -1.0f, 1.0f, 1.0f, 1.0f};
-        // *** FIX ***: Texture coordinates are flipped vertically to match CameraX output which prevents an upside-down image.
         final float[] texCoords = {0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f};
 
         vertexBuffer = ByteBuffer.allocateDirect(vertices.length * 4).order(ByteOrder.nativeOrder()).asFloatBuffer();
@@ -66,38 +69,33 @@ public class CameraGLRenderer implements GLSurfaceView.Renderer, SurfaceTexture.
         texCoordBuffer.put(texCoords).position(0);
     }
 
-    // *** NEW METHOD ***: A public getter for the Activity to access the SurfaceTexture.
-    public SurfaceTexture getSurfaceTexture() {
-        return surfaceTexture;
+    // *** NEW: A setter for the Activity to register its listener. ***
+    public void setOnSurfaceReadyListener(OnSurfaceReadyListener listener) {
+        this.surfaceReadyListener = listener;
     }
 
     @Override
     public void onSurfaceCreated(GL10 gl, EGLConfig config) {
-        // Load shaders from assets
         String vertexShader = loadShaderFromAssets("vertex_shader.glsl");
         String fragmentShader9 = loadShaderFromAssets("fragment_shader_method9.glsl");
         String fragmentShader11 = loadShaderFromAssets("fragment_shader_method11.glsl");
         String fragmentShader12 = loadShaderFromAssets("fragment_shader_method12.glsl");
 
-        // Create GPU programs for each method
         programMethod9 = createProgram(vertexShader, fragmentShader9);
         programMethod11 = createProgram(vertexShader, fragmentShader11);
         programMethod12 = createProgram(vertexShader, fragmentShader12);
 
-        // Generate textures
         int[] textures = new int[2];
         GLES20.glGenTextures(2, textures, 0);
         cameraTextureId = textures[0];
         maskTextureId = textures[1];
 
-        // Configure camera texture (external)
         GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, cameraTextureId);
         GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE);
         GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE);
         GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_NEAREST);
         GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_NEAREST);
 
-        // Configure mask texture (regular 2D)
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, maskTextureId);
         GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE);
         GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE);
@@ -107,15 +105,17 @@ public class CameraGLRenderer implements GLSurfaceView.Renderer, SurfaceTexture.
         surfaceTexture = new SurfaceTexture(cameraTextureId);
         surfaceTexture.setOnFrameAvailableListener(this);
 
-        // *** REMOVED ***: The call to initCamera() has been removed. The Activity will now manage the camera.
-
         GLES20.glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+
+        // *** NEW: Send the "ready" signal to the Activity. ***
+        if (surfaceReadyListener != null) {
+            surfaceReadyListener.onSurfaceReady(surfaceTexture);
+        }
     }
 
     @Override
     public void onSurfaceChanged(GL10 gl, int width, int height) {
         GLES20.glViewport(0, 0, width, height);
-        // Set the default size for the SurfaceTexture buffer which CameraX will use.
         if (surfaceTexture != null) {
             surfaceTexture.setDefaultBufferSize(width, height);
         }
@@ -204,8 +204,6 @@ public class CameraGLRenderer implements GLSurfaceView.Renderer, SurfaceTexture.
             this.aiMaskBitmap = maskBitmap;
         }
     }
-
-    // *** REMOVED ***: All Camera1 API helper methods have been deleted (switchCamera, releaseCamera, initCamera).
 
     private String loadShaderFromAssets(String fileName) {
         StringBuilder shaderSource = new StringBuilder();
