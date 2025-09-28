@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.kop.app"> 
+    package="com.kop.app">
 
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
@@ -37,13 +37,14 @@
             </intent-filter>
         </activity>
 
-        <!-- *** START OF ADDED ACTIVITY DECLARATION FOR LIVE CAMERA *** -->
+        <!-- *** START OF CORRECTED ACTIVITY DECLARATION FOR LIVE CAMERA *** -->
         <!-- Registers the new GPU-based camera activity with the Android system. -->
+        <!-- FIX: The theme has been changed from a system theme to the app's compatible theme to prevent the crash. -->
         <activity
             android:name=".CameraFilterActivity"
             android:screenOrientation="portrait"
-            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen" />
-        <!-- *** END OF ADDED ACTIVITY DECLARATION FOR LIVE CAMERA *** -->
+            android:theme="@style/AppTheme" />
+        <!-- *** END OF CORRECTED ACTIVITY DECLARATION FOR LIVE CAMERA *** -->
 
         <!--
           REMOVED: The declarations for MediaPickerActivity and ProcessingActivity are gone
