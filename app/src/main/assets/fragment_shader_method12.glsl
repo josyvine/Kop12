@@ -22,10 +22,10 @@ void main() {
     vec4 originalColor = texture2D(uCameraTexture, vTextureCoord);
     vec4 finalColor;
 
-    // Check if the current pixel is part of the background (mask is black)
-    if (mask.r < 0.5) {
-        // --- Apply Pencil Sketch Logic (Identical to Method 9) ---
-        // --- THIS IS THE FIX. We now use the uniform instead of the unsupported function. ---
+    // --- FIX START: Invert the logic to apply the sketch to the person (mask is white) ---
+    // Check if the current pixel is part of the PERSON (mask is white)
+    if (mask.r > 0.5) {
+        // --- Apply Pencil Sketch Logic to the person ---
         vec2 texelSize = 1.0 / uTextureSize;
         float originalGray = grayscale(originalColor);
         
@@ -49,12 +49,12 @@ void main() {
 
         finalColor = vec4(vec3(finalGray), 1.0);
     } else {
-        // --- This is the person, so output the original color ---
-        finalColor = originalColor;
+        // --- This is the BACKGROUND, so output a solid white color to hide the raw camera feed ---
+        finalColor = vec4(1.0, 1.0, 1.0, 1.0);
     }
+    // --- FIX END ---
 
     // --- Edge Detection on the Mask to create an outline ---
-    // --- THIS IS THE FIX. We now use the uniform instead of the unsupported function. ---
     vec2 texelSize = 1.0 / uTextureSize;
     // Sobel operator for edge detection
     float topLeft = texture2D(uMaskTexture, vTextureCoord + vec2(-texelSize.x, -texelSize.y)).r;
