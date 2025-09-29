@@ -21,10 +21,14 @@ void main() {
     vec4 mask = texture2D(uMaskTexture, vTextureCoord);
     vec4 originalColor = texture2D(uCameraTexture, vTextureCoord);
 
-    // Check if the current pixel is part of the person (mask is white)
-    if (mask.r > 0.5) {
+    // --- FIX START: Sharpen the blurry low-res mask edge to remove the "cloud" effect ---
+    // This converts the soft gradient of the mask into a much harder edge.
+    float sharpMask = smoothstep(0.4, 0.6, mask.r);
+    // --- FIX END ---
+
+    // Check if the current pixel is part of the person (using the sharpened mask)
+    if (sharpMask > 0.5) {
         // --- Apply Pencil Sketch Logic (Identical to Method 9) ---
-        // --- THIS IS THE FIX. We now use the uniform instead of the unsupported function. ---
         vec2 texelSize = 1.0 / uTextureSize;
         float originalGray = grayscale(originalColor);
         
