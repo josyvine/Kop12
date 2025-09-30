@@ -18,44 +18,39 @@ vec3 colorDodge(vec3 base, vec3 blend) {
 }
 
 void main() {
-    vec4 mask = texture2D(uMaskTexture, vTextureCoord);
+    // --- FIX START: New strategy to hide mask imperfections ---
+    
+    // 1. First, create a pencil sketch of the ENTIRE image, regardless of the mask.
+    vec2 texelSize = 1.0 / uTextureSize;
     vec4 originalColor = texture2D(uCameraTexture, vTextureCoord);
-
-    // --- FIX START: Sharpen the blurry low-res mask edge to remove the "cloud" effect ---
-    // This converts the soft gradient of the mask into a much harder edge.
-    float sharpMask = smoothstep(0.4, 0.6, mask.r);
-    // --- FIX END ---
-
-    // Check if the current pixel is part of the person (using the sharpened mask)
-    if (sharpMask > 0.5) {
-        // --- Apply Pencil Sketch Logic (Identical to Method 9) ---
-        vec2 texelSize = 1.0 / uTextureSize;
-        float originalGray = grayscale(originalColor);
-        
-        float blurRadius = uKsize * 5.0;
-        vec4 blurredSum = vec4(0.0);
-        int sampleCount = 0;
-        
-        for (int x = -4; x <= 4; x++) {
-            for (int y = -4; y <= 4; y++) {
-                vec2 offset = vec2(float(x), float(y)) * texelSize * blurRadius;
-                // We blur the inverted original color for the sketch effect
-                float invertedSample = 1.0 - grayscale(texture2D(uCameraTexture, vTextureCoord + offset));
-                blurredSum += vec4(invertedSample); // Summing up inverted values
-                sampleCount++;
-            }
+    float originalGray = grayscale(originalColor);
+    
+    float blurRadius = uKsize * 5.0;
+    vec4 blurredSum = vec4(0.0);
+    int sampleCount = 0;
+    
+    for (int x = -4; x <= 4; x++) {
+        for (int y = -4; y <= 4; y++) {
+            vec2 offset = vec2(float(x), float(y)) * texelSize * blurRadius;
+            float invertedSample = 1.0 - grayscale(texture2D(uCameraTexture, vTextureCoord + offset));
+            blurredSum += vec4(invertedSample);
+            sampleCount++;
         }
-        
-        // The average of the inverted samples is our blurred inverted gray
-        float blurredInvertedGray = blurredSum.r / float(sampleCount);
-
-        // We don't need to re-invert here because we blurred the inverted source
-        vec3 sketchColor = colorDodge(vec3(originalGray), vec3(blurredInvertedGray));
-        float finalGray = grayscale(vec4(sketchColor, 1.0));
-
-        gl_FragColor = vec4(vec3(finalGray), 1.0);
-    } else {
-        // --- This is the background, so output the original color ---
-        gl_FragColor = originalColor;
     }
+    
+    float blurredInvertedGray = blurredSum.r / float(sampleCount);
+    vec3 sketchColor = colorDodge(vec3(originalGray), vec3(blurredInvertedGray));
+    float finalGray = grayscale(vec4(sketchColor, 1.0));
+    vec4 fullScreenSketch = vec4(vec3(finalGray), 1.0);
+
+    // 2. Get the sharpened mask, which tells us where the person is.
+    vec4 mask = texture2D(uMaskTexture, vTextureCoord);
+    float sharpMask = smoothstep(0.4, 0.6, mask.r);
+
+    // 3. Blend from the full-screen sketch to the original color based on the mask.
+    // Where the mask is 0 (background), we see the sketch.
+    // Where the mask is 1 (person), we see the original color.
+    gl_FragColor = mix(fullScreenSketch, originalColor, sharpMask);
+
+    // --- FIX END ---
 }
