@@ -22,7 +22,6 @@ void main() {
     vec4 originalColor = texture2D(uCameraTexture, vTextureCoord);
     vec4 finalColor;
 
-    // --- FIX START: Invert the logic to apply the sketch to the person (mask is white) ---
     // Check if the current pixel is part of the PERSON (mask is white)
     if (mask.r > 0.5) {
         // --- Apply Pencil Sketch Logic to the person ---
@@ -52,25 +51,9 @@ void main() {
         // --- This is the BACKGROUND, so output a solid white color to hide the raw camera feed ---
         finalColor = vec4(1.0, 1.0, 1.0, 1.0);
     }
+
+    // --- FIX START: The entire edge detection block has been removed to hide the black outline. ---
+    // The final output is now simply the 'finalColor' calculated above, without any mixing.
+    gl_FragColor = finalColor;
     // --- FIX END ---
-
-    // --- Edge Detection on the Mask to create an outline ---
-    vec2 texelSize = 1.0 / uTextureSize;
-    // Sobel operator for edge detection
-    float topLeft = texture2D(uMaskTexture, vTextureCoord + vec2(-texelSize.x, -texelSize.y)).r;
-    float top = texture2D(uMaskTexture, vTextureCoord + vec2(0.0, -texelSize.y)).r;
-    float topRight = texture2D(uMaskTexture, vTextureCoord + vec2(texelSize.x, -texelSize.y)).r;
-    float left = texture2D(uMaskTexture, vTextureCoord + vec2(-texelSize.x, 0.0)).r;
-    float right = texture2D(uMaskTexture, vTextureCoord + vec2(texelSize.x, 0.0)).r;
-    float bottomLeft = texture2D(uMaskTexture, vTextureCoord + vec2(-texelSize.x, texelSize.y)).r;
-    float bottom = texture2D(uMaskTexture, vTextureCoord + vec2(0.0, texelSize.y)).r;
-    float bottomRight = texture2D(uMaskTexture, vTextureCoord + vec2(texelSize.x, texelSize.y)).r;
-
-    float dx = -topLeft - 2.0 * left - bottomLeft + topRight + 2.0 * right + bottomRight;
-    float dy = -topLeft - 2.0 * top - topRight + bottomLeft + 2.0 * bottom + bottomRight;
-
-    float edge = sqrt(dx * dx + dy * dy);
-    
-    // Mix the final color with black based on the edge strength to draw the outline
-    gl_FragColor = mix(finalColor, vec4(0.0, 0.0, 0.0, 1.0), smoothstep(0.2, 0.5, edge));
 }
