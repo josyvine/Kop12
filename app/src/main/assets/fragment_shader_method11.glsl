@@ -18,11 +18,13 @@ vec3 colorDodge(vec3 base, vec3 blend) {
 }
 
 void main() {
-    // --- FIX START: New strategy to hide mask imperfections ---
-    
-    // 1. First, create a pencil sketch of the ENTIRE image, regardless of the mask.
-    vec2 texelSize = 1.0 / uTextureSize;
+    // --- FIX START: Corrected logic to sketch ONLY the person ---
+
+    // 1. Get the original, raw color of the pixel. This will be our background.
     vec4 originalColor = texture2D(uCameraTexture, vTextureCoord);
+
+    // 2. Perform the pencil sketch calculation on the original color.
+    vec2 texelSize = 1.0 / uTextureSize;
     float originalGray = grayscale(originalColor);
     
     float blurRadius = uKsize * 5.0;
@@ -41,16 +43,14 @@ void main() {
     float blurredInvertedGray = blurredSum.r / float(sampleCount);
     vec3 sketchColor = colorDodge(vec3(originalGray), vec3(blurredInvertedGray));
     float finalGray = grayscale(vec4(sketchColor, 1.0));
-    vec4 fullScreenSketch = vec4(vec3(finalGray), 1.0);
+    vec4 personAsSketch = vec4(vec3(finalGray), 1.0);
 
-    // 2. Get the sharpened mask, which tells us where the person is.
+    // 3. Get the sharpened mask to define the person's silhouette.
     vec4 mask = texture2D(uMaskTexture, vTextureCoord);
     float sharpMask = smoothstep(0.4, 0.6, mask.r);
 
-    // 3. Blend from the full-screen sketch to the original color based on the mask.
-    // Where the mask is 0 (background), we see the sketch.
-    // Where the mask is 1 (person), we see the original color.
-    gl_FragColor = mix(fullScreenSketch, originalColor, sharpMask);
+    // 4. Blend from the original raw color (background) to the sketched color (person) using the mask.
+    gl_FragColor = mix(originalColor, personAsSketch, sharpMask);
 
     // --- FIX END ---
 }
