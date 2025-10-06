@@ -1267,4 +1267,68 @@ public class DeepScanProcessor {
         return Bitmap.createBitmap(pixels, 384, 384, Bitmap.Config.ARGB_8888);
     }
     // --- END OF NEW METHODS ---
+    
+    // --- NEW METHOD FOR METHOD 9 ADJUSTMENTS ---
+    public static Bitmap applyMethod9Adjustments(Bitmap bitmap, int brightness, int contrast, int saturation, int temperature) {
+        // The input values are 0-50, we need to map them to useful ranges.
+        // Center value is 25.
+        
+        // Brightness: -128 to 128. We'll map 0-50 to a reasonable range like -64 to 64.
+        float brightnessF = (brightness - 25) * 2.56f;
+
+        // Contrast: 0.0 to 2.0. We'll map 0-50 to 0.5 to 1.5.
+        float contrastF = (contrast / 25.0f);
+        if (contrastF < 1.0f) {
+            contrastF = 1.0f - (1.0f - contrastF) / 2.0f; // Slower decrease towards 0.5
+        }
+
+        // Saturation: 0.0 to 2.0. We'll map 0-50 to 0.0 to 2.0
+        float saturationF = saturation / 25.0f;
+
+        ColorMatrix colorMatrix = new ColorMatrix();
+        
+        // Apply Saturation first, as it's a base property
+        colorMatrix.setSaturation(saturationF);
+
+        // Then apply contrast and brightness
+        ColorMatrix scaleMatrix = new ColorMatrix(new float[] {
+                contrastF, 0, 0, 0, brightnessF,
+                0, contrastF, 0, 0, brightnessF,
+                0, 0, contrastF, 0, brightnessF,
+                0, 0, 0, 1, 0
+        });
+        colorMatrix.postConcat(scaleMatrix);
+        
+        // Finally, apply color temperature
+        if (temperature != 25) {
+            float tempValue = (temperature - 25); // Range -25 to 25
+            // Add red/yellow for warmer, add blue for cooler
+            float redShift = tempValue * 2.5f;
+            float blueShift = -tempValue * 2.5f;
+            
+            ColorMatrix tempMatrix = new ColorMatrix(new float[] {
+                1, 0, 0, 0, redShift,
+                0, 1, 0, 0, 0, // Green is slightly adjusted to balance yellow/cyan tints
+                0, 0, 1, 0, blueShift,
+                0, 0, 0, 1, 0
+            });
+             colorMatrix.postConcat(tempMatrix);
+        }
+
+        Paint paint = new Paint();
+        paint.setColorFilter(new ColorMatrixColorFilter(colorMatrix));
+
+        // Create a new bitmap to draw on, to avoid modifying the original one passed in
+        Bitmap resultBitmap = Bitmap.createBitmap(bitmap.getWidth(), bitmap.getHeight(), bitmap.getConfig());
+        Canvas canvas = new Canvas(resultBitmap);
+        canvas.drawBitmap(bitmap, 0, 0, paint);
+        
+        // Since we are creating a new bitmap, we should recycle the one that was passed in,
+        // as the calling method assumes we are modifying it.
+        if(bitmap != null && !bitmap.isRecycled()){
+            bitmap.recycle();
+        }
+
+        return resultBitmap;
+    }
 }
