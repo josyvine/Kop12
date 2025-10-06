@@ -1,4 +1,4 @@
-package com.kop.app; 
+package com.kop.app;
 
 import android.app.Dialog;
 import android.content.Context;
@@ -94,6 +94,7 @@ public class ProcessingDialogFragment extends DialogFragment {
 
     private LinearLayout fineTuningControls;
     private SeekBar sliderDepth, sliderSharpness;
+    private TextView tvDepthLabel, tvSharpnessLabel; // FIX: Member variables for labels
     private Bitmap sourceBitmapForTuning;
     private boolean isFirstFineTuneAnalysis = true;
 
@@ -167,7 +168,6 @@ public class ProcessingDialogFragment extends DialogFragment {
         super.onCreate(savedInstanceState);
         setStyle(DialogFragment.STYLE_NORMAL, android.R.style.Theme_Black_NoTitleBar_Fullscreen);
         if (getArguments() != null) {
-            // UPDATED: Handle both single and multiple file path arguments
             inputFilePaths = getArguments().getStringArrayList(ARG_FILE_PATHS);
             inputFilePath = getArguments().getString(ARG_FILE_PATH, "");
 
@@ -192,7 +192,7 @@ public class ProcessingDialogFragment extends DialogFragment {
 
         sharedPreferences = getContext().getSharedPreferences("KopAppSettings", Context.MODE_PRIVATE);
         setupAiControls();
-        setupAdjustmentControls(); // NEW: Setup listeners for Method 9 controls
+        setupAdjustmentControls();
 
         if ((inputFilePath != null && !inputFilePath.isEmpty()) || isMultiImageMode) {
             startInitialSetup();
@@ -238,6 +238,8 @@ public class ProcessingDialogFragment extends DialogFragment {
         fineTuningControls = view.findViewById(R.id.fine_tuning_controls);
         sliderDepth = view.findViewById(R.id.slider_depth);
         sliderSharpness = view.findViewById(R.id.slider_sharpness);
+        tvDepthLabel = view.findViewById(R.id.tv_depth_label); // FIX: Initialize label
+        tvSharpnessLabel = view.findViewById(R.id.tv_sharpness_label); // FIX: Initialize label
         btnSave = view.findViewById(R.id.btn_save);
         ksizeControlsContainer = view.findViewById(R.id.ksize_controls_container);
         sliderKsize = view.findViewById(R.id.slider_ksize);
@@ -253,7 +255,6 @@ public class ProcessingDialogFragment extends DialogFragment {
         styleSpinner = view.findViewById(R.id.spinner_ai_style);
         aiStyleControlsContainer = view.findViewById(R.id.ai_style_controls_container);
 
-        // NEW: Method 9 adjustment view initializations
         adjustmentControlsContainer = view.findViewById(R.id.adjustment_controls_container);
         sliderAdjustment = view.findViewById(R.id.slider_adjustment);
         tvAdjustmentLabel = view.findViewById(R.id.tv_adjustment_label);
@@ -262,7 +263,6 @@ public class ProcessingDialogFragment extends DialogFragment {
         adjSaturation = view.findViewById(R.id.adj_saturation);
         adjTemperature = view.findViewById(R.id.adj_temperature);
 
-        // Populate icons for Method 9 adjustments
         ((ImageView)adjBrightness.findViewById(R.id.iv_adjustment_icon)).setImageResource(R.drawable.ic_brightness);
         ((TextView)adjBrightness.findViewById(R.id.tv_adjustment_label)).setText("Brightness");
         ((ImageView)adjContrast.findViewById(R.id.iv_adjustment_icon)).setImageResource(R.drawable.ic_contrast);
@@ -316,7 +316,7 @@ public class ProcessingDialogFragment extends DialogFragment {
                             public void run() {
                                 updateMainDisplay(sourceBitmapForTuning);
                                 setupAnalysisControls(isVideo);
-                                setupFilmStrip(rawFrames); // This will now work for all modes with multiple frames/images
+                                setupFilmStrip(rawFrames);
                                 statusTextView.setText("Ready. Select a method and press Analyze.");
                                 progressBar.setIndeterminate(false);
                                 progressBar.setVisibility(View.GONE);
@@ -340,12 +340,11 @@ public class ProcessingDialogFragment extends DialogFragment {
             analysisControlsContainer.setVisibility(View.GONE);
             imageControlsContainer.setVisibility(View.GONE);
             videoControlsContainer.setVisibility(View.VISIBLE);
-        } else { // Single Image, Multi-Image, or ZIP
+        } else {
             settingsButton.setVisibility(View.GONE);
             analysisControlsContainer.setVisibility(View.VISIBLE);
             imageControlsContainer.setVisibility(View.VISIBLE);
             videoControlsContainer.setVisibility(View.GONE);
-            // Hide AI controls for any non-video mode
             aiControlsContainer.setVisibility(View.GONE);
         }
 
@@ -518,20 +517,17 @@ public class ProcessingDialogFragment extends DialogFragment {
 
         if (isAutomatic) {
             fineTuningControls.setVisibility(View.GONE);
-        } else { // Manual Tuning Mode
+        } else {
             fineTuningControls.setVisibility(View.VISIBLE);
             
-            // Show/hide controls based on selected method
             ksizeControlsContainer.setVisibility(needsKsize ? View.VISIBLE : View.GONE);
             adjustmentControlsContainer.setVisibility(needsMethod9Adjustments ? View.VISIBLE : View.GONE);
 
-            // Hide depth/sharpness if one of the other new controls is visible
             boolean otherControlsVisible = needsKsize || needsMethod9Adjustments;
-            findViewById(R.id.slider_depth).setVisibility(otherControlsVisible ? View.GONE : View.VISIBLE);
-            findViewById(R.id.slider_sharpness).setVisibility(otherControlsVisible ? View.GONE : View.VISIBLE);
-            ((TextView)findViewById(R.id.slider_depth).getRootView().findViewWithTag("depth_label")).setVisibility(otherControlsVisible ? View.GONE : View.VISIBLE);
-            ((TextView)findViewById(R.id.slider_sharpness).getRootView().findViewWithTag("sharpness_label")).setVisibility(otherControlsVisible ? View.GONE : View.VISIBLE);
-
+            sliderDepth.setVisibility(otherControlsVisible ? View.GONE : View.VISIBLE);
+            sliderSharpness.setVisibility(otherControlsVisible ? View.GONE : View.VISIBLE);
+            tvDepthLabel.setVisibility(otherControlsVisible ? View.GONE : View.VISIBLE);
+            tvSharpnessLabel.setVisibility(otherControlsVisible ? View.GONE : View.VISIBLE);
         }
     }
 
@@ -541,22 +537,22 @@ public class ProcessingDialogFragment extends DialogFragment {
         boolean needsMethod9Adjustments = selectedMethod == 8;
 
         switch(mode) {
-            case 0: // Standard Auto
+            case 0:
                 fineTuningControls.setVisibility(View.GONE);
                 analyzeButton.setText("Analyze Video");
                 break;
-            case 1: // Live Preview & Tune
-            case 2: // Apply Tuned Settings to Video
+            case 1:
+            case 2:
                 if (needsDepthSharpness || needsKsize || needsMethod9Adjustments) {
                     fineTuningControls.setVisibility(View.VISIBLE);
                     ksizeControlsContainer.setVisibility(needsKsize ? View.VISIBLE : View.GONE);
                     adjustmentControlsContainer.setVisibility(needsMethod9Adjustments ? View.VISIBLE : View.GONE);
 
                     boolean otherControlsVisible = needsKsize || needsMethod9Adjustments;
-                    findViewById(R.id.slider_depth).setVisibility(otherControlsVisible ? View.GONE : View.VISIBLE);
-                    findViewById(R.id.slider_sharpness).setVisibility(otherControlsVisible ? View.GONE : View.VISIBLE);
-                    ((TextView)findViewById(R.id.slider_depth).getRootView().findViewWithTag("depth_label")).setVisibility(otherControlsVisible ? View.GONE : View.VISIBLE);
-                    ((TextView)findViewById(R.id.slider_sharpness).getRootView().findViewWithTag("sharpness_label")).setVisibility(otherControlsVisible ? View.GONE : View.VISIBLE);
+                    sliderDepth.setVisibility(otherControlsVisible ? View.GONE : View.VISIBLE);
+                    sliderSharpness.setVisibility(otherControlsVisible ? View.GONE : View.VISIBLE);
+                    tvDepthLabel.setVisibility(otherControlsVisible ? View.GONE : View.VISIBLE);
+                    tvSharpnessLabel.setVisibility(otherControlsVisible ? View.GONE : View.VISIBLE);
                 } else {
                      fineTuningControls.setVisibility(View.GONE);
                 }
@@ -571,13 +567,11 @@ public class ProcessingDialogFragment extends DialogFragment {
         }
     }
     
-    // NEW: Setup for Method 9 adjustment controls
     private void setupAdjustmentControls() {
         View.OnClickListener listener = new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 updateSelectedAdjustment(v);
-                // No need to trigger analysis here, only on slider change
             }
         };
 
@@ -607,11 +601,9 @@ public class ProcessingDialogFragment extends DialogFragment {
             public void onStopTrackingTouch(SeekBar seekBar) {}
         });
 
-        // Set brightness as the default selected control
         updateSelectedAdjustment(adjBrightness);
     }
     
-    // NEW: Helper to manage the selected state of adjustment icons
     private void updateSelectedAdjustment(View selectedView) {
         adjBrightness.setSelected(selectedView.getId() == adjBrightness.getId());
         adjContrast.setSelected(selectedView.getId() == adjContrast.getId());
@@ -641,7 +633,6 @@ public class ProcessingDialogFragment extends DialogFragment {
         sliderAdjustment.setProgress(progress);
     }
 
-    // NEW: Helper to store the current slider value in the correct variable
     private void updateAdjustmentValue(int progress) {
         switch (currentAdjustmentMode) {
             case 0: brightnessValue = progress; break;
@@ -651,7 +642,6 @@ public class ProcessingDialogFragment extends DialogFragment {
         }
     }
     
-    // NEW: Live preview specifically for Method 9 adjustments
     private void performLivePreviewAnalysisForAdjustments() {
         if (sourceBitmapForTuning == null) return;
         
@@ -800,7 +790,37 @@ public class ProcessingDialogFragment extends DialogFragment {
         uiHandler.post(new Runnable() { @Override public void run() { progressBar.setVisibility(View.VISIBLE); }});
 
         if (selectedMethod == 13) {
-            // ... (Method 14 logic from original file)
+            updateStatus("Preparing AI Style Transfer...", true);
+            Interpreter predictionInterpreter = null;
+            Interpreter transferInterpreter = null;
+            try {
+                Interpreter.Options options = new Interpreter.Options();
+                MappedByteBuffer predictionModel = loadModelFile("magenta_prediction.tflite");
+                predictionInterpreter = new Interpreter(predictionModel, options);
+                MappedByteBuffer transferModel = loadModelFile("magenta_transfer.tflite");
+                transferInterpreter = new Interpreter(transferModel, options);
+                int selectedStyleIndex = styleSpinner.getSelectedItemPosition();
+                String styleAssetName = styleAssetFiles[selectedStyleIndex];
+                Bitmap styleBitmap = loadBitmapFromAssets(styleAssetName);
+                updateStatus("Analyzing Art Style...", true);
+                float[] styleVector = DeepScanProcessor.runStylePrediction(styleBitmap, predictionInterpreter);
+                styleBitmap.recycle();
+                for (int i = 0; i < totalFrames; i++) {
+                    final int frameNum = i + 1;
+                    final int frameIndex = i;
+                    updateStatus("Applying style to frame " + frameNum + " of " + totalFrames, false);
+                    updateProgress(frameNum, totalFrames);
+                    updateCurrentFrameHighlight(frameIndex);
+                    Bitmap contentBitmap = decodeAndRotateBitmap(rawFrames.get(frameIndex).getAbsolutePath());
+                    if (contentBitmap == null) continue;
+                    Bitmap stylizedBitmap = DeepScanProcessor.runStyleTransfer(contentBitmap, styleVector, transferInterpreter);
+                    saveProcessedFrame(stylizedBitmap, frameIndex);
+                    contentBitmap.recycle();
+                }
+            } finally {
+                if (predictionInterpreter != null) predictionInterpreter.close();
+                if (transferInterpreter != null) transferInterpreter.close();
+            }
         } else {
             for (int i = 0; i < totalFrames; i++) {
                 final int frameNum = i + 1;
@@ -819,7 +839,34 @@ public class ProcessingDialogFragment extends DialogFragment {
 
                 boolean isVideo = isVideoFile(inputFilePath) && !isZipMode && !isMultiImageMode;
                 if (isVideo && switchEnableAi.isChecked() && (selectedMethod == 11 || selectedMethod == 12)) {
-                    // ... (AI-assisted video processing logic from original file)
+                    if (frameIndex == 0) {
+                        updateStatus("Processing frame 1 to set Gold Standard...", false);
+                        Bitmap processedFirstFrame = getAiPencilScanAsBitmap(orientedBitmap, currentKsize);
+                        if (processedFirstFrame != null) {
+                            goldStandardBitmap = processedFirstFrame;
+                            saveProcessedFrame(goldStandardBitmap, frameIndex);
+                        } else {
+                            throw new Exception("Failed to process the first frame to create a Gold Standard.");
+                        }
+                    } else {
+                        CorrectedKsize correction = GeminiAiHelper.checkFrameConsistency(
+                                sharedPreferences.getString("GEMINI_API_KEY", ""),
+                                goldStandardBitmap,
+                                orientedBitmap,
+                                currentKsize
+                        );
+                        currentKsize = correction.ksize;
+                        if (correction.wasCorrected) {
+                            final int correctedKsize = currentKsize;
+                            uiHandler.post(new Runnable() {
+                                @Override
+                                public void run() {
+                                    Toast.makeText(getContext(), "AI adjusted ksize to " + correctedKsize, Toast.LENGTH_SHORT).show();
+                                }
+                            });
+                        }
+                        beginBlockingAiGuidedScan(orientedBitmap, frameIndex, currentKsize);
+                    }
                 } else {
                     if (selectedMethod <= 1) {
                         beginBlockingAiScan(orientedBitmap, frameIndex);
@@ -1056,7 +1103,7 @@ public class ProcessingDialogFragment extends DialogFragment {
             case 5: logicalMethod = 4; break;
             case 6: logicalMethod = 5; break;
             case 7: logicalMethod = 6; break;
-            case 8: logicalMethod = 7; break; // This mapping needs adjustment if Method 9 (index 8) is special
+            case 8: logicalMethod = 7;
             case 9: logicalMethod = 8; break;
         }
         final int finalLogicalMethod = logicalMethod;
@@ -1721,7 +1768,6 @@ public class ProcessingDialogFragment extends DialogFragment {
         return BitmapFactory.decodeStream(inputStream);
     }
     
-    // NEW: Helper methods for file preparation
     private void extractFramesFromZip() throws IOException {
         uiHandler.post(new Runnable() { @Override public void run() {
             statusTextView.setText("Extracting images from ZIP...");
