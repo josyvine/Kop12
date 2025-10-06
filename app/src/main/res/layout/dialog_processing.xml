@@ -314,7 +314,9 @@
                 android:visibility="gone"
                 tools:visibility="visible">
 
+                <!-- FIX: Added ID to this TextView -->
                 <TextView
+                    android:id="@+id/tv_depth_label"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Analysis Depth"
@@ -328,7 +330,9 @@
                     android:layout_height="wrap_content"
                     android:max="4" />
 
+                <!-- FIX: Added ID to this TextView -->
                 <TextView
+                    android:id="@+id/tv_sharpness_label"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Line Sharpness"
@@ -367,7 +371,6 @@
                         android:max="100" />
                 </LinearLayout>
 
-                <!-- NEW: Container for Method 9 Adjustment Controls -->
                 <LinearLayout
                     android:id="@+id/adjustment_controls_container"
                     android:layout_width="match_parent"
