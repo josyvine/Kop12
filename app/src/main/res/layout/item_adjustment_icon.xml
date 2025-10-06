@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- CREATE NEW FILE: app/src/main/res/layout/item_adjustment_icon.xml -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:padding="8dp"
+    android:background="?attr/selectableItemBackgroundBorderless">
+
+    <ImageView
+        android:id="@+id/iv_adjustment_icon"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:background="@drawable/adjustment_icon_background"
+        android:padding="6dp"
+        android:scaleType="fitCenter"
+        tools:src="@drawable/ic_brightness"
+        android:tint="@android:color/white"/>
+
+    <TextView
+        android:id="@+id/tv_adjustment_label"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:textColor="#CCCCCC"
+        android:textSize="10sp"
+        tools:ignore="SmallSp"
+        tools:text="Brightness"/>
+
+</LinearLayout>
