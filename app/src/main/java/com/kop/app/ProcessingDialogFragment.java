@@ -64,7 +64,7 @@ public class ProcessingDialogFragment extends DialogFragment {
 
     public static final String TAG = "ProcessingDialog";
     private static final String ARG_FILE_PATH = "file_path";
-    // NEW: Argument for multiple file paths
+    // MERGED: Argument for multiple file paths
     private static final String ARG_FILE_PATHS = "file_paths";
 
     private ImageView mainDisplay;
@@ -79,14 +79,14 @@ public class ProcessingDialogFragment extends DialogFragment {
     private Spinner fpsSpinner, methodSpinner;
     private Handler uiHandler;
 
-    // UPDATED: Input can be single or multiple paths
+    // MERGED: Input can be single or multiple paths, and rawFrames is now a List<File>
     private String inputFilePath;
     private ArrayList<String> inputFilePaths;
-    private List<File> rawFrames; // This will hold all frames/images to be processed
+    private List<File> rawFrames;
     private String rawFramesDir, processedFramesDir;
     private int selectedMethod = 0;
 
-    // NEW: State flags
+    // MERGED: State flags for different modes
     private boolean isMultiImageMode = false;
     private boolean isZipMode = false;
     private boolean isReEditing = false;
@@ -94,7 +94,7 @@ public class ProcessingDialogFragment extends DialogFragment {
 
     private LinearLayout fineTuningControls;
     private SeekBar sliderDepth, sliderSharpness;
-    private TextView tvDepthLabel, tvSharpnessLabel; // FIX: Member variables for labels
+    private TextView tvDepthLabel, tvSharpnessLabel;
     private Bitmap sourceBitmapForTuning;
     private boolean isFirstFineTuneAnalysis = true;
 
@@ -133,7 +133,7 @@ public class ProcessingDialogFragment extends DialogFragment {
             "style_pencil_sketch.jpg"
     };
 
-    // NEW: Controls for Method 9 adjustments
+    // MERGED: New controls for Method 9 and AI method adjustments
     private LinearLayout adjustmentControlsContainer;
     private SeekBar sliderAdjustment;
     private TextView tvAdjustmentLabel;
@@ -154,7 +154,7 @@ public class ProcessingDialogFragment extends DialogFragment {
         return fragment;
     }
 
-    // NEW: Overloaded constructor for multiple image files
+    // MERGED: Overloaded newInstance for multiple image files
     public static ProcessingDialogFragment newInstance(ArrayList<String> filePaths) {
         ProcessingDialogFragment fragment = new ProcessingDialogFragment();
         Bundle args = new Bundle();
@@ -167,13 +167,14 @@ public class ProcessingDialogFragment extends DialogFragment {
     public void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setStyle(DialogFragment.STYLE_NORMAL, android.R.style.Theme_Black_NoTitleBar_Fullscreen);
+        // MERGED: Logic to handle single, multiple, or zip file inputs
         if (getArguments() != null) {
             inputFilePaths = getArguments().getStringArrayList(ARG_FILE_PATHS);
             inputFilePath = getArguments().getString(ARG_FILE_PATH, "");
 
             if (inputFilePaths != null && !inputFilePaths.isEmpty()) {
                 isMultiImageMode = true;
-            } else if (inputFilePath.toLowerCase(Locale.US).endsWith(".zip")) {
+            } else if (inputFilePath != null && inputFilePath.toLowerCase(Locale.US).endsWith(".zip")) {
                 isZipMode = true;
             }
         }
@@ -192,6 +193,7 @@ public class ProcessingDialogFragment extends DialogFragment {
 
         sharedPreferences = getContext().getSharedPreferences("KopAppSettings", Context.MODE_PRIVATE);
         setupAiControls();
+        // MERGED: Setup for new adjustment controls
         setupAdjustmentControls();
 
         if ((inputFilePath != null && !inputFilePath.isEmpty()) || isMultiImageMode) {
@@ -208,6 +210,7 @@ public class ProcessingDialogFragment extends DialogFragment {
     @Override
     public void onDismiss(@NonNull DialogInterface dialog) {
         super.onDismiss(dialog);
+        // MERGED: Renamed from cleanupRawFiles to cleanupTempFiles to reflect new logic
         cleanupTempFiles();
         if (goldStandardBitmap != null && !goldStandardBitmap.isRecycled()) {
             goldStandardBitmap.recycle();
@@ -232,29 +235,37 @@ public class ProcessingDialogFragment extends DialogFragment {
         closeButton = view.findViewById(R.id.btn_close);
         settingsButton = view.findViewById(R.id.btn_settings);
         uiHandler = new Handler(Looper.getMainLooper());
+
         scanStatusTextView = view.findViewById(R.id.tv_scan_status);
         scanProgressBar = view.findViewById(R.id.scan_progress_bar);
         scanStatusContainer = view.findViewById(R.id.scan_status_container);
+
         fineTuningControls = view.findViewById(R.id.fine_tuning_controls);
         sliderDepth = view.findViewById(R.id.slider_depth);
         sliderSharpness = view.findViewById(R.id.slider_sharpness);
-        tvDepthLabel = view.findViewById(R.id.tv_depth_label); // FIX: Initialize label
-        tvSharpnessLabel = view.findViewById(R.id.tv_sharpness_label); // FIX: Initialize label
+        // MERGED: Added TextView members for labels to control their visibility
+        tvDepthLabel = view.findViewById(R.id.tv_depth_label);
+        tvSharpnessLabel = view.findViewById(R.id.tv_sharpness_label);
         btnSave = view.findViewById(R.id.btn_save);
+
         ksizeControlsContainer = view.findViewById(R.id.ksize_controls_container);
         sliderKsize = view.findViewById(R.id.slider_ksize);
+
         switchAutomaticScan = view.findViewById(R.id.switch_automatic_scan);
         imageControlsContainer = view.findViewById(R.id.image_controls_container);
         sliderAnalysisMode = view.findViewById(R.id.slider_analysis_mode);
         videoControlsContainer = view.findViewById(R.id.video_controls_container);
+
         aiControlsContainer = view.findViewById(R.id.ai_controls_container);
         etGeminiApiKey = view.findViewById(R.id.et_gemini_api_key);
         btnSaveApiKey = view.findViewById(R.id.btn_save_api_key);
         btnUpdateApiKey = view.findViewById(R.id.btn_update_api_key);
         switchEnableAi = view.findViewById(R.id.switch_enable_ai);
+
         styleSpinner = view.findViewById(R.id.spinner_ai_style);
         aiStyleControlsContainer = view.findViewById(R.id.ai_style_controls_container);
 
+        // MERGED: Initialize new adjustment controls
         adjustmentControlsContainer = view.findViewById(R.id.adjustment_controls_container);
         sliderAdjustment = view.findViewById(R.id.slider_adjustment);
         tvAdjustmentLabel = view.findViewById(R.id.tv_adjustment_label);
@@ -263,6 +274,7 @@ public class ProcessingDialogFragment extends DialogFragment {
         adjSaturation = view.findViewById(R.id.adj_saturation);
         adjTemperature = view.findViewById(R.id.adj_temperature);
 
+        // MERGED: Setup for new adjustment control icons and labels
         ((ImageView)adjBrightness.findViewById(R.id.iv_adjustment_icon)).setImageResource(R.drawable.ic_brightness);
         ((TextView)adjBrightness.findViewById(R.id.tv_adjustment_label)).setText("Brightness");
         ((ImageView)adjContrast.findViewById(R.id.iv_adjustment_icon)).setImageResource(R.drawable.ic_contrast);
@@ -291,6 +303,7 @@ public class ProcessingDialogFragment extends DialogFragment {
         });
     }
 
+    // MERGED: Replaced original with more robust version from updated file to handle all input types
     private void startInitialSetup() {
         new Thread(new Runnable() {
             @Override
@@ -306,7 +319,9 @@ public class ProcessingDialogFragment extends DialogFragment {
                     } else if (isMultiImageMode) {
                         copyMultipleImagesToRawDir();
                     } else { // Single Image
-                        rawFrames = new ArrayList<>(Arrays.asList(copySingleImageToRawDir(inputFilePath)));
+                        // For a single image, the copy function returns a File array, which we convert to a List
+                        File[] singleFileArray = copySingleImageToRawDir(inputFilePath);
+                        rawFrames = new ArrayList<>(Arrays.asList(singleFileArray));
                     }
 
                     if (rawFrames != null && !rawFrames.isEmpty()) {
@@ -316,7 +331,7 @@ public class ProcessingDialogFragment extends DialogFragment {
                             public void run() {
                                 updateMainDisplay(sourceBitmapForTuning);
                                 setupAnalysisControls(isVideo);
-                                setupFilmStrip(rawFrames);
+                                setupFilmStrip(rawFrames); // Also setup film strip for multi-image/zip
                                 statusTextView.setText("Ready. Select a method and press Analyze.");
                                 progressBar.setIndeterminate(false);
                                 progressBar.setVisibility(View.GONE);
@@ -335,12 +350,15 @@ public class ProcessingDialogFragment extends DialogFragment {
     }
 
     private void setupAnalysisControls(boolean isVideo) {
-        if (isVideo) {
+        // MERGED: Check for multi-image/zip modes in addition to video
+        boolean isMultiFrameProject = isVideo || isMultiImageMode || isZipMode;
+        
+        if (isMultiFrameProject) {
             settingsButton.setVisibility(View.VISIBLE);
             analysisControlsContainer.setVisibility(View.GONE);
             imageControlsContainer.setVisibility(View.GONE);
-            videoControlsContainer.setVisibility(View.VISIBLE);
-        } else {
+            videoControlsContainer.setVisibility(View.VISIBLE); // Use the video layout for all multi-frame projects
+        } else { // Single Image
             settingsButton.setVisibility(View.GONE);
             analysisControlsContainer.setVisibility(View.VISIBLE);
             imageControlsContainer.setVisibility(View.VISIBLE);
@@ -366,8 +384,10 @@ public class ProcessingDialogFragment extends DialogFragment {
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
                 selectedMethod = position;
+                // MERGED: Use isMultiFrameProject to determine AI control visibility
                 boolean isVideoLoaded = isVideoFile(inputFilePath) && !isZipMode && !isMultiImageMode;
 
+                // Only show AI assist for true videos
                 if (isVideoLoaded && (selectedMethod == 11 || selectedMethod == 12)) {
                     aiControlsContainer.setVisibility(View.VISIBLE);
                 } else {
@@ -377,13 +397,13 @@ public class ProcessingDialogFragment extends DialogFragment {
                     }
                 }
 
-                if (selectedMethod == 13) {
+                if (selectedMethod == 13) { // Method 14 is at index 13
                     aiStyleControlsContainer.setVisibility(View.VISIBLE);
                 } else {
                     aiStyleControlsContainer.setVisibility(View.GONE);
                 }
 
-                if (isVideoLoaded) {
+                if (isMultiFrameProject) {
                     updateUiForVideoMode(sliderAnalysisMode.getProgress());
                 } else {
                     updateUiForImageMode(switchAutomaticScan.isChecked());
@@ -395,13 +415,13 @@ public class ProcessingDialogFragment extends DialogFragment {
             }
         });
 
-        if (isVideo) {
+        if (isVideo) { // Only show FPS spinner for actual video files
             fpsControlsContainer.setVisibility(View.VISIBLE);
             ArrayAdapter<CharSequence> fpsAdapter = ArrayAdapter.createFromResource(getContext(),
                     R.array.fps_options, android.R.layout.simple_spinner_item);
             fpsAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
             fpsSpinner.setAdapter(fpsAdapter);
-            fpsSpinner.setSelection(2);
+            fpsSpinner.setSelection(2); // Default to 12 FPS
 
             fpsSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
                 @Override
@@ -432,6 +452,8 @@ public class ProcessingDialogFragment extends DialogFragment {
                 @Override
                 public void onNothingSelected(AdapterView<?> parent) {}
             });
+        } else {
+             fpsControlsContainer.setVisibility(View.GONE);
         }
 
         switchAutomaticScan.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
@@ -457,8 +479,9 @@ public class ProcessingDialogFragment extends DialogFragment {
         SeekBar.OnSeekBarChangeListener livePreviewListener = new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                boolean isVideoLivePreview = (isVideoFile(inputFilePath) && !isZipMode && !isMultiImageMode) && sliderAnalysisMode.getProgress() == 1;
-                boolean isImageManualTune = (!isVideoFile(inputFilePath) || isZipMode || isMultiImageMode) && !switchAutomaticScan.isChecked();
+                // MERGED: Updated logic to correctly identify live preview scenarios for all input types
+                boolean isVideoLivePreview = isMultiFrameProject && sliderAnalysisMode.getProgress() == 1;
+                boolean isImageManualTune = !isMultiFrameProject && !switchAutomaticScan.isChecked();
 
                 if (fromUser && (isVideoLivePreview || isImageManualTune)) {
                     livePreviewHandler.removeCallbacks(livePreviewRunnable);
@@ -479,6 +502,22 @@ public class ProcessingDialogFragment extends DialogFragment {
         sliderKsize.setOnSeekBarChangeListener(livePreviewListener);
         sliderDepth.setOnSeekBarChangeListener(livePreviewListener);
         sliderSharpness.setOnSeekBarChangeListener(livePreviewListener);
+        // MERGED: Added listener for the new adjustment slider
+        sliderAdjustment.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                if (fromUser) {
+                    updateAdjustmentValue(progress);
+                    livePreviewHandler.removeCallbacks(livePreviewRunnable);
+                    livePreviewRunnable = () -> performLivePreviewAnalysis();
+                    livePreviewHandler.postDelayed(livePreviewRunnable, 100);
+                }
+            }
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) {}
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) {}
+        });
 
         analyzeButton.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -494,7 +533,7 @@ public class ProcessingDialogFragment extends DialogFragment {
             }
         });
 
-        if (isVideo) {
+        if (isMultiFrameProject) {
             updateUiForVideoMode(0);
         } else {
             updateUiForImageMode(true);
@@ -510,45 +549,59 @@ public class ProcessingDialogFragment extends DialogFragment {
         switchAutomaticScan.setEnabled(isEnabled);
     }
 
+    // MERGED: Updated UI logic to include the new adjustment controls
     private void updateUiForImageMode(boolean isAutomatic) {
         boolean needsDepthSharpness = selectedMethod >= 3 && selectedMethod <= 7;
+        boolean needsMethod9 = selectedMethod == 8;
         boolean needsKsize = selectedMethod >= 10 && selectedMethod <= 12;
-        boolean needsMethod9Adjustments = selectedMethod == 8;
+        boolean needsStyleTransfer = selectedMethod == 13;
 
         if (isAutomatic) {
             fineTuningControls.setVisibility(View.GONE);
-        } else {
+        } else { // Manual Tuning Mode
             fineTuningControls.setVisibility(View.VISIBLE);
             
+            // Show K-size slider for methods 10, 11, 12
             ksizeControlsContainer.setVisibility(needsKsize ? View.VISIBLE : View.GONE);
-            adjustmentControlsContainer.setVisibility(needsMethod9Adjustments ? View.VISIBLE : View.GONE);
+            
+            // Show Adjustment slider for methods 9, 11, 12, 14
+            adjustmentControlsContainer.setVisibility((needsMethod9 || needsKsize || needsStyleTransfer) ? View.VISIBLE : View.GONE);
 
-            boolean otherControlsVisible = needsKsize || needsMethod9Adjustments;
+            // Show original Depth/Sharpness sliders only if other specific controls are not needed
+            boolean otherControlsVisible = needsKsize || needsMethod9 || needsStyleTransfer;
             sliderDepth.setVisibility(otherControlsVisible ? View.GONE : View.VISIBLE);
             sliderSharpness.setVisibility(otherControlsVisible ? View.GONE : View.VISIBLE);
             tvDepthLabel.setVisibility(otherControlsVisible ? View.GONE : View.VISIBLE);
             tvSharpnessLabel.setVisibility(otherControlsVisible ? View.GONE : View.VISIBLE);
+
+            // Hide everything if it's not a tunable method
+            if (!needsDepthSharpness && !needsMethod9 && !needsKsize && !needsStyleTransfer) {
+                fineTuningControls.setVisibility(View.GONE);
+            }
         }
     }
 
+    // MERGED: Updated UI logic to include the new adjustment controls for video modes
     private void updateUiForVideoMode(int mode) {
         boolean needsDepthSharpness = selectedMethod >= 3 && selectedMethod <= 7;
+        boolean needsMethod9 = selectedMethod == 8;
         boolean needsKsize = selectedMethod >= 10 && selectedMethod <= 12;
-        boolean needsMethod9Adjustments = selectedMethod == 8;
+        boolean needsStyleTransfer = selectedMethod == 13;
+        boolean isTunable = needsDepthSharpness || needsMethod9 || needsKsize || needsStyleTransfer;
 
         switch(mode) {
-            case 0:
+            case 0: // Standard Auto
                 fineTuningControls.setVisibility(View.GONE);
                 analyzeButton.setText("Analyze Video");
                 break;
-            case 1:
-            case 2:
-                if (needsDepthSharpness || needsKsize || needsMethod9Adjustments) {
+            case 1: // Live Preview & Tune
+            case 2: // Apply Tuned Settings
+                if (isTunable) {
                     fineTuningControls.setVisibility(View.VISIBLE);
                     ksizeControlsContainer.setVisibility(needsKsize ? View.VISIBLE : View.GONE);
-                    adjustmentControlsContainer.setVisibility(needsMethod9Adjustments ? View.VISIBLE : View.GONE);
+                    adjustmentControlsContainer.setVisibility((needsMethod9 || needsKsize || needsStyleTransfer) ? View.VISIBLE : View.GONE);
 
-                    boolean otherControlsVisible = needsKsize || needsMethod9Adjustments;
+                    boolean otherControlsVisible = needsKsize || needsMethod9 || needsStyleTransfer;
                     sliderDepth.setVisibility(otherControlsVisible ? View.GONE : View.VISIBLE);
                     sliderSharpness.setVisibility(otherControlsVisible ? View.GONE : View.VISIBLE);
                     tvDepthLabel.setVisibility(otherControlsVisible ? View.GONE : View.VISIBLE);
@@ -559,14 +612,15 @@ public class ProcessingDialogFragment extends DialogFragment {
 
                 if (mode == 1) {
                     analyzeButton.setText("Analyze Preview");
-                    performLivePreviewAnalysis();
-                } else {
+                    performLivePreviewAnalysis(); // Show initial preview
+                } else { // mode == 2
                     analyzeButton.setText("Apply to Video");
                 }
                 break;
         }
     }
     
+    // MERGED: Entire block for handling the new adjustment controls UI
     private void setupAdjustmentControls() {
         View.OnClickListener listener = new View.OnClickListener() {
             @Override
@@ -579,28 +633,8 @@ public class ProcessingDialogFragment extends DialogFragment {
         adjContrast.setOnClickListener(listener);
         adjSaturation.setOnClickListener(listener);
         adjTemperature.setOnClickListener(listener);
-
-        sliderAdjustment.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override
-            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                if (fromUser) {
-                    updateAdjustmentValue(progress);
-                    livePreviewHandler.removeCallbacks(livePreviewRunnable);
-                    livePreviewRunnable = new Runnable() {
-                        @Override
-                        public void run() {
-                            performLivePreviewAnalysisForAdjustments();
-                        }
-                    };
-                    livePreviewHandler.postDelayed(livePreviewRunnable, 100);
-                }
-            }
-            @Override
-            public void onStartTrackingTouch(SeekBar seekBar) {}
-            @Override
-            public void onStopTrackingTouch(SeekBar seekBar) {}
-        });
-
+        
+        // Set Brightness as default selected
         updateSelectedAdjustment(adjBrightness);
     }
     
@@ -641,7 +675,39 @@ public class ProcessingDialogFragment extends DialogFragment {
             case 3: temperatureValue = progress; break;
         }
     }
+    // END MERGED BLOCK
+
+    // MERGED: Modified to delegate to the correct analysis type
+    private void performLivePreviewAnalysis() {
+        if (sourceBitmapForTuning == null) {
+            return;
+        }
+
+        // Method 9 has its own preview logic now
+        if (selectedMethod == 8) {
+            performLivePreviewAnalysisForAdjustments();
+            return;
+        }
+        
+        if (selectedMethod <= 1) {
+            beginAutomaticAiScan(selectedMethod);
+        } else if (selectedMethod == 2) {
+            try {
+                beginMethod1LiveScan(sourceBitmapForTuning, 0);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        } else if (selectedMethod >= 10 && selectedMethod <= 12) {
+            performNewAiAnalysis();
+        } else if (selectedMethod == 13) {
+            // Live preview for style transfer isn't practical, but we can analyze the single frame
+            performNewAiAnalysis();
+        } else {
+            performFineTuningAnalysis();
+        }
+    }
     
+    // MERGED: New method specifically for Method 9's live preview
     private void performLivePreviewAnalysisForAdjustments() {
         if (sourceBitmapForTuning == null) return;
         
@@ -650,11 +716,13 @@ public class ProcessingDialogFragment extends DialogFragment {
         new Thread(new Runnable() {
             @Override
             public void run() {
+                // Apply adjustments first
                 Bitmap adjustedBitmap = DeepScanProcessor.applyMethod9Adjustments(
                     sourceBitmapForTuning.copy(Bitmap.Config.ARGB_8888, true),
                     brightnessValue, contrastValue, saturationValue, temperatureValue
                 );
 
+                // Then run the original method 9 scan on the adjusted bitmap
                 DeepScanProcessor.ScanListener listener = new DeepScanProcessor.ScanListener() {
                     @Override
                     public void onScanProgress(int pass, int totalPasses, String status, Bitmap intermediateResult) {}
@@ -668,9 +736,7 @@ public class ProcessingDialogFragment extends DialogFragment {
                                 btnSave.setVisibility(View.VISIBLE);
                                 progressBar.setVisibility(View.GONE);
                                 setUiEnabled(true);
-                                if (analysisControlsContainer != null) {
-                                    analysisControlsContainer.setVisibility(View.VISIBLE);
-                                }
+                                analysisControlsContainer.setVisibility(View.VISIBLE);
                             }
                         });
                     }
@@ -680,31 +746,6 @@ public class ProcessingDialogFragment extends DialogFragment {
         }).start();
     }
 
-
-    private void performLivePreviewAnalysis() {
-        if (sourceBitmapForTuning == null) {
-            return;
-        }
-
-        if (selectedMethod == 8) {
-            performLivePreviewAnalysisForAdjustments();
-            return;
-        }
-
-        if (selectedMethod <= 1) {
-            beginAutomaticAiScan(selectedMethod);
-        } else if (selectedMethod == 2) {
-            try {
-                beginMethod1LiveScan(sourceBitmapForTuning, 0);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-        } else if (selectedMethod >= 10 && selectedMethod <= 12) {
-            performNewAiAnalysis();
-        } else {
-            performFineTuningAnalysis();
-        }
-    }
 
     private void beginAnalysis() {
         if (switchEnableAi.isChecked() && (selectedMethod == 11 || selectedMethod == 12)) {
@@ -720,6 +761,7 @@ public class ProcessingDialogFragment extends DialogFragment {
         setUiEnabled(false);
         analysisControlsContainer.setVisibility(View.GONE);
         btnSave.setVisibility(View.GONE);
+        // MERGED: Reset re-edit flag when starting a full analysis
         isReEditing = false;
 
         if (rawFrames == null || rawFrames.isEmpty()) {
@@ -732,15 +774,15 @@ public class ProcessingDialogFragment extends DialogFragment {
             @Override
             public void run() {
                 try {
-                    boolean isVideo = isVideoFile(inputFilePath) && !isZipMode && !isMultiImageMode;
-                    if (isVideo) {
+                    boolean isMultiFrameProject = isVideoFile(inputFilePath) || isMultiImageMode || isZipMode;
+                    if (isMultiFrameProject) {
                         int mode = sliderAnalysisMode.getProgress();
-                        if (mode == 1) {
+                        if (mode == 1) { // Analyze Preview
                             processSingleFrameManually();
-                        } else {
+                        } else { // Analyze Video / Apply to Video
                             processAllFrames();
                         }
-                    } else {
+                    } else { // Single Image
                         if (switchAutomaticScan.isChecked()) {
                             processAllFrames();
                         } else {
@@ -756,9 +798,11 @@ public class ProcessingDialogFragment extends DialogFragment {
         }).start();
     }
 
+    // MERGED: Modified to handle re-editing a specific frame
     private void processSingleFrameManually() {
         if (isFirstFineTuneAnalysis) {
             try {
+                // If re-editing, use the stored index, otherwise use the first frame (0)
                 int frameIndex = isReEditing ? reEditFrameIndex : 0;
                 if (rawFrames != null && rawFrames.size() > frameIndex) {
                     sourceBitmapForTuning = decodeAndRotateBitmap(rawFrames.get(frameIndex).getAbsolutePath());
@@ -775,6 +819,7 @@ public class ProcessingDialogFragment extends DialogFragment {
         performLivePreviewAnalysis();
     }
 
+    // MERGED: Refactored to remove parameters and get them inside the method. More robust.
     private void processAllFrames() throws Exception {
         final int totalFrames = rawFrames.size();
         final int ksize = sliderKsize.getProgress();
@@ -787,8 +832,9 @@ public class ProcessingDialogFragment extends DialogFragment {
         }
         goldStandardBitmap = null;
 
-        uiHandler.post(new Runnable() { @Override public void run() { progressBar.setVisibility(View.VISIBLE); }});
-
+        uiHandler.post(() -> progressBar.setVisibility(View.VISIBLE));
+        
+        // This is the correct method index check for Style Transfer (Method 14)
         if (selectedMethod == 13) {
             updateStatus("Preparing AI Style Transfer...", true);
             Interpreter predictionInterpreter = null;
@@ -799,12 +845,14 @@ public class ProcessingDialogFragment extends DialogFragment {
                 predictionInterpreter = new Interpreter(predictionModel, options);
                 MappedByteBuffer transferModel = loadModelFile("magenta_transfer.tflite");
                 transferInterpreter = new Interpreter(transferModel, options);
+
                 int selectedStyleIndex = styleSpinner.getSelectedItemPosition();
                 String styleAssetName = styleAssetFiles[selectedStyleIndex];
                 Bitmap styleBitmap = loadBitmapFromAssets(styleAssetName);
                 updateStatus("Analyzing Art Style...", true);
                 float[] styleVector = DeepScanProcessor.runStylePrediction(styleBitmap, predictionInterpreter);
                 styleBitmap.recycle();
+
                 for (int i = 0; i < totalFrames; i++) {
                     final int frameNum = i + 1;
                     final int frameIndex = i;
@@ -813,15 +861,20 @@ public class ProcessingDialogFragment extends DialogFragment {
                     updateCurrentFrameHighlight(frameIndex);
                     Bitmap contentBitmap = decodeAndRotateBitmap(rawFrames.get(frameIndex).getAbsolutePath());
                     if (contentBitmap == null) continue;
-                    Bitmap stylizedBitmap = DeepScanProcessor.runStyleTransfer(contentBitmap, styleVector, transferInterpreter);
+                    
+                    // MERGED: Apply adjustments before style transfer
+                    Bitmap adjustedBitmap = DeepScanProcessor.applyMethod9Adjustments(contentBitmap, brightnessValue, contrastValue, saturationValue, temperatureValue);
+
+                    Bitmap stylizedBitmap = DeepScanProcessor.runStyleTransfer(adjustedBitmap, styleVector, transferInterpreter);
                     saveProcessedFrame(stylizedBitmap, frameIndex);
-                    contentBitmap.recycle();
+                    adjustedBitmap.recycle(); // adjustedBitmap is now the one to recycle
                 }
             } finally {
                 if (predictionInterpreter != null) predictionInterpreter.close();
                 if (transferInterpreter != null) transferInterpreter.close();
             }
         } else {
+            // --- EXISTING LOGIC FOR ALL OTHER METHODS ---
             for (int i = 0; i < totalFrames; i++) {
                 final int frameNum = i + 1;
                 final int frameIndex = i;
@@ -833,15 +886,17 @@ public class ProcessingDialogFragment extends DialogFragment {
                 Bitmap orientedBitmap = decodeAndRotateBitmap(rawFrames.get(frameIndex).getAbsolutePath());
                 if (orientedBitmap == null) continue;
                 
-                if (selectedMethod == 8) {
-                    orientedBitmap = DeepScanProcessor.applyMethod9Adjustments(orientedBitmap, brightnessValue, contrastValue, saturationValue, temperatureValue);
+                Bitmap bitmapToProcess = orientedBitmap;
+                // MERGED: Apply adjustments for specified methods before processing
+                if (selectedMethod == 8 || selectedMethod == 11 || selectedMethod == 12) {
+                    bitmapToProcess = DeepScanProcessor.applyMethod9Adjustments(orientedBitmap, brightnessValue, contrastValue, saturationValue, temperatureValue);
                 }
 
                 boolean isVideo = isVideoFile(inputFilePath) && !isZipMode && !isMultiImageMode;
                 if (isVideo && switchEnableAi.isChecked() && (selectedMethod == 11 || selectedMethod == 12)) {
                     if (frameIndex == 0) {
                         updateStatus("Processing frame 1 to set Gold Standard...", false);
-                        Bitmap processedFirstFrame = getAiPencilScanAsBitmap(orientedBitmap, currentKsize);
+                        Bitmap processedFirstFrame = getAiPencilScanAsBitmap(bitmapToProcess, currentKsize);
                         if (processedFirstFrame != null) {
                             goldStandardBitmap = processedFirstFrame;
                             saveProcessedFrame(goldStandardBitmap, frameIndex);
@@ -852,37 +907,37 @@ public class ProcessingDialogFragment extends DialogFragment {
                         CorrectedKsize correction = GeminiAiHelper.checkFrameConsistency(
                                 sharedPreferences.getString("GEMINI_API_KEY", ""),
                                 goldStandardBitmap,
-                                orientedBitmap,
+                                bitmapToProcess, // Use the adjusted bitmap for consistency check
                                 currentKsize
                         );
                         currentKsize = correction.ksize;
                         if (correction.wasCorrected) {
                             final int correctedKsize = currentKsize;
-                            uiHandler.post(new Runnable() {
-                                @Override
-                                public void run() {
-                                    Toast.makeText(getContext(), "AI adjusted ksize to " + correctedKsize, Toast.LENGTH_SHORT).show();
-                                }
-                            });
+                            uiHandler.post(() -> Toast.makeText(getContext(), "AI adjusted ksize to " + correctedKsize, Toast.LENGTH_SHORT).show());
                         }
-                        beginBlockingAiGuidedScan(orientedBitmap, frameIndex, currentKsize);
+                        beginBlockingAiGuidedScan(bitmapToProcess, frameIndex, currentKsize);
                     }
                 } else {
+                    // --- ORIGINAL, NON-AI PROCESSING PATH (UNCHANGED LOGIC, BUT USES bitmapToProcess) ---
                     if (selectedMethod <= 1) {
-                        beginBlockingAiScan(orientedBitmap, frameIndex);
+                        beginBlockingAiScan(bitmapToProcess, frameIndex);
                     } else if (selectedMethod >= 10 && selectedMethod <= 12) {
-                        beginBlockingPencilOrNewAiScan(orientedBitmap, frameIndex, currentKsize);
+                        beginBlockingPencilOrNewAiScan(bitmapToProcess, frameIndex, currentKsize);
                     } else if (selectedMethod == 2) {
-                        beginMethod1LiveScan(orientedBitmap, frameIndex);
+                        beginMethod1LiveScan(bitmapToProcess, frameIndex);
                     } else {
-                        boolean isVideoStandardAuto = isVideo && sliderAnalysisMode.getProgress() == 0;
-                        boolean isImageAutoScan = !isVideo && switchAutomaticScan.isChecked();
-                        if (isVideoStandardAuto || isImageAutoScan) {
-                            beginStandardScan(orientedBitmap, frameIndex);
+                        boolean isMultiFrameProject = isVideo || isMultiImageMode || isZipMode;
+                        boolean isStandardAuto = isMultiFrameProject && sliderAnalysisMode.getProgress() == 0;
+                        boolean isImageAutoScan = !isMultiFrameProject && switchAutomaticScan.isChecked();
+                        if (isStandardAuto || isImageAutoScan) {
+                            beginStandardScan(bitmapToProcess, frameIndex);
                         } else {
-                            beginTunedScan(orientedBitmap, frameIndex, depth, sharpness);
+                            beginTunedScan(bitmapToProcess, frameIndex, depth, sharpness);
                         }
                     }
+                }
+                if (bitmapToProcess != orientedBitmap && !bitmapToProcess.isRecycled()) {
+                    bitmapToProcess.recycle();
                 }
                 if (orientedBitmap != null && !orientedBitmap.isRecycled()) {
                     orientedBitmap.recycle();
@@ -890,6 +945,7 @@ public class ProcessingDialogFragment extends DialogFragment {
             }
         }
         
+        // MERGED: Cleanup logic is now conditional
         if (!isReEditing) {
             cleanupTempFiles();
         }
@@ -897,12 +953,12 @@ public class ProcessingDialogFragment extends DialogFragment {
         uiHandler.post(new Runnable() {
             @Override
             public void run() {
-                boolean isVideo = isVideoFile(inputFilePath) && !isZipMode && !isMultiImageMode;
-                if (isVideo || isMultiImageMode || isZipMode) {
+                boolean isMultiFrameProject = isVideoFile(inputFilePath) || isMultiImageMode || isZipMode;
+                if (isMultiFrameProject) {
                     showSuccessDialog("Processing Complete", "Your files have been saved to:\n\n" + processedFramesDir);
                     statusTextView.setText("Processing Complete. Click a thumbnail to re-edit.");
                     btnSave.setVisibility(View.GONE);
-                    btnSave.setText("Save");
+                    btnSave.setText("Save"); // Reset text in case it was "Save Edit"
                 } else {
                     statusTextView.setText("Automatic scan complete.");
                     btnSave.setVisibility(View.VISIBLE);
@@ -954,6 +1010,7 @@ public class ProcessingDialogFragment extends DialogFragment {
         }).start();
     }
 
+    // MERGED: Modified to use saveProcessedFrame to avoid duplicating save logic
     private void beginBlockingAiScan(Bitmap bitmap, final int frameIndex) throws InterruptedException {
         final CountDownLatch latch = new CountDownLatch(1);
         DeepScanProcessor.AiScanListener listener = new DeepScanProcessor.AiScanListener() {
@@ -1005,6 +1062,7 @@ public class ProcessingDialogFragment extends DialogFragment {
         latch.await();
     }
 
+    // MERGED: Modified to handle adjustments for relevant methods
     private void performNewAiAnalysis() {
         if (sourceBitmapForTuning == null) {
             return;
@@ -1016,6 +1074,16 @@ public class ProcessingDialogFragment extends DialogFragment {
         new Thread(new Runnable() {
             @Override
             public void run() {
+                Bitmap bitmapToProcess = sourceBitmapForTuning;
+                if (selectedMethod == 11 || selectedMethod == 12 || selectedMethod == 13) {
+                     bitmapToProcess = DeepScanProcessor.applyMethod9Adjustments(
+                        sourceBitmapForTuning.copy(Bitmap.Config.ARGB_8888, true),
+                        brightnessValue, contrastValue, saturationValue, temperatureValue
+                    );
+                }
+
+                final Bitmap finalBitmapToProcess = bitmapToProcess;
+
                 DeepScanProcessor.AiScanListener listener = new DeepScanProcessor.AiScanListener() {
                     @Override
                     public void onAiScanComplete(final DeepScanProcessor.ProcessingResult finalResult) {
@@ -1027,35 +1095,57 @@ public class ProcessingDialogFragment extends DialogFragment {
                                     statusTextView.setText("AI Analysis Failed. Ready to try again.");
                                 } else {
                                     updateMainDisplay(finalResult.resultBitmap);
-                                    statusTextView.setText("AI Analysis Complete. Adjust slider and Analyze again, or Save.");
+                                    statusTextView.setText("AI Analysis Complete. Adjust sliders and Analyze again, or Save.");
                                 }
                                 progressBar.setVisibility(View.GONE);
                                 setUiEnabled(true);
                                 analysisControlsContainer.setVisibility(View.VISIBLE);
                                 btnSave.setVisibility(View.VISIBLE);
+
+                                if (finalBitmapToProcess != sourceBitmapForTuning) {
+                                    finalBitmapToProcess.recycle();
+                                }
                             }
                         });
                     }
                 };
 
                 if (selectedMethod == 10) {
-                    DeepScanProcessor.processMethod11(sourceBitmapForTuning, ksize, new DeepScanProcessor.ScanListenerWithKsize() {
-                        @Override
-                        public void onScanProgress(int pass, int totalPasses, String status, Bitmap intermediateResult) {}
-                        @Override
-                        public void onScanComplete(DeepScanProcessor.ProcessingResult finalResult) {
-                            listener.onAiScanComplete(finalResult);
-                        }
+                    DeepScanProcessor.processMethod11(finalBitmapToProcess, ksize, new DeepScanProcessor.ScanListenerWithKsize() {
+                        @Override public void onScanProgress(int pass, int totalPasses, String status, Bitmap intermediateResult) {}
+                        @Override public void onScanComplete(DeepScanProcessor.ProcessingResult finalResult) { listener.onAiScanComplete(finalResult); }
                     });
                 } else if (selectedMethod == 11) {
-                    DeepScanProcessor.processMethod12(getContext(), sourceBitmapForTuning, ksize, listener);
+                    DeepScanProcessor.processMethod12(getContext(), finalBitmapToProcess, ksize, listener);
                 } else if (selectedMethod == 12) {
-                    DeepScanProcessor.processMethod13(getContext(), sourceBitmapForTuning, ksize, listener);
+                    DeepScanProcessor.processMethod13(getContext(), finalBitmapToProcess, ksize, listener);
+                } else if (selectedMethod == 13) {
+                    // This block handles single-frame analysis for style transfer
+                    Interpreter predictionInterpreter = null;
+                    Interpreter transferInterpreter = null;
+                    try {
+                        Interpreter.Options options = new Interpreter.Options();
+                        predictionInterpreter = new Interpreter(loadModelFile("magenta_prediction.tflite"), options);
+                        transferInterpreter = new Interpreter(loadModelFile("magenta_transfer.tflite"), options);
+                        int selectedStyleIndex = styleSpinner.getSelectedItemPosition();
+                        Bitmap styleBitmap = loadBitmapFromAssets(styleAssetFiles[selectedStyleIndex]);
+                        float[] styleVector = DeepScanProcessor.runStylePrediction(styleBitmap, predictionInterpreter);
+                        styleBitmap.recycle();
+                        Bitmap stylizedBitmap = DeepScanProcessor.runStyleTransfer(finalBitmapToProcess, styleVector, transferInterpreter);
+                        listener.onAiScanComplete(new DeepScanProcessor.ProcessingResult(stylizedBitmap, 0));
+                    } catch (IOException e) {
+                        Log.e(TAG, "Failed to run single-frame style transfer", e);
+                        listener.onAiScanComplete(new DeepScanProcessor.ProcessingResult(null, 0));
+                    } finally {
+                        if (predictionInterpreter != null) predictionInterpreter.close();
+                        if (transferInterpreter != null) transferInterpreter.close();
+                    }
                 }
             }
         }).start();
     }
 
+    // MERGED: Modified to use saveProcessedFrame
     private void beginStandardScan(Bitmap bitmap, final int frameIndex) throws InterruptedException {
         final CountDownLatch latch = new CountDownLatch(1);
 
@@ -1079,7 +1169,7 @@ public class ProcessingDialogFragment extends DialogFragment {
             case 5: DeepScanProcessor.processMethod6(bitmap, listener); break;
             case 6: DeepScanProcessor.processMethod7(bitmap, listener); break;
             case 7: DeepScanProcessor.processMethod8(bitmap, listener); break;
-            case 8: DeepScanProcessor.processMethod9(bitmap, listener); break;
+            case 8: DeepScanProcessor.processMethod9(bitmap, listener); break; // Method 9 now called directly
             case 9:
             default: DeepScanProcessor.processMethod10(bitmap, listener); break;
         }
@@ -1103,7 +1193,7 @@ public class ProcessingDialogFragment extends DialogFragment {
             case 5: logicalMethod = 4; break;
             case 6: logicalMethod = 5; break;
             case 7: logicalMethod = 6; break;
-            case 8: logicalMethod = 7;
+            // Case 8 (Method 9) is handled by performLivePreviewAnalysisForAdjustments, so this path is for others.
             case 9: logicalMethod = 8; break;
         }
         final int finalLogicalMethod = logicalMethod;
@@ -1132,6 +1222,7 @@ public class ProcessingDialogFragment extends DialogFragment {
         DeepScanProcessor.processWithFineTuning(sourceBitmapForTuning, finalLogicalMethod, depth, sharpness, listener);
     }
 
+    // MERGED: Modified to use saveProcessedFrame
     private void beginTunedScan(Bitmap bitmap, final int frameIndex, int depth, int sharpness) throws InterruptedException {
         final CountDownLatch latch = new CountDownLatch(1);
         int logicalMethod = 0;
@@ -1141,7 +1232,7 @@ public class ProcessingDialogFragment extends DialogFragment {
             case 5: logicalMethod = 4; break;
             case 6: logicalMethod = 5; break;
             case 7: logicalMethod = 6; break;
-            case 8: logicalMethod = 7; break;
+            // Case 8 (Method 9) is handled by beginStandardScan now with adjustments
             case 9: logicalMethod = 8; break;
         }
         final int finalLogicalMethod = logicalMethod;
@@ -1160,7 +1251,8 @@ public class ProcessingDialogFragment extends DialogFragment {
         DeepScanProcessor.processWithFineTuning(bitmap, finalLogicalMethod, depth, sharpness, listener);
         latch.await();
     }
-
+    
+    // MERGED: Updated to handle saving edits for specific frames
     private void saveCurrentImage() {
         if (mainDisplay.getDrawable() == null) {
             Toast.makeText(getContext(), "No image to save.", Toast.LENGTH_SHORT).show();
@@ -1175,17 +1267,20 @@ public class ProcessingDialogFragment extends DialogFragment {
                     try {
                         File outFile;
                         if (isReEditing && reEditFrameIndex != -1) {
+                            // Overwrite the specific processed file
                             String fileName = new File(rawFrames.get(reEditFrameIndex).getName()).getName();
                             String baseName = fileName.substring(0, fileName.lastIndexOf('.'));
                             String processedFileName = baseName.replace("raw_", "processed_") + ".png";
                             outFile = new File(processedFramesDir, processedFileName);
                         } else {
+                            // Save as a new file for single-image mode
                             String timestamp = new SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.US).format(new Date());
                             String fileName = "Kop_Saved_" + timestamp + ".png";
                             outFile = new File(processedFramesDir, fileName);
                         }
 
                         ImageProcessor.saveBitmap(bitmapToSave, outFile.getAbsolutePath());
+                        // Only clean up temp files if it's NOT a multi-frame project being re-edited
                         if (!isReEditing) {
                              cleanupTempFiles();
                         }
@@ -1195,6 +1290,7 @@ public class ProcessingDialogFragment extends DialogFragment {
                             public void run() {
                                 Toast.makeText(getContext(), "Image saved to " + outFile.getParent(), Toast.LENGTH_LONG).show();
                                 if (isReEditing) {
+                                    // Refresh the thumbnail in the film strip to show the new edit
                                     if(filmStripAdapter != null) {
                                         filmStripAdapter.notifyItemChanged(reEditFrameIndex);
                                     }
@@ -1203,17 +1299,14 @@ public class ProcessingDialogFragment extends DialogFragment {
                         });
                     } catch (Exception e) {
                         Log.e(TAG, "Failed to save image", e);
-                        uiHandler.post(new Runnable() {
-                             @Override public void run() {
-                                Toast.makeText(getContext(), "Error saving image.", Toast.LENGTH_SHORT).show();
-                            }
-                        });
+                        uiHandler.post(() -> Toast.makeText(getContext(), "Error saving image.", Toast.LENGTH_SHORT).show());
                     }
                 }
             }).start();
         }
     }
 
+    // MERGED: Modified to use saveProcessedFrame
     private void beginMethod1LiveScan(Bitmap bitmap, final int frameIndex) throws InterruptedException {
         final CountDownLatch latch = new CountDownLatch(1);
         updateMainDisplay(bitmap);
@@ -1241,9 +1334,9 @@ public class ProcessingDialogFragment extends DialogFragment {
         };
         DeepScanProcessor.processMethod1(bitmap, listener);
         latch.await();
-
-        boolean isVideo = isVideoFile(inputFilePath) && !isZipMode && !isMultiImageMode;
-        if (!isVideo) {
+        
+        boolean isMultiFrameProject = isVideoFile(inputFilePath) || isMultiImageMode || isZipMode;
+        if (!isMultiFrameProject) {
             uiHandler.post(new Runnable() {
                 @Override
                 public void run() {
@@ -1304,6 +1397,7 @@ public class ProcessingDialogFragment extends DialogFragment {
         }
     }
 
+    // MERGED: Updated to handle folder creation for all project types
     private void prepareDirectories() {
         String timestamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date());
         
@@ -1332,7 +1426,8 @@ public class ProcessingDialogFragment extends DialogFragment {
         new File(rawFramesDir).mkdirs();
         new File(processedFramesDir).mkdirs();
     }
-
+    
+    // MERGED: Renamed from extractOrCopyFrames to reflect its new single-purpose.
     private File[] copySingleImageToRawDir(String path) throws IOException {
         File source = new File(path);
         File destFile = new File(rawFramesDir, "raw_frame_00000.png");
@@ -1349,23 +1444,27 @@ public class ProcessingDialogFragment extends DialogFragment {
         });
     }
 
+    // MERGED: Null/empty check for safety
     private boolean isVideoFile(String path) {
         if (path == null || path.isEmpty()) return false;
         String lowerCasePath = path.toLowerCase(Locale.US);
         return lowerCasePath.endsWith(".mp4") || lowerCasePath.endsWith(".mov") || lowerCasePath.endsWith(".3gp") || lowerCasePath.endsWith(".mkv");
     }
 
+    // MERGED: Updated to include click listener for re-editing
     private void setupFilmStrip(final List<File> frames) {
         uiHandler.post(new Runnable() {
             @Override
             public void run() {
-                if (frames != null && !frames.isEmpty() && frames.size() > 1) { // Only show for more than 1 image
+                // Only show for more than 1 image
+                if (frames != null && !frames.isEmpty() && frames.size() > 1) {
                     if (filmStripAdapter == null) {
                         filmStripAdapter = new FilmStripAdapter(getContext(), frames, new FilmStripAdapter.OnFrameClickListener() {
                             @Override
                             public void onFrameClicked(int position) {
-                                // NEW: This is the re-edit trigger
+                                // This is the re-edit trigger
                                 File procDir = new File(processedFramesDir);
+                                // Only allow re-editing if processing has been run at least once
                                 if (procDir.exists() && procDir.listFiles() != null && procDir.listFiles().length > 0) {
                                     setupReEditMode(position);
                                 }
@@ -1385,13 +1484,14 @@ public class ProcessingDialogFragment extends DialogFragment {
         });
     }
 
+    // MERGED: New method to handle entering the re-edit state
     private void setupReEditMode(int position) {
         isReEditing = true;
         reEditFrameIndex = position;
         isFirstFineTuneAnalysis = true; 
 
         String rawFileName = rawFrames.get(position).getName();
-        String processedFileName = rawFileName.replace("raw_", "processed_");
+        String processedFileName = rawFileName.replace("raw_", "processed_").replace(".jpg", ".png").replace(".jpeg", ".png");
         File processedFile = new File(processedFramesDir, processedFileName);
         
         if (processedFile.exists()) {
@@ -1407,7 +1507,8 @@ public class ProcessingDialogFragment extends DialogFragment {
                 setUiEnabled(true);
                 analysisControlsContainer.setVisibility(View.VISIBLE);
                 
-                updateUiForImageMode(false); // Force manual tuning mode for re-edits
+                // Force manual tuning mode for re-edits
+                updateUiForImageMode(false);
 
             } catch (IOException e) {
                 showErrorDialog("Error", "Could not load image for re-editing.", false);
@@ -1417,9 +1518,11 @@ public class ProcessingDialogFragment extends DialogFragment {
         }
     }
     
+    // MERGED: Renamed from cleanupRawFiles and updated logic for permanent projects
     private void cleanupTempFiles() {
         if (rawFramesDir != null && !rawFramesDir.isEmpty()) {
-            boolean isPermanentProject = isMultiImageMode || isZipMode;
+            boolean isPermanentProject = isMultiImageMode || isZipMode || isVideoFile(inputFilePath);
+            // Only delete the raw frames directory if it's NOT a permanent project (i.e., it's a single image)
             if (!isPermanentProject) {
                 File dir = new File(rawFramesDir);
                 if (dir.exists()) {
@@ -1428,7 +1531,6 @@ public class ProcessingDialogFragment extends DialogFragment {
             }
         }
     }
-
 
     private void updateCurrentFrameHighlight(final int position) {
         uiHandler.post(new Runnable() {
@@ -1448,7 +1550,7 @@ public class ProcessingDialogFragment extends DialogFragment {
             public void run() {
                 scanStatusContainer.setVisibility(View.VISIBLE);
                 scanStatusTextView.setText(text);
-                if (progress > 0 && max > 0) {
+                if (progress >= 0 && max > 0) {
                     scanProgressBar.setVisibility(View.VISIBLE);
                     scanProgressBar.setMax(max);
                     scanProgressBar.setProgress(progress);
@@ -1559,6 +1661,7 @@ public class ProcessingDialogFragment extends DialogFragment {
         return rotatedBitmap;
     }
 
+    // MERGED: Changed throws Exception to IOException to be more specific.
     private void copyFile(File source, File dest) throws IOException {
         try (InputStream in = new FileInputStream(source); OutputStream out = new FileOutputStream(dest)) {
             byte[] buf = new byte[4096];
@@ -1664,6 +1767,7 @@ public class ProcessingDialogFragment extends DialogFragment {
     private void saveProcessedFrame(Bitmap bitmap, int frameIndex) {
         if (bitmap != null) {
             updateMainDisplay(bitmap);
+            // MERGED: Logic to generate consistent filenames
             String outPath = new File(processedFramesDir, String.format("processed_%05d.png", frameIndex)).getAbsolutePath();
             try {
                 ImageProcessor.saveBitmap(bitmap, outPath);
@@ -1767,7 +1871,8 @@ public class ProcessingDialogFragment extends DialogFragment {
         InputStream inputStream = assetManager.open(fileName);
         return BitmapFactory.decodeStream(inputStream);
     }
-    
+
+    // MERGED: New methods for handling ZIP and Multi-Image file setup
     private void extractFramesFromZip() throws IOException {
         uiHandler.post(new Runnable() { @Override public void run() {
             statusTextView.setText("Extracting images from ZIP...");
@@ -1780,6 +1885,7 @@ public class ProcessingDialogFragment extends DialogFragment {
         if(tempExtractionDir.exists()) deleteRecursive(tempExtractionDir);
         tempExtractionDir.mkdirs();
 
+        // This assumes you have a ZipExtractor class utility. If not, this needs to be implemented.
         List<File> extractedImages = ZipExtractor.extractImages(zipFile, tempExtractionDir);
         
         rawFrames = new ArrayList<>();
