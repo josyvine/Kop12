@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- CREATE NEW FILE: app/src/main/res/drawable/ic_saturation.xml -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="?attr/colorControlNormal">
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M12,22C6.48,22 2,17.52 2,12c0,-2.34 0.95,-4.55 2.5,-6.17L17.67,19.5C16.05,21.05 13.84,22 12,22zM19.5,6.33L6.33,19.5c1.63,1.55 3.84,2.5 6.17,2.5c4.97,0 9.5,-3.58 9.5,-8.5c0,-2.34 -0.95,-4.55 -2.5,-6.17zM12,4c-4.97,0 -9.5,3.58 -9.5,8.5c0,1.84 0.55,3.53 1.5,4.95L19.05,2.5C17.53,1.55 15.84,1 14,1c-0.74,0 -1.45,0.1 -2.13,0.27L12,4z"/>
+</vector>
