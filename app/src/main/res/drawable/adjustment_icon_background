@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- CREATE NEW FILE: app/src/main/res/drawable/adjustment_icon_background.xml -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- State when the view is selected (i.e., this is the active adjustment) -->
+    <item android:state_selected="true">
+        <shape android:shape="oval">
+            <solid android:color="#4F46E5" /> <!-- Accent color -->
+            <size android:width="32dp" android:height="32dp"/>
+        </shape>
+    </item>
+
+    <!-- Default state (not selected) -->
+    <item>
+        <shape android:shape="oval">
+            <solid android:color="#4A4A65" /> <!-- A neutral dark color -->
+            <size android:width="32dp" android:height="32dp"/>
+        </shape>
+    </item>
+</selector>
