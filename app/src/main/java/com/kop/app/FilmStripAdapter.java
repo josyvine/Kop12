@@ -3,7 +3,6 @@ package com.kop.app;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
-import android.graphics.Color;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -20,10 +19,19 @@ public class FilmStripAdapter extends RecyclerView.Adapter<FilmStripAdapter.Fram
     private Context context;
     private List<File> frameFiles;
     private int currentPosition = -1;
+    // NEW: Listener for re-editing clicks
+    private OnFrameClickListener clickListener;
 
-    public FilmStripAdapter(Context context, List<File> frameFiles) {
+    // NEW: Interface for click events
+    public interface OnFrameClickListener {
+        void onFrameClicked(int position);
+    }
+
+    // UPDATED: Constructor to accept the click listener
+    public FilmStripAdapter(Context context, List<File> frameFiles, OnFrameClickListener clickListener) {
         this.context = context;
         this.frameFiles = frameFiles;
+        this.clickListener = clickListener;
     }
 
     @NonNull
@@ -37,20 +45,31 @@ public class FilmStripAdapter extends RecyclerView.Adapter<FilmStripAdapter.Fram
     public void onBindViewHolder(@NonNull FrameViewHolder holder, int position) {
         File frameFile = frameFiles.get(position);
 
-        // Load a down-sampled bitmap to avoid using too much memory for thumbnails
         BitmapFactory.Options options = new BitmapFactory.Options();
-        options.inSampleSize = 4; // Load a quarter-sized image
+        options.inSampleSize = 4;
         Bitmap thumbnailBitmap = BitmapFactory.decodeFile(frameFile.getAbsolutePath(), options);
         holder.thumbnail.setImageBitmap(thumbnailBitmap);
 
-        // Highlight the currently processing frame
         if (position == currentPosition) {
             holder.highlight.setVisibility(View.VISIBLE);
-            // Using a more visible border color this time
             holder.highlight.setBackgroundResource(android.R.drawable.dialog_frame);
         } else {
             holder.highlight.setVisibility(View.GONE);
         }
+
+        // NEW: Set the click listener on the item view
+        holder.itemView.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (clickListener != null) {
+                    // Get the adapter position which is reliable inside a click listener
+                    int adapterPosition = holder.getAdapterPosition();
+                    if (adapterPosition != RecyclerView.NO_POSITION) {
+                        clickListener.onFrameClicked(adapterPosition);
+                    }
+                }
+            }
+        });
     }
 
     @Override
@@ -62,7 +81,6 @@ public class FilmStripAdapter extends RecyclerView.Adapter<FilmStripAdapter.Fram
         int previousPosition = this.currentPosition;
         this.currentPosition = position;
 
-        // Notify the adapter to redraw the previous and new current items
         if (previousPosition != -1) {
             notifyItemChanged(previousPosition);
         }
@@ -71,13 +89,11 @@ public class FilmStripAdapter extends RecyclerView.Adapter<FilmStripAdapter.Fram
         }
     }
 
-    // --- FIX: This is the corrected updateData method from your second file set ---
     public void updateData(List<File> newFrameFiles) {
         this.frameFiles = newFrameFiles;
-        this.currentPosition = -1; // Reset highlight when data changes
+        this.currentPosition = -1;
         notifyDataSetChanged();
     }
-    // --- FIX END ---
 
     public static class FrameViewHolder extends RecyclerView.ViewHolder {
         ImageView thumbnail;
