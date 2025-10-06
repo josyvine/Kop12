@@ -6,7 +6,7 @@
     android:layout_height="wrap_content"
     android:layout_margin="1dp">
 
-    <ImageView  
+    <ImageView
         android:id="@+id/iv_media_thumbnail"
         android:layout_width="match_parent"
         android:layout_height="120dp"
@@ -25,7 +25,7 @@
         <ImageView
             android:layout_width="48dp"
             android:layout_height="48dp"
-            android:src="@drawable/ic_folder"/> <!-- THIS IS THE FIX -->
+            android:src="@drawable/ic_folder"/>
 
         <TextView
             android:id="@+id/tv_folder_name"
@@ -49,6 +49,17 @@
         android:src="@android:drawable/ic_media_play"
         android:visibility="gone"
         android:contentDescription="Video indicator"/>
+
+    <!-- NEW: Icon to indicate a ZIP file -->
+    <ImageView
+        android:id="@+id/iv_zip_icon"
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:layout_gravity="bottom|end"
+        android:layout_margin="8dp"
+        android:src="@drawable/ic_zip_file"
+        android:visibility="gone"
+        android:contentDescription="ZIP file indicator"/>
 
     <FrameLayout
         android:id="@+id/selection_overlay"
