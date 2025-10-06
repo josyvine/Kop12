@@ -1,6 +1,6 @@
-package com.kop.app;  
+package com.kop.app;
 
-import androidx.appcompat.app.AlertDialog; 
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.fragment.app.Fragment;
 import androidx.fragment.app.FragmentTransaction;
@@ -27,6 +27,8 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.List;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -166,25 +168,31 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void showMediaTypeChooserDialog() {
+        // --- UPDATED METHOD ---
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle("Select Media Type");
+        
+        // Use an array to define the options
+        final CharSequence[] options = {"Image", "Video", "ZIP Archive"};
 
-        builder.setPositiveButton("Image", new DialogInterface.OnClickListener() {
+        builder.setItems(options, new DialogInterface.OnClickListener() {
             @Override
             public void onClick(DialogInterface dialog, int which) {
-                // FIX: Reference the constant from its new home in MediaPickerDialogFragment
-                launchMediaPicker(MediaPickerDialogFragment.MEDIA_TYPE_IMAGE);
+                switch (which) {
+                    case 0: // Image
+                        launchMediaPicker(MediaPickerDialogFragment.MEDIA_TYPE_IMAGE);
+                        break;
+                    case 1: // Video
+                        launchMediaPicker(MediaPickerDialogFragment.MEDIA_TYPE_VIDEO);
+                        break;
+                    case 2: // ZIP
+                        launchMediaPicker(MediaPickerDialogFragment.MEDIA_TYPE_ZIP);
+                        break;
+                }
             }
         });
-        builder.setNegativeButton("Video", new DialogInterface.OnClickListener() {
-            @Override
-            public void onClick(DialogInterface dialog, int which) {
-                // FIX: Reference the constant from its new home in MediaPickerDialogFragment
-                launchMediaPicker(MediaPickerDialogFragment.MEDIA_TYPE_VIDEO);
-            }
-        });
-        builder.setNeutralButton("Cancel", null);
 
+        builder.setNegativeButton("Cancel", null);
         AlertDialog dialog = builder.create();
         dialog.show();
     }
@@ -194,12 +202,20 @@ public class MainActivity extends AppCompatActivity {
         mediaPickerDialog.setOnMediaSelectedListener(new MediaPickerDialogFragment.OnMediaSelectedListener() {
             @Override
             public void onFileSelected(String filePath) {
-                // Hide the media picker
+                // This will be called for single file selections (Video, ZIP)
                 if (mediaPickerDialog != null && mediaPickerDialog.isAdded()) {
                     getSupportFragmentManager().beginTransaction().hide(mediaPickerDialog).commit();
                 }
-                // Launch the processing dialog
                 launchProcessingDialog(filePath);
+            }
+
+            @Override
+            public void onFilesSelected(List<String> filePaths) {
+                // This will be called for multi-image selections
+                if (mediaPickerDialog != null && mediaPickerDialog.isAdded()) {
+                    getSupportFragmentManager().beginTransaction().hide(mediaPickerDialog).commit();
+                }
+                launchProcessingDialogForMultiple(filePaths);
             }
         });
         mediaPickerDialog.show(getSupportFragmentManager(), MediaPickerDialogFragment.TAG);
@@ -225,11 +241,26 @@ public class MainActivity extends AppCompatActivity {
         processingDialog.show(getSupportFragmentManager(), ProcessingDialogFragment.TAG);
     }
 
-    // *** THIS METHOD IS NOW OBSOLETE AND HAS BEEN REMOVED ***
-    // private void launchCameraDialog() {
-    //     CameraDialogFragment cameraDialog = CameraDialogFragment.newInstance();
-    //     cameraDialog.show(getSupportFragmentManager(), "CameraDialogFragment");
-    // }
+    private void launchProcessingDialogForMultiple(List<String> filePaths) {
+        // --- NEW METHOD FOR MULTIPLE IMAGES ---
+        ProcessingDialogFragment processingDialog = ProcessingDialogFragment.newInstance(new ArrayList<>(filePaths));
+        processingDialog.setOnDialogClosedListener(new ProcessingDialogFragment.OnDialogClosedListener() {
+            @Override
+            public void onDialogClosed() {
+                 if (mediaPickerDialog != null) {
+                    FragmentTransaction ft = getSupportFragmentManager().beginTransaction();
+                    Fragment prev = getSupportFragmentManager().findFragmentByTag(ProcessingDialogFragment.TAG);
+                    if (prev != null) {
+                        ft.remove(prev);
+                    }
+                    ft.show(mediaPickerDialog);
+                    ft.commit();
+                }
+            }
+        });
+        processingDialog.show(getSupportFragmentManager(), ProcessingDialogFragment.TAG);
+    }
+
 
     private void showToast(final String message) {
         runOnUiThread(new Runnable() {
