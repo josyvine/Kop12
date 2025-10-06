@@ -5,7 +5,7 @@
     <item android:state_selected="true">
         <shape android:shape="oval">
             <solid android:color="#4F46E5" /> <!-- Accent color -->
-            <size android:width="32dp" android:height="32dp"/>
+            <size android:width="32dp" android:height="32dp"/> 
         </shape>
     </item>
 
