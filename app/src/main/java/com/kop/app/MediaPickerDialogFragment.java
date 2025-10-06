@@ -29,7 +29,6 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import java.io.File;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
@@ -37,11 +36,9 @@ import java.util.Locale;
 
 public class MediaPickerDialogFragment extends DialogFragment {
 
-    // --- FIX START: Move the constants here from the deleted activity ---
     public static final String MEDIA_TYPE_IMAGE = "image";
     public static final String MEDIA_TYPE_VIDEO = "video";
-    // --- FIX END ---
-
+    public static final String MEDIA_TYPE_ZIP = "zip"; // NEW CONSTANT
     public static final String TAG = "MediaPickerDialog";
     private static final String ARG_MEDIA_TYPE = "media_type";
 
@@ -49,23 +46,25 @@ public class MediaPickerDialogFragment extends DialogFragment {
     private ProgressBar loadingIndicator;
     private TextView titleTextView, currentPathTextView, emptyFolderTextView;
     private MediaPickerAdapter adapter;
-    private Button phoneStorageButton, sdCardButton;
+    private Button phoneStorageButton, sdCardButton, doneButton; // Added doneButton
     private EditText searchEditText;
     private Spinner filterSpinner;
 
-    private File currentDirectory;
     private String mediaType;
     private OnMediaSelectedListener mediaSelectedListener;
 
     private List<MediaItem> allItemsInCurrentDir = new ArrayList<>();
-    private List<MediaItem> masterMediaList = new ArrayList<>(); // Holds all media files for filtering
+    private List<MediaItem> masterMediaList = new ArrayList<>();
     private boolean isBrowsingFolders = false;
+    private boolean isMultiSelectMode = false; // NEW flag for multi-image selection
 
     private final Handler searchHandler = new Handler(Looper.getMainLooper());
     private Runnable searchRunnable;
 
+    // UPDATED INTERFACE to support single and multiple file selections
     public interface OnMediaSelectedListener {
         void onFileSelected(String filePath);
+        void onFilesSelected(List<String> filePaths);
     }
 
     public static MediaPickerDialogFragment newInstance(String mediaType) {
@@ -82,6 +81,7 @@ public class MediaPickerDialogFragment extends DialogFragment {
         setStyle(DialogFragment.STYLE_NORMAL, android.R.style.Theme_Black_NoTitleBar_Fullscreen);
         if (getArguments() != null) {
             mediaType = getArguments().getString(ARG_MEDIA_TYPE);
+            isMultiSelectMode = MEDIA_TYPE_IMAGE.equals(mediaType); // Enable multi-select only for images
         }
     }
 
@@ -95,6 +95,25 @@ public class MediaPickerDialogFragment extends DialogFragment {
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
 
+        initializeViews(view);
+
+        if (isMultiSelectMode) {
+            titleTextView.setText("Select Images (0)");
+            doneButton.setVisibility(View.VISIBLE);
+        } else if (MEDIA_TYPE_VIDEO.equals(mediaType)) {
+            titleTextView.setText("Select Video");
+        } else if (MEDIA_TYPE_ZIP.equals(mediaType)) {
+            titleTextView.setText("Select ZIP Archive");
+        }
+
+
+        setupRecyclerView();
+        setupControls();
+
+        loadAllMediaFiles();
+    }
+
+    private void initializeViews(View view) {
         mediaGrid = view.findViewById(R.id.rv_media_grid);
         loadingIndicator = view.findViewById(R.id.pb_loading);
         titleTextView = view.findViewById(R.id.tv_picker_title);
@@ -104,15 +123,7 @@ public class MediaPickerDialogFragment extends DialogFragment {
         sdCardButton = view.findViewById(R.id.btn_sd_card);
         searchEditText = view.findViewById(R.id.et_search);
         filterSpinner = view.findViewById(R.id.spinner_filter);
-        ImageButton closeButton = view.findViewById(R.id.btn_close_picker);
-
-        titleTextView.setText("Select " + (MEDIA_TYPE_VIDEO.equals(mediaType) ? "Video" : "Image"));
-
-        setupRecyclerView();
-        setupControls();
-
-        // Start by loading all media files instead of a specific directory
-        loadAllMediaFiles();
+        doneButton = view.findViewById(R.id.btn_done_picker);
     }
 
     public void setOnMediaSelectedListener(OnMediaSelectedListener listener) {
@@ -124,9 +135,17 @@ public class MediaPickerDialogFragment extends DialogFragment {
             new MediaPickerAdapter.OnMediaSelectedListener() {
                 @Override
                 public void onMediaSelected(File file) {
-                    if (mediaSelectedListener != null) {
-                        mediaSelectedListener.onFileSelected(file.getAbsolutePath());
-                        dismiss(); // Close dialog on selection
+                    if (isMultiSelectMode) {
+                        // In multi-select, this is handled by the adapter's click listener
+                        // Update the title with the selection count
+                        int count = adapter.getSelectedCount();
+                        titleTextView.setText("Select Images (" + count + ")");
+                    } else {
+                        // Single select mode (Video, ZIP)
+                        if (mediaSelectedListener != null) {
+                            mediaSelectedListener.onFileSelected(file.getAbsolutePath());
+                            dismiss();
+                        }
                     }
                 }
             },
@@ -135,7 +154,8 @@ public class MediaPickerDialogFragment extends DialogFragment {
                 public void onFolderClicked(File file) {
                     navigateTo(file);
                 }
-            });
+            }, isMultiSelectMode); // Pass multi-select flag to adapter
+
         mediaGrid.setLayoutManager(new GridLayoutManager(getContext(), 3));
         mediaGrid.setAdapter(adapter);
     }
@@ -165,7 +185,6 @@ public class MediaPickerDialogFragment extends DialogFragment {
         titleTextView.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                // Allow clicking the title to go back to "All Media" view
                 if (isBrowsingFolders) {
                     loadAllMediaFiles();
                 }
@@ -180,10 +199,24 @@ public class MediaPickerDialogFragment extends DialogFragment {
             }
         });
 
+        doneButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (mediaSelectedListener != null) {
+                    List<String> selectedPaths = adapter.getSelectedFilePaths();
+                    if (selectedPaths.isEmpty()) {
+                        Toast.makeText(getContext(), "Please select at least one image.", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    mediaSelectedListener.onFilesSelected(selectedPaths);
+                    dismiss();
+                }
+            }
+        });
+
         searchEditText.addTextChangedListener(new TextWatcher() {
             @Override
-            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
-            }
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
             @Override
             public void onTextChanged(CharSequence s, int start, int before, int count) {
                 searchHandler.removeCallbacks(searchRunnable);
@@ -210,8 +243,7 @@ public class MediaPickerDialogFragment extends DialogFragment {
                 applyFilterAndSort();
             }
             @Override
-            public void onNothingSelected(AdapterView<?> parent) {
-            }
+            public void onNothingSelected(AdapterView<?> parent) {}
         });
     }
 
@@ -227,7 +259,14 @@ public class MediaPickerDialogFragment extends DialogFragment {
         isBrowsingFolders = false;
         filterSpinner.setVisibility(View.VISIBLE);
         currentPathTextView.setVisibility(View.GONE);
-        String title = MEDIA_TYPE_IMAGE.equals(mediaType) ? "All Images" : "All Videos";
+        String title = "All Media";
+        if (isMultiSelectMode) {
+            title = "Select Images (" + adapter.getSelectedCount() + ")";
+        } else if (MEDIA_TYPE_VIDEO.equals(mediaType)) {
+            title = "All Videos";
+        } else if (MEDIA_TYPE_ZIP.equals(mediaType)) {
+            title = "All ZIP Archives";
+        }
         titleTextView.setText(title);
     }
 
@@ -236,7 +275,14 @@ public class MediaPickerDialogFragment extends DialogFragment {
         filterSpinner.setVisibility(View.GONE);
         currentPathTextView.setVisibility(View.VISIBLE);
         currentPathTextView.setText(directory.getAbsolutePath());
-        String title = MEDIA_TYPE_IMAGE.equals(mediaType) ? "Select Image" : "Select Video";
+        String title = "Browse";
+         if (isMultiSelectMode) {
+            title = "Select Images (" + adapter.getSelectedCount() + ")";
+        } else if (MEDIA_TYPE_VIDEO.equals(mediaType)) {
+            title = "Select Video";
+        } else if (MEDIA_TYPE_ZIP.equals(mediaType)) {
+            title = "Select ZIP Archive";
+        }
         titleTextView.setText(title);
     }
 
@@ -246,6 +292,7 @@ public class MediaPickerDialogFragment extends DialogFragment {
         mediaGrid.setVisibility(View.GONE);
         emptyFolderTextView.setVisibility(View.GONE);
         searchEditText.setText("");
+        adapter.clearSelection(); // Clear selections when reloading
 
         new Thread(new Runnable() {
             @Override
@@ -262,7 +309,6 @@ public class MediaPickerDialogFragment extends DialogFragment {
                     scanDirectoryForMedia(root, masterMediaList);
                 }
 
-                // Default sort: Newest first
                 Collections.sort(masterMediaList, new Comparator<MediaItem>() {
                     @Override
                     public int compare(MediaItem o1, MediaItem o2) {
@@ -276,7 +322,7 @@ public class MediaPickerDialogFragment extends DialogFragment {
                 new Handler(Looper.getMainLooper()).post(new Runnable() {
                     @Override
                     public void run() {
-                        filterSpinner.setSelection(0, false); // Set to "Newest First" without triggering listener
+                        filterSpinner.setSelection(0, false);
                         adapter.updateData(allItemsInCurrentDir);
                         loadingIndicator.setVisibility(View.GONE);
                         if (allItemsInCurrentDir.isEmpty()) {
@@ -297,7 +343,7 @@ public class MediaPickerDialogFragment extends DialogFragment {
         if (files != null) {
             for (File file : files) {
                 if (file.isDirectory()) {
-                    if (!file.getName().startsWith(".")) { // Skip hidden directories
+                    if (!file.getName().startsWith(".") && !file.getName().equalsIgnoreCase("Android")) {
                         scanDirectoryForMedia(file, mediaList);
                     }
                 } else {
@@ -327,7 +373,7 @@ public class MediaPickerDialogFragment extends DialogFragment {
                 if (files != null) {
                     List<File> fileList = new ArrayList<>();
                     for(File file : files) {
-                        if (!file.getName().startsWith(".")) { // Ignore hidden files
+                        if (!file.getName().startsWith(".")) {
                            fileList.add(file);
                         }
                     }
@@ -450,7 +496,6 @@ public class MediaPickerDialogFragment extends DialogFragment {
             finalList.addAll(allItemsInCurrentDir);
         } else {
             for (MediaItem item : allItemsInCurrentDir) {
-                // In folder view, don't filter out the parent ".." directory
                 if (item.getType() == MediaItem.ItemType.PARENT) {
                     finalList.add(item);
                     continue;
@@ -478,6 +523,8 @@ public class MediaPickerDialogFragment extends DialogFragment {
             return lowerCasePath.endsWith(".jpg") || lowerCasePath.endsWith(".jpeg") || lowerCasePath.endsWith(".png") || lowerCasePath.endsWith(".webp");
         } else if (MEDIA_TYPE_VIDEO.equals(mediaType)) {
             return lowerCasePath.endsWith(".mp4") || lowerCasePath.endsWith(".mov") || lowerCasePath.endsWith(".3gp") || lowerCasePath.endsWith(".mkv");
+        } else if (MEDIA_TYPE_ZIP.equals(mediaType)) {
+            return lowerCasePath.endsWith(".zip");
         }
         return false;
     }
@@ -487,8 +534,6 @@ public class MediaPickerDialogFragment extends DialogFragment {
         for (File dir : externalDirs) {
             if (dir != null && Environment.isExternalStorageRemovable(dir)) {
                 String path = dir.getAbsolutePath();
-                // Path is like /storage/XXXX-XXXX/Android/data/com.kop.app/files
-                // We want to get /storage/XXXX-XXXX
                 int androidDataIndex = path.indexOf("/Android/data");
                 if (androidDataIndex != -1) {
                     return new File(path.substring(0, androidDataIndex));
