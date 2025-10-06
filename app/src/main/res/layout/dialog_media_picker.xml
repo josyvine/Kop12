@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- CREATE NEW FILE: app/src/main/res/layout/dialog_media_picker.xml -->
+<!-- UPDATED FILE: app/src/main/res/layout/dialog_media_picker.xml -->
 <RelativeLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="#1C1C2E"
@@ -24,6 +25,16 @@
             android:textColor="@android:color/white"
             android:textSize="20sp"
             android:textStyle="bold"/>
+
+        <!-- NEW: "Done" button for multi-image selection -->
+        <Button
+            android:id="@+id/btn_done_picker"
+            android:layout_width="wrap_content"
+            android:layout_height="48dp"
+            android:text="Done"
+            android:visibility="gone"
+            tools:visibility="visible"
+            android:layout_marginEnd="8dp"/>
 
         <ImageButton
             android:id="@+id/btn_close_picker"
@@ -63,7 +74,6 @@
                 android:layout_marginStart="8dp"/>
         </LinearLayout>
 
-        <!-- UPDATED: This section now includes a Spinner for filtering and the EditText for searching. -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
