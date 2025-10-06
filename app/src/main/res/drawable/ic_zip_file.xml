@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- CREATE NEW FILE: app/src/main/res/drawable/ic_zip_file.xml -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24.0"
+    android:viewportHeight="24.0"
+    android:tint="#FFFFFF">
+
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M14,2H6c-1.1,0 -2,0.9 -2,2v16c0,1.1 0.9,2 2,2h12c1.1,0 2,-0.9 2,-2V8l-6,-6zM16,18h-2v-2h2v2zM16,14h-2v-2h2v2zM12,18H9v-2h3v2zM12,14H9v-2h3v2zM12,10H9V8h3v2zM13,9V3.5L18.5,9H13z"/>
+</vector>
